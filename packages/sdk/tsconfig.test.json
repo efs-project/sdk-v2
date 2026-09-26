@@ -1,0 +1,14 @@
+{
+  "//": "Tests and tool configs only; never emitted.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "isolatedDeclarations": false,
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node"]
+  },
+  "include": ["test/**/*.ts", "vitest.config.ts"]
+}

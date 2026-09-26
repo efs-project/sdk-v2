@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+packages:
+  # Matches only directories that contain a package.json, so the Foundry project
+  # root (packages/solidity) is not a member. Its npm metadata lives beside the
+  # sources, in packages/solidity/src (see docs/adr/0003).
+  - packages/*
+  - packages/solidity/src
+# examples/* are intentionally NOT workspace members: they install packed tarballs only.
+
+# Supply-chain floor (pnpm 11+ defaults, stated explicitly).
+strictDepBuilds: true
+minimumReleaseAge: 1440
+
+catalog:
+  typescript: 7.0.2
+  vitest: 5.0.2

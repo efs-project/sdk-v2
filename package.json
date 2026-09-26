@@ -1,0 +1,42 @@
+{
+  "name": "efs-sdk-v2-workspace",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Workspace root for the EFS v2 SDK. Not a package.",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.21.0",
+      "onFail": "warn"
+    },
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.6.0",
+      "onFail": "error"
+    }
+  },
+  "scripts": {
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm checks && pnpm build && pnpm pack:all && pnpm lint:package && pnpm test:package",
+    "lint": "biome ci .",
+    "format": "biome format --write .",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:unit": "pnpm -r test:unit",
+    "test:browser": "pnpm -r test:browser",
+    "checks": "node tools/checks.mjs all",
+    "pack:all": "node tools/pack.mjs",
+    "lint:package": "node tools/checks.mjs package",
+    "test:package": "node tools/consumers.mjs",
+    "release:dry-run": "node tools/release-dry-run.mjs",
+    "changeset": "changeset"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@biomejs/biome": "2.5.14",
+    "@changesets/cli": "3.0.3",
+    "publint": "0.3.24",
+    "typescript": "catalog:"
+  }
+}

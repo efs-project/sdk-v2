@@ -1,0 +1,12 @@
+{
+  "//": "Portable core: no Node or DOM ambient types. Emits dist/ for src/ except web/ and node/.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["es2023"],
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/web/**", "src/node/**", "src/**/*.test.ts"]
+}

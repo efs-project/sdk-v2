@@ -1,0 +1,14 @@
+{
+  "name": "efs-example-smoke-browser",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "node build.mjs"
+  },
+  "dependencies": {
+    "@efs/sdk": "file:SET_BY_TOOLS_CONSUMERS"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

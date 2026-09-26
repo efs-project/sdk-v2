@@ -1,0 +1,51 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/.packs",
+      "!packages/solidity/dependencies",
+      "!packages/solidity/out",
+      "!packages/solidity/cache"
+    ]
+  },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "linter": { "rules": { "preset": "recommended" } },
+  "overrides": [
+    {
+      "includes": ["packages/sdk/src/**", "!packages/sdk/src/node/**", "!packages/sdk/src/web/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["node:*"],
+                    "message": "Portable core: no Node built-ins. Inject a port instead (docs/adr/0001)."
+                  }
+                ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "window": "Portable core: no DOM globals.",
+                  "document": "Portable core: no DOM globals.",
+                  "localStorage": "Portable core: no DOM globals.",
+                  "indexedDB": "Portable core: use src/web.",
+                  "process": "Portable core: no Node globals.",
+                  "Buffer": "Portable core: use Uint8Array."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

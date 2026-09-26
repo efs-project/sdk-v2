@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: MIT
+# EFS v2 Solidity package. Builds and tests with Foundry alone; no Node required.
+# Supported consumer compiler/EVM combinations are listed in compat.json.
+
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["dependencies"]
+solc_version = "0.8.37"
+evm_version = "prague"        # explicit: solc 0.8.37 defaults to osaka
+optimizer = true
+optimizer_runs = 200
+via_ir = false                # libraries must also compile without via-IR; compat.yml runs both
+bytecode_hash = "none"        # aligned with contracts-v2
+cbor_metadata = true
+
+[profile.ci]
+fuzz = { runs = 256 }
+
+[fmt]
+line_length = 100
+
+[dependencies]
+forge-std = "1.16.2"          # tests only; never imported from src/
+
+[soldeer]
+remappings_generate = false
+remappings_regenerate = false

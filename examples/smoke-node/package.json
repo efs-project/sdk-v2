@@ -1,0 +1,11 @@
+{
+  "name": "efs-example-smoke-node",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "node index.mjs"
+  },
+  "dependencies": {
+    "@efs/sdk": "file:SET_BY_TOOLS_CONSUMERS"
+  }
+}

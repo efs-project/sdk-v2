@@ -1,0 +1,7 @@
+{
+  "//": "Negative fixture: the portable project's settings applied to a file that uses a DOM global. tools/checks.mjs expects tsc to fail.",
+  "extends": "../../../packages/sdk/tsconfig.json",
+  "compilerOptions": { "noEmit": true, "rootDir": "." },
+  "include": [],
+  "files": ["dom-global.ts"]
+}

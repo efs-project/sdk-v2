@@ -1,0 +1,18 @@
+{
+  "name": "@efs/solidity",
+  "version": "0.0.0",
+  "private": true,
+  "description": "EFS v2 Solidity interfaces and internal libraries, compiled into your contract (pre-alpha: scaffold only)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/efs-project/sdk-v2.git",
+    "directory": "packages/solidity/src"
+  },
+  "files": [
+    "**/*.sol",
+    "efs-solidity.manifest.json",
+    "LICENSE",
+    "README.md"
+  ]
+}

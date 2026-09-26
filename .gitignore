@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.packs/
+*.tsbuildinfo
+coverage/
+.vitest/
+__screenshots__/
+# Foundry
+packages/solidity/out/
+packages/solidity/cache/
+packages/solidity/dependencies/
+examples/smoke-foundry/out/
+examples/smoke-foundry/cache/
+examples/smoke-foundry/lib/
+# generated at pack time
+packages/solidity/src/efs-solidity.manifest.json
+.DS_Store
