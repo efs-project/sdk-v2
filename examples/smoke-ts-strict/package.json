@@ -1,0 +1,14 @@
+{
+  "name": "efs-example-smoke-ts-strict",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@efs/sdk": "file:SET_BY_TOOLS_CONSUMERS"
+  },
+  "devDependencies": {
+    "typescript": "SET_BY_TOOLS_CONSUMERS"
+  }
+}

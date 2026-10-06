@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+# S0 placeholder example: a consumer project compiling against the Solidity release archive.
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.37"
+evm_version = "prague"

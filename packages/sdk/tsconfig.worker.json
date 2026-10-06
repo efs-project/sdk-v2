@@ -1,0 +1,12 @@
+{
+  "//": "src/web/** as Worker code. Check only; DOM and WebWorker libs never share a project.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "noEmit": true,
+    "lib": ["es2023", "webworker"],
+    "types": []
+  },
+  "include": ["src/web/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

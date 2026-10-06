@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: MIT
+# Nightly/on-demand compatibility matrix; PR #1 bootstrap evidence (docs/adr/0004).
+name: compat
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.number == 1 && github.head_ref == 'chore/s0-scaffold' && github.event.pull_request.head.repo.full_name == github.repository)
+    name: node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24", "26"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.6.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:unit
+      - run: pnpm build
+      - run: node tools/pack.mjs --only sdk
+      - run: node tools/consumers.mjs --only node,browser
+
+  ts-consumer:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.number == 1 && github.head_ref == 'chore/s0-scaffold' && github.event.pull_request.head.repo.full_name == github.repository)
+    name: typescript consumer ${{ matrix.ts }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        ts: ["5.9.3", "6.0.3", "7.0.2"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.6.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node tools/pack.mjs --only sdk
+      - run: node tools/consumers.mjs --only ts --ts ${{ matrix.ts }}
+
+  solc-matrix:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.number == 1 && github.head_ref == 'chore/s0-scaffold' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    outputs:
+      include: ${{ steps.m.outputs.include }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - run: node tools/checks.mjs compat
+      - id: m
+        run: |
+          node -e '
+            const { supported } = require("./packages/solidity/compat.json");
+            const include = supported.flatMap(({ solc, evm }) =>
+              evm.flatMap((e) => [false, true].map((viaIr) => ({ solc, evm: e, viaIr }))));
+            require("fs").appendFileSync(process.env.GITHUB_OUTPUT, "include=" + JSON.stringify(include) + "\n");'
+
+  solc:
+    name: solc ${{ matrix.solc }} ${{ matrix.evm }} via_ir=${{ matrix.viaIr }}
+    needs: solc-matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.solc-matrix.outputs.include) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.8.3
+      - name: compile the package sources (not tests) for this combination
+        working-directory: packages/solidity
+        run: |
+          forge build --skip test --skip script --use ${{ matrix.solc }} --evm-version ${{ matrix.evm }} ${{ matrix.viaIr && '--via-ir' || '' }} --force

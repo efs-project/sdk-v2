@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.packs/
+*.tsbuildinfo
+coverage/
+.vitest/
+__screenshots__/
+# Foundry
+packages/solidity/out/
+packages/solidity/cache/
+packages/solidity/dependencies/
+examples/smoke-foundry/out/
+examples/smoke-foundry/cache/
+examples/smoke-foundry/lib/
+.DS_Store

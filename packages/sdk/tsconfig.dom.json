@@ -1,0 +1,12 @@
+{
+  "//": "src/web/** as window code. This project emits dist/web.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": ["src/web/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

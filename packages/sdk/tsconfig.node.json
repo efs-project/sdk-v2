@@ -1,0 +1,12 @@
+{
+  "//": "src/node/**: Node-only code. This project emits dist/node.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["es2023"],
+    "types": ["node"]
+  },
+  "include": ["src/node/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

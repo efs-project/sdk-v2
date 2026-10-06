@@ -1,0 +1,8 @@
+{
+  "//": "Supported consumer combinations: a list, not a Cartesian product. solc changelog: Prague support from 0.8.27, Osaka support from 0.8.29 (default from 0.8.31). We claim Osaka only from 0.8.37. tools/checks.mjs validates this policy; compat.yml compiles every entry with via_ir false and true.",
+  "supported": [
+    { "solc": "0.8.27", "evm": ["cancun", "prague"] },
+    { "solc": "0.8.30", "evm": ["cancun", "prague"] },
+    { "solc": "0.8.37", "evm": ["cancun", "prague", "osaka"] }
+  ]
+}
