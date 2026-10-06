@@ -25,7 +25,7 @@
     "test": "pnpm -r test",
     "test:unit": "pnpm -r test:unit",
     "test:browser": "pnpm -r test:browser",
-    "checks": "node tools/checks.mjs all",
+    "checks": "node --test tools/release-dry-run.test.mjs && node tools/checks.mjs all",
     "pack:all": "node tools/pack.mjs",
     "lint:package": "node tools/checks.mjs package",
     "test:package": "node tools/consumers.mjs",

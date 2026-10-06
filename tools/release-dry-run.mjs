@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { changesetStatus } from "./lib/changeset-status.mjs";
 import { readTar, sha256 } from "./lib/tar.mjs";
 import { fail, ok, PACKS, ROOT, run } from "./lib/util.mjs";
 
@@ -58,7 +59,14 @@ if (values.compare) {
   const tsVersion = JSON.parse(
     readFileSync(join(ROOT, "node_modules/typescript/package.json"), "utf8"),
   ).version;
-  const status = run("pnpm", ["exec", "changeset", "status"], { capture: true, allowFail: true });
+  const comparisonRef = "origin/main";
+  // Checkout preparation must provide this ref. Never fetch or fall back to HEAD here.
+  const comparisonCommit = git("rev-parse", "--verify", "refs/remotes/origin/main^{commit}");
+  const status = run("pnpm", ["exec", "changeset", "status", "--since", comparisonRef], {
+    capture: true,
+    allowFail: true,
+  });
+  const classifiedStatus = changesetStatus(status);
   const limitations = readFileSync(join(ROOT, "LIMITATIONS.md"));
   const manifest = {
     schema: "efs-sdk-release/draft-0",
@@ -83,8 +91,8 @@ if (values.compare) {
     evidence: {
       repeatedBuild: values["repeated-build"],
       independentReproduction: null,
-      changesetStatus:
-        status.status === 0 ? "ok" : "no changesets (not required before publishing)",
+      changesetStatus: classifiedStatus,
+      changesetBase: { ref: comparisonRef, commit: comparisonCommit },
     },
     limitations: { file: "LIMITATIONS.md", sha256: sha256(limitations) },
     notDoneYet: [

@@ -30,5 +30,14 @@ runs), and the draft manifest describes that actual checkout. CI and compatibili
 the ordinary PR merge candidate; review evidence records head, base and tested SHAs.
 These dry-run artifacts are never inputs to a privileged publishing workflow.
 
+Changesets status compares against `origin/main`, provided explicitly by checkout preparation
+(the release runner fetches full history). The draft records the resolved comparison commit.
+Missing/unresolvable base refs and all tool/Git/configuration errors fail before a successful
+manifest is written. Exit zero means `ok`, including an empty release plan. The only tolerated
+exit-one case is the complete pinned CLI 3.0.3 diagnostic for changed packages without a
+changeset, including its known framing and no extra errors/warnings. That is S0's optional
+missing-changeset policy, not evidence that nothing changed. `pnpm checks` executes the focused
+classifier, real pinned CLI, and wired manifest-failure regressions in the normal CI lane.
+
 Publishing (npm organization, first publish, trusted publisher, idempotent publish and verify
 jobs) is separate, later work that needs explicit authorization.
