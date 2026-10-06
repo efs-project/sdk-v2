@@ -18,7 +18,7 @@ Supported consumer compiler × EVM combinations are listed in `packages/solidity
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm exec playwright install chromium    # once
+pnpm --filter @efs/sdk exec playwright install chromium    # once
 pnpm lint          # Biome format + lint (restricted imports in portable code)
 pnpm typecheck     # portable, dom, worker, node and test projects
 pnpm test          # Vitest: Node + real Chromium
@@ -39,9 +39,10 @@ forge soldeer install
 forge fmt --check
 forge build --sizes
 forge test
+cd ../..             # return to the repository root for the commands below
 ```
 
-Then, with Node available: `node tools/checks.mjs solidity` (internal-only libraries, no link
+Then, from the repository root with Node available: `node tools/checks.mjs solidity` (internal-only libraries, no link
 references). For packaging: `node tools/pack.mjs --only solidity && node tools/consumers.mjs --only foundry`.
 
 ## Release dry run

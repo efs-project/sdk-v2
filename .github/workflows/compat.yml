@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: MIT
-# Nightly/on-demand compatibility matrix (docs/adr/0004). Not a required PR check.
+# Nightly/on-demand compatibility matrix; PR #1 bootstrap evidence (docs/adr/0004).
 name: compat
 
 on:
+  pull_request:
+    branches: [main]
   schedule:
     - cron: "17 6 * * *"
   workflow_dispatch:
@@ -12,6 +14,7 @@ permissions:
 
 jobs:
   node:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.number == 1 && github.head_ref == 'chore/s0-scaffold' && github.event.pull_request.head.repo.full_name == github.repository)
     name: node ${{ matrix.node }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -37,6 +40,7 @@ jobs:
       - run: node tools/consumers.mjs --only node,browser
 
   ts-consumer:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.number == 1 && github.head_ref == 'chore/s0-scaffold' && github.event.pull_request.head.repo.full_name == github.repository)
     name: typescript consumer ${{ matrix.ts }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -61,6 +65,7 @@ jobs:
       - run: node tools/consumers.mjs --only ts --ts ${{ matrix.ts }}
 
   solc-matrix:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.number == 1 && github.head_ref == 'chore/s0-scaffold' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     outputs:
       include: ${{ steps.m.outputs.include }}

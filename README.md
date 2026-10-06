@@ -33,7 +33,7 @@ TypeScript side (Node 24.21.0, pnpm 12.6.0):
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm exec playwright install chromium   # once, for browser tests
+pnpm --filter @efs/sdk exec playwright install chromium   # once, for browser tests
 pnpm check                              # lint, typecheck, tests, checks, build, pack, consumers
 ```
 
@@ -43,6 +43,7 @@ Solidity side (Foundry 1.8.3 only; no Node needed):
 cd packages/solidity
 forge soldeer install
 forge fmt --check && forge build --sizes && forge test
+cd ../..                               # return to the repository root
 ```
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for every command, and [`AGENTS.md`](AGENTS.md) for rules

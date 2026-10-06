@@ -33,7 +33,7 @@ Nothing in `packages/` may import from `tools/` or `examples/`.
 | --- | --- |
 | anything | `pnpm lint` and `pnpm typecheck` |
 | TypeScript source or exports | `pnpm test`, `pnpm build`, `pnpm pack:all`, `pnpm lint:package`, `pnpm test:package` |
-| Solidity | in `packages/solidity`: `forge fmt --check && forge build --sizes && forge test`, then `node tools/checks.mjs solidity` |
+| Solidity | in `packages/solidity`: `forge soldeer install && forge fmt --check && forge build --sizes && forge test`, then return to the root (`cd ../..`) for `node tools/checks.mjs solidity` |
 | Solidity packaging | `node tools/pack.mjs --only solidity && node tools/consumers.mjs --only foundry` |
 | everything | `pnpm check` (TypeScript lanes) plus the Solidity lane above |
 

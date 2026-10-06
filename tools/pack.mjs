@@ -20,8 +20,7 @@ const PACKAGES = {
   },
   solidity: {
     dir: "packages/solidity/src",
-    allowed: (p) =>
-      /^(package\.json|README\.md|LICENSE|efs-solidity\.manifest\.json|.+\.sol)$/.test(p),
+    allowed: (p) => /^(package\.json|README\.md|LICENSE|.+\.sol)$/.test(p),
   },
 };
 
