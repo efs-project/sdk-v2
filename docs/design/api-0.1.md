@@ -531,18 +531,30 @@ Nothing else throws. Transport and provider failures, missing data, wallet refus
 
 ## 9. Recorded fixtures (`@efs/sdk/fixtures/*.json`)
 
-These are recorded from the real fixture chain and carry `{ "schema": "efs-sdk-fixture/1", "contractsCommit": "…" }`:
-1. `root-complete.json`
-2. `page-partial.json` (with a resume token)
-3. `unknown-rpc.json`
-4. `lens-conflict.json`
-5. `masked-entry.json`
-6. `lookup-absent.json`
-7. `bytes-inline-verified.json`
-8. `external-unavailable.json`
-9. `external-tampered.json`
-10. `history.json`
-11. `journal-ambiguous-before.json` / `journal-ambiguous-after.json`
+Everything here is recorded from the real fixture chain by `pnpm record:fixtures`, in one run, so all the files agree
+with each other.
+
+**Result fixtures** carry `{ "schema": "efs-sdk-fixture/1", "contractsCommit", "case", "note", "result" }`. `result`
+is the SDK's return value encoded with `toJson`, so decode it with `fromJson`. They are for chain-free unit tests of UI
+logic. The current set:
+- pin: `pin-verified`, `pin-mismatch`, `pin-unknown`
+- open: `open-inline`, `open-span`, `open-external`, `open-absent` (ABSENT_PROVEN), `open-unknown`
+- bytes: `bytes-inline-verified`, `bytes-span-range-verified`, `bytes-external-verified`, `bytes-external-mismatch`,
+  `bytes-external-unavailable`, `bytes-external-unsupported`, `bytes-policy-blocked`
+- writes: `send-ambiguous`, `journal-ambiguous-before`, `journal-ambiguous-after`, `reconcile-committed`
+
+Folder fixtures (root page, partial page, lens conflict, masked entry, lookup absent, history) wait for the folder
+read API.
+
+**RPC transcripts** (`@efs/sdk/fixtures/rpc/*.json`, `{ "schema": "efs-sdk-rpc-transcript/1", "case", "note",
+"contractsCommit", "ids", "steps", "calls" }`) hold the JSON-RPC traffic of the real SDK, as ordered
+`{ request, response }` bodies. `rpc/deployment.json` is the matching `efs-deployment/1` document. With them the real
+SDK runs end to end with no chain, for example behind a Playwright `page.route` on a fake RPC origin. The cases are
+`pin-verified`, `open-inline` (followed by `readBytes`), `open-absent`, and `open-span` (followed by `readRange` across
+a chunk edge and `readBytes`). `ids.file` names the subject each one opens. `@efs/sdk/testing` exports the matcher:
+`createRpcReplay(t).answer(body)` and `replayFetch(t)` for `createEfs({ fetch })`. It matches each call on
+`[method, params]` and ignores the JSON-RPC id. Calls inside a batch are matched one by one, and an unmatched call
+gets a JSON-RPC error and is listed in `misses`.
 
 ## 10. Decisions from the client review (2026-11-24)
 

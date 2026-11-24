@@ -13,6 +13,7 @@ import type { Hex, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { toJson } from "../../src/core/json.ts";
 import { type OpenedFile, openFile, readBytes, readRange } from "../../src/files/bytes.ts";
 import { PROTOCOL_INPUTS } from "../../src/generated/inputs.ts";
+import { type RpcTranscript, recordingFetch } from "../../src/testing/index.ts";
 import { putInline } from "./recipes.ts";
 
 const RECORD = process.env["EFS_RECORD"] === "1";
@@ -214,5 +215,96 @@ describe.runIf(RECORD)("record fixtures", () => {
       await journal.get(planned.plan.id),
     );
     expect(rec.outcome).toBe("COMMITTED");
+  });
+});
+
+/**
+ * RPC transcripts: the JSON-RPC traffic of the real SDK on this chain, for chain-free e2e replays
+ * (`@efs/sdk/testing`). Each case starts from a fresh client, so the endpoint chain check is included.
+ */
+describe.runIf(RECORD)("record RPC transcripts", () => {
+  const RPC_OUT = join(OUT, "rpc");
+  const record = async (
+    name: string,
+    note: string,
+    ids: Record<string, string>,
+    run: (efs: ReturnType<typeof createEfs>, steps: string[]) => Promise<void>,
+  ) => {
+    const rec = recordingFetch(globalThis.fetch as unknown as FetchLike);
+    const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: rec.fetch });
+    const steps: string[] = [];
+    await run(efs, steps);
+    const t: RpcTranscript = {
+      schema: "efs-sdk-rpc-transcript/1",
+      case: name,
+      note,
+      contractsCommit: PROTOCOL_INPUTS.contractsCommit,
+      ids,
+      steps,
+      calls: rec.calls,
+    };
+    mkdirSync(RPC_OUT, { recursive: true });
+    writeFileSync(join(RPC_OUT, `${name}.json`), `${JSON.stringify(t, null, 2)}\n`);
+  };
+
+  it("records the deployment document and four transcripts", async () => {
+    mkdirSync(RPC_OUT, { recursive: true });
+    writeFileSync(join(RPC_OUT, "deployment.json"), readFileSync(fixture.deployment, "utf8"));
+    const inline = subject("readme.txt");
+    const span = subject("big.bin");
+    const absent = keccak256(toHex("no such file")) as SubjectId;
+
+    await record(
+      "pin-verified",
+      "createEfs({ deployment }).pin() → VERIFIED",
+      {},
+      async (efs, steps) => {
+        steps.push("efs.pin()");
+        expect((await efs.pin()).status).toBe("VERIFIED");
+      },
+    );
+    await record(
+      "open-inline",
+      "openFile(docs/readme.txt) → PRESENT inline, then readBytes → VERIFIED",
+      { file: inline },
+      async (efs, steps) => {
+        steps.push(
+          "openFile(efs, { kind: 'file', subject: ids.file })",
+          "readBytes(efs, opened.file)",
+        );
+        const o = await openFile(efs, { kind: "file", subject: inline });
+        if (o.status !== "PRESENT") throw new Error(o.status);
+        expect((await readBytes(efs, o.file)).grade).toBe("VERIFIED");
+      },
+    );
+    await record(
+      "open-absent",
+      "openFile on a file nobody created → ABSENT_PROVEN",
+      { file: absent },
+      async (efs, steps) => {
+        steps.push("openFile(efs, { kind: 'file', subject: ids.file })");
+        expect((await openFile(efs, { kind: "file", subject: absent })).status).toBe(
+          "ABSENT_PROVEN",
+        );
+      },
+    );
+    await record(
+      "open-span",
+      "openFile(docs/big.bin, 20,000 bytes, span tree) → PRESENT; readRange(8150, 20) across a chunk edge and readBytes → VERIFIED",
+      { file: span },
+      async (efs, steps) => {
+        steps.push(
+          "openFile(efs, { kind: 'file', subject: ids.file })",
+          "readRange(efs, opened.file, { offset: 8150n, length: 20n })",
+          "readBytes(efs, opened.file)",
+        );
+        const o = await openFile(efs, { kind: "file", subject: span });
+        if (o.status !== "PRESENT") throw new Error(o.status);
+        expect((await readRange(efs, o.file, { offset: 8150n, length: 20n })).grade).toBe(
+          "VERIFIED",
+        );
+        expect((await readBytes(efs, o.file)).grade).toBe("VERIFIED");
+      },
+    );
   });
 });
