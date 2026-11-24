@@ -67,40 +67,86 @@ const unavailable = (e: unknown): EfsFault =>
 /**
  * The journal for browser and worker clients. Pass it to `createWriter({ journal })`. Records survive reloads and
  * crashes; `writer.pending()` lists attempts that still need reconciling after the page comes back.
+ *
+ * Creating the journal, reading it (`get`, `unresolved`, so `writer.pending()`) and taking its lock write nothing to
+ * storage: the database is created by the first `put`, which happens only when a submission is about to be made. A
+ * guest visit leaves `indexedDB.databases()` as it found it.
  */
 export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJournal {
   const name = options.name ?? "efs-sdk-journal";
-  let db: Promise<IDBDatabase> | undefined;
-  const open = (): Promise<IDBDatabase> => {
-    if (!db) {
-      const idb = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
-      if (!idb) return Promise.reject(unavailable(new Error("no indexedDB in this context")));
-      const req = idb.open(name, 1);
+  // Only connections are cached, never "absent": a database another tab creates later is still found.
+  let conn: Promise<IDBDatabase> | undefined;
+  const factory = (): IDBFactory => {
+    const idb = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
+    if (!idb) throw unavailable(new Error("no indexedDB in this context"));
+    return idb;
+  };
+  const adopt = (c: IDBDatabase): IDBDatabase => {
+    // Another context upgrading the schema: step aside, reopen on next use.
+    c.onversionchange = () => {
+      c.close();
+      conn = undefined;
+    };
+    return c;
+  };
+  /** Open the database if it exists, creating nothing: a read on a fresh origin writes no storage. */
+  const openExisting = (): Promise<IDBDatabase | null> =>
+    new Promise((resolve, reject) => {
+      const req = factory().open(name);
+      let fresh = false;
+      req.onupgradeneeded = (ev: IDBVersionChangeEvent) => {
+        if (ev.oldVersion === 0) {
+          fresh = true;
+          req.transaction?.abort(); // aborting the creating upgrade leaves no database behind
+        }
+      };
+      req.onsuccess = () => {
+        if (fresh) {
+          req.result.close();
+          resolve(null);
+        } else resolve(req.result);
+      };
+      req.onerror = (ev: Event) => {
+        if (fresh) {
+          ev.preventDefault();
+          resolve(null);
+        } else reject(unavailable(req.error));
+      };
+    });
+  const openCreating = (): Promise<IDBDatabase> =>
+    new Promise((resolve, reject) => {
+      const req = factory().open(name, 1);
       req.onupgradeneeded = () => {
         const store = req.result.createObjectStore(STORE, { keyPath: "planId" });
         store.createIndex(BY_LOCK, "lock", { unique: false });
       };
-      db = done(req).then(
-        (conn) => {
-          // Another context upgrading the schema: step aside, reopen on next use.
-          conn.onversionchange = () => {
-            conn.close();
-            db = undefined;
-          };
-          return conn;
-        },
-        (e) => {
-          db = undefined;
-          throw unavailable(e);
-        },
-      );
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(unavailable(req.error));
+    });
+  /** The connection, or null when `create` is false and the database does not exist yet. */
+  const connect = async (create: boolean): Promise<IDBDatabase | null> => {
+    if (conn) return conn;
+    if (!create) {
+      const found = await openExisting();
+      if (!found) return null;
+      if (conn) {
+        found.close(); // a concurrent caller connected first
+        return conn;
+      }
+      conn = Promise.resolve(adopt(found));
+      return conn;
     }
-    return db;
+    conn = openCreating().then(adopt, (e) => {
+      conn = undefined;
+      throw e;
+    });
+    return conn;
   };
-  const tx = async (mode: IDBTransactionMode): Promise<IDBTransaction> => {
-    const conn = await open();
+  const tx = async (mode: IDBTransactionMode): Promise<IDBTransaction | null> => {
+    const c = await connect(mode === "readwrite");
+    if (!c) return null;
     try {
-      return conn.transaction(STORE, mode, { durability: "strict" });
+      return c.transaction(STORE, mode, { durability: "strict" });
     } catch (e) {
       throw unavailable(e);
     }
@@ -134,7 +180,7 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
     durable: true,
     crossContext: locks !== undefined,
     async put(record: AttemptRecord) {
-      const t = await tx("readwrite");
+      const t = (await tx("readwrite")) as IDBTransaction;
       const row: Row = {
         planId: record.planId.toLowerCase(),
         lock: lockKey(record.plan),
@@ -150,11 +196,13 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
     },
     async get(planId) {
       const t = await tx("readonly");
+      if (!t) return undefined;
       const row = (await done(t.objectStore(STORE).get(planId.toLowerCase()))) as Row | undefined;
       return row ? decodeJournalRecord(row.json) : undefined;
     },
     async unresolved(lock) {
       const t = await tx("readonly");
+      if (!t) return [];
       const rows = (await done(t.objectStore(STORE).index(BY_LOCK).getAll(lock))) as Row[];
       return rows
         .filter((r) => !isResolved(r.stage as AttemptRecord["stage"]))
@@ -162,9 +210,9 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
     },
     withLock: webLock,
     close() {
-      const pending = db;
-      db = undefined;
-      void pending?.then((conn) => conn.close()).catch(() => {});
+      const pending = conn;
+      conn = undefined;
+      void pending?.then((c) => c.close()).catch(() => {});
     },
   };
 }

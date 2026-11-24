@@ -56,6 +56,12 @@ The lock key is `efs:<chainId>:<realmId>:<ledger>:<account>`, all lowercase, fro
 | Transactions | `durability: "strict"`; `put` resolves only after the transaction completes |
 | Web Lock name | the lock key itself (`efs:…`). Locks are per origin, so they cover every tab and worker |
 
+Nothing is written until a submission: creating the journal, `get`, `unresolved` (so `writer.pending()`) and
+`withLock` never create the database. Reads open it without a version and abort the creating upgrade, so on a fresh
+origin they return nothing and leave `indexedDB.databases()` unchanged. The first `put` creates it, and `put` runs
+only as the write-ahead of a real send. A reader that found nothing still sees a database created later by another
+tab.
+
 Apps keep their own data in **their own database**, under a name that does not start with `efs-sdk-`. Apps never open
 the `efs-sdk-journal` database themselves. An app's Web Lock names do not start with `efs:`. A future SDK version
 that changes this layout raises the database version and migrates. A connection open in another tab is closed on
