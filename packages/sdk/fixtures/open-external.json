@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
   "case": "open-external",
   "note": "openFile on a files-external/1 file with a web3:// locator (docs/remote.txt)",
   "result": {
@@ -26,9 +26,9 @@
     "basis": {
       "chainId": 31337,
       "blockNumber": {
-        "$efs:bigint": "61"
+        "$efs:bigint": "62"
       },
-      "blockHash": "0x6548da6f26f1ec83a971b77ed5ccb260700c2fa8c7692f1bb4f6d02268e07e0a",
+      "blockHash": "0x6ecc7d3f211c2a5698ff60eec46da309d6e7efa54be5a1d5cb0d403efb41f444",
       "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
       "endpoint": "local fixture"
     },
@@ -42,7 +42,7 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 1
+          "ms": 2
         }
       ],
       "requests": 5

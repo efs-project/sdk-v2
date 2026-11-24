@@ -14,7 +14,7 @@ import {
 import { type CallOpts, type Reason, reason } from "../core/errors.js";
 import { type Hex, lower } from "../core/hex.js";
 import { ledgerReadsAbi } from "../generated/abis.js";
-import { STATUS_VOCABULARY_ID } from "../generated/purposes.js";
+import { STATUS_VOCABULARY_ID } from "../generated/constants.js";
 import type { DeploymentInfo } from "./manifest.js";
 
 /** keccak256("eip1967.proxy.implementation") - 1 */

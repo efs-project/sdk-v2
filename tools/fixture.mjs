@@ -18,8 +18,6 @@ function cli(args, timeoutMs) {
   mkdirSync(FIXTURE_HOME, { recursive: true });
   const r = spawnSync(process.execPath, [CLI, ...args, "--home", FIXTURE_HOME], {
     cwd: VENDOR,
-    // deploy-plan.mjs selects its artifact source at import time; point it at the committed release layout.
-    env: { ...process.env, EFS_ARTIFACTS_DIR: "artifacts" },
     encoding: "utf8",
     timeout: timeoutMs,
   });

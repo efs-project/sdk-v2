@@ -3,13 +3,30 @@
 // canonical chunker (efs2/chunking/1). Every body is ABI words, optionally followed by raw bytes.
 import { sha256 } from "viem";
 import { bytesToHex, type Hex, hexToBytes } from "../core/hex.js";
+import { FILES } from "../generated/constants.js";
 import { recordId } from "../protocol/keys.js";
 
-export const FORM = { inline: 0n, content: 1n } as const;
-export const CARRIER = { inlineChunk: 0n, remote: 1n, span: 2n, location: 2n } as const;
-export const HASH_SHA256 = 1n;
+// All from the contracts release (generated/constants.ts), never typed here.
+export const FORM: { readonly inline: bigint; readonly content: bigint } = {
+  inline: BigInt(FILES.form.INLINE),
+  content: BigInt(FILES.form.CONTENT),
+};
+export const CARRIER: {
+  readonly inlineChunk: bigint;
+  readonly remote: bigint;
+  readonly span: bigint;
+  readonly location: bigint;
+} = {
+  inlineChunk: BigInt(FILES.contentCarrier.INLINE),
+  remote: BigInt(FILES.contentCarrier.REMOTE),
+  span: BigInt(FILES.contentCarrier.SPAN),
+  location: BigInt(FILES.externalCarrier.LOCATION),
+};
+export const HASH_SHA256: bigint = BigInt(FILES.hashAlg.SHA256);
+const CONTENT_VERSION = BigInt(FILES.contentVersion);
+const EXTERNAL_VERSION = BigInt(FILES.externalVersion);
 /** Canonical chunk payload (efs2/chunking/1): a 8,192-byte body minus the 32-byte sha256. */
-export const CHUNK_PAYLOAD = 8160;
+export const CHUNK_PAYLOAD: number = FILES.chunkPayload;
 
 const word = (b: Uint8Array, i: number): Hex => bytesToHex(b.subarray(i * 32, i * 32 + 32));
 const uint = (b: Uint8Array, i: number): bigint => BigInt(word(b, i));
@@ -84,7 +101,7 @@ export function decodeExternal(body: Uint8Array): ExternalDescriptor | null {
   const n = Number(uint(body, 6));
   if (
     body.length !== 7 * 32 + n ||
-    uint(body, 1) !== 2n ||
+    uint(body, 1) !== EXTERNAL_VERSION ||
     uint(body, 2) !== CARRIER.location ||
     uint(body, 3) !== HASH_SHA256
   )
@@ -122,11 +139,19 @@ export const encode = {
   span: (left: Hex, right: Hex, length: bigint): Uint8Array => enc(left, right, length),
   /** Plaintext descriptor (version 1, sha256, no cipher): plaintextLength = length, plaintextSha256 = digest. */
   content: (ref: Hex, carrier: bigint, length: bigint, digest: Hex, media = 0n): Uint8Array =>
-    enc(ref, 1n, carrier, HASH_SHA256, length, digest, media, 0n, 0n, length, digest),
+    enc(ref, CONTENT_VERSION, carrier, HASH_SHA256, length, digest, media, 0n, 0n, length, digest),
   external: (sentinel: Hex, length: bigint, digest: Hex, locator: string): Uint8Array => {
     const loc = new Uint8Array([...locator].map((c) => c.charCodeAt(0)));
     return cat(
-      enc(sentinel, 2n, CARRIER.location, HASH_SHA256, length, digest, BigInt(loc.length)),
+      enc(
+        sentinel,
+        EXTERNAL_VERSION,
+        CARRIER.location,
+        HASH_SHA256,
+        length,
+        digest,
+        BigInt(loc.length),
+      ),
       loc,
     );
   },
