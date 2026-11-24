@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Verified byte reads against the fixture's seed: inline, a 3-chunk span tree, and an external web3:// file.
+// Verified byte reads against the fixture's seed: inline, a 3-chunk span tree, and an external web3:// file
+// (more web3:// in web3.test.ts).
 import { readFileSync } from "node:fs";
 import { encodeAbiParameters, keccak256, stringToHex } from "viem";
 import { describe, expect, inject, it } from "vitest";
@@ -60,14 +61,14 @@ describe("byte reads (fixture)", () => {
       expect(part.bytes).toEqual(expected.slice(offset, Math.min(20_000, offset + length)));
     }
   });
-  it("reports an external web3:// location honestly as unsupported, never as content", async () => {
+  it("reads an external web3:// location honestly: the seed's points at the zero address, so it is UNAVAILABLE", async () => {
     const opened = await openFile(efs, { kind: "file", subject: subject("remote.txt") });
     expect(opened.status).toBe("PRESENT");
     if (opened.status !== "PRESENT") return;
     expect(opened.file.layout).toBe("external");
     expect(opened.file.locations[0]?.uri).toMatch(/^web3:\/\//);
     const r = await readBytes(efs, opened.file);
-    expect(r.grade).toBe("UNSUPPORTED_LOCATOR");
+    expect(r.grade).toBe("UNAVAILABLE");
     expect(r.bytes).toBeUndefined();
   });
   it("a file nobody created is ABSENT_PROVEN (the lens reader proved it), never UNKNOWN", async () => {

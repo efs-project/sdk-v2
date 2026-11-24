@@ -30,14 +30,19 @@ import {
   Blocked,
   type ByteGrade,
   type FetchResponse,
+  follow,
   gatewayPolicyOf,
   getChecked,
   type Location,
   type LocationAttempt,
+  locationQueue,
   type OpenedFile,
   originLabel,
+  type QueuedLocation,
+  web3Label,
 } from "./bytes.js";
 import { fileChunks, type StreamFailure } from "./stream.js";
+import { readWeb3 } from "./web3read.js";
 
 export interface UnverifiedOpts extends CallOpts {
   /** Ledger layouts only: bytes fetched per pull (see StreamOpts.windowBytes). */
@@ -251,11 +256,16 @@ export function unverifiedChunks(
   async function* source(): AsyncGenerator<Uint8Array> {
     let sawSupported = false;
     let lastBlocked: ByteGrade = "UNSUPPORTED_LOCATOR";
-    for (const loc of file.locations) {
-      if (!loc.uri) continue;
-      const plan = planLocator(loc.uri, policy);
+    const queue = locationQueue(file);
+    for (let qi = 0; qi < queue.length; qi++) {
+      const { loc, uri, hops } = queue[qi] as QueuedLocation;
+      const plan = planLocator(uri, policy);
       if (!plan.ok) {
-        attempts.push({ location: plan.origin ?? loc.scheme, outcome: "FAILED", detail: plan.why });
+        attempts.push({
+          location: plan.origin ?? loc.scheme,
+          outcome: "FAILED",
+          detail: plan.detail ? `${plan.why}: ${plan.detail}` : plan.why,
+        });
         if (plan.why === "POLICY_BLOCKED") {
           lastBlocked = "POLICY_BLOCKED";
           blocked.note(plan);
@@ -272,6 +282,34 @@ export function unverifiedChunks(
         if (!ok) continue;
         yield plan.inline;
         finish({ grade: "VERIFIED", emitted: BigInt(plan.inline.length), location: loc, attempts });
+        return;
+      }
+      if ("web3" in plan) {
+        // Chunks of a web3:// file come through the client's own RPC, already bounded; verify, then emit (nothing
+        // is emitted before it verifies, so failing over is still honest).
+        throwIfAborted(o.signal);
+        const label = web3Label(plan.web3);
+        const out = await readWeb3(
+          efs,
+          plan.web3,
+          { size: file.size, max: file.size },
+          signal ? { signal } : {},
+        );
+        if (out.kind === "REDIRECT") {
+          follow(queue, qi, out.location, plan.web3, loc, hops, attempts, label);
+          continue;
+        }
+        if (out.kind === "FAILED") {
+          attempts.push({ location: label, outcome: out.outcome, detail: out.detail });
+          continue;
+        }
+        const ok =
+          BigInt(out.bytes.length) === file.size &&
+          toHex(sha256Hasher(out.bytes)) === file.sha256.toLowerCase();
+        attempts.push({ location: label, outcome: ok ? "VERIFIED" : "MISMATCH" });
+        if (!ok) continue;
+        yield out.bytes;
+        finish({ grade: "VERIFIED", emitted: BigInt(out.bytes.length), location: loc, attempts });
         return;
       }
       for (const url of plan.urls) {

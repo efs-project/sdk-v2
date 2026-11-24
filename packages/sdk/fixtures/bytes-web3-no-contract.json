@@ -1,0 +1,31 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
+  "case": "bytes-web3-no-contract",
+  "note": "readBytes on the seed's web3:// file, whose locator names the zero address: UNAVAILABLE (no contract)",
+  "result": {
+    "kind": "efs.bytes.range",
+    "offset": {
+      "$efs:bigint": "0"
+    },
+    "length": {
+      "$efs:bigint": "51"
+    },
+    "grade": "UNAVAILABLE",
+    "attempts": [
+      {
+        "location": "web3://0x0000000000000000000000000000000000000000:31337",
+        "outcome": "FAILED",
+        "detail": "no contract at 0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "reason": {
+      "code": "GATEWAY_UNAVAILABLE",
+      "retry": "transient"
+    },
+    "evidence": {
+      "attempts": [],
+      "requests": 0
+    }
+  }
+}

@@ -102,12 +102,39 @@ describe.runIf(RECORD)("record fixtures", () => {
       "openFile on a files-external/1 file with a web3:// locator (docs/remote.txt)",
       ext,
     );
-    if (ext.status === "PRESENT")
+    if (ext.status === "PRESENT") {
       save(
-        "bytes-external-unsupported",
-        "readBytes on the web3:// file (no gateway yet)",
+        "bytes-web3-no-contract",
+        "readBytes on the seed's web3:// file, whose locator names the zero address: UNAVAILABLE (no contract)",
         await readBytes(efs, ext.file),
       );
+      const seedUrl = (deployment as unknown as { readers: { web3Gateway: { seedUrl: string } } })
+        .readers.web3Gateway.seedUrl;
+      const big = deployment.seed.files.find((f) => f.name === "big.bin") as unknown as {
+        length: number;
+        sha256: Hex;
+      };
+      save(
+        "bytes-web3-verified",
+        "readBytes on a web3:// location served by the fixture's EfsWeb3Gateway (3 chunks): VERIFIED",
+        await readBytes(efs, {
+          ...ext.file,
+          size: BigInt(big.length),
+          sha256: big.sha256,
+          locations: [{ scheme: "web3", uri: `${seedUrl}docs/big.bin` }],
+        }),
+      );
+      save(
+        "bytes-external-unsupported",
+        "readBytes on a web3:// location on another chain (the client has RPC endpoints for its own chain only)",
+        await readBytes(efs, {
+          ...ext.file,
+          locations: [
+            { scheme: "web3", uri: `${seedUrl.replace(/:\d+\//, ":1/")}docs/remote.txt` },
+          ],
+        }),
+      );
+    }
 
     // External https locations through injected gateways (synthetic locations; the real verification path).
     const text = new TextEncoder().encode("hello from a gateway\n");
