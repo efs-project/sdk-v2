@@ -1,0 +1,35 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
+  "case": "bytes-external-blocked",
+  "note": "readBytes on an https location with the default policy: POLICY_BLOCKED, naming the origin (offer allowOrigins)",
+  "result": {
+    "kind": "efs.bytes.range",
+    "offset": {
+      "$efs:bigint": "0"
+    },
+    "length": {
+      "$efs:bigint": "21"
+    },
+    "grade": "POLICY_BLOCKED",
+    "attempts": [
+      {
+        "location": "https://files.example",
+        "outcome": "FAILED",
+        "detail": "POLICY_BLOCKED"
+      }
+    ],
+    "reason": {
+      "code": "POLICY_BLOCKED",
+      "retry": "never",
+      "detail": "blocked by the gateway policy: https://files.example: allow once with { allowOrigins: [\"https://files.example\"] }, or always with gateways.allowSchemes including \"https\""
+    },
+    "blockedOrigins": [
+      "https://files.example"
+    ],
+    "evidence": {
+      "attempts": [],
+      "requests": 0
+    }
+  }
+}

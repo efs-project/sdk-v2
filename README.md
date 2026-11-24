@@ -3,16 +3,16 @@
 Software development kits for **EFS v2**, the Ethereum File System, for browser and server
 JavaScript/TypeScript, for Solidity contracts, and later for native applications and agents.
 
-> **Status: pre-alpha: repository initialization only.** There is no usable SDK yet. Both packages
-> are private and unpublished, and their only contents are placeholders listed in
-> [`LIMITATIONS.md`](LIMITATIONS.md). This README describes the intended shape so contributors
-> can find their way around.
+> **Status: EFS SDK 0.1 in development.** `@efs/sdk` pins deployments, reads and streams verified files,
+> writes exactly once through a durable journal, and parses links. See [`packages/sdk/README.md`](packages/sdk/README.md)
+> for a quick start and [`LIMITATIONS.md`](LIMITATIONS.md) for what is missing. Both packages are private and
+> unpublished.
 
-## Planned install paths (none available yet)
+## Install paths (none published yet)
 
 | You are building… | You will install | Status |
 | --- | --- | --- |
-| A browser app, Worker, server or script | `@efs/sdk` (portable ESM; one package, subpath entry points) | planned |
+| A browser app, Worker, server or script | `@efs/sdk` (portable ESM; one package, subpath entry points) | in development (0.1) |
 | A Solidity contract that reads or writes EFS | `@efs/solidity` source (npm), a release archive, or a git tag; compiled into your contract | planned |
 | A CLI or an MCP-speaking agent | `@efs/cli`, `@efs/mcp` | planned |
 | A native application | the Node service, CLI or MCP server first; other options only for a measured need | planned |

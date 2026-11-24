@@ -2,7 +2,7 @@
   "schema": "efs-sdk-fixture/1",
   "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
   "case": "bytes-external-verified",
-  "note": "readBytes on an https location serving the right bytes",
+  "note": "readBytes on an https location serving the right bytes (https allowed)",
   "result": {
     "kind": "efs.bytes.range",
     "offset": {

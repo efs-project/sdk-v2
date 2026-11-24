@@ -1,0 +1,33 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
+  "case": "bytes-external-allowed-once",
+  "note": "readBytes with { allowOrigins: ['https://files.example'] } under the default policy: VERIFIED",
+  "result": {
+    "kind": "efs.bytes.range",
+    "offset": {
+      "$efs:bigint": "0"
+    },
+    "length": {
+      "$efs:bigint": "21"
+    },
+    "grade": "VERIFIED",
+    "bytes": {
+      "$efs:bytes": "68656c6c6f2066726f6d206120676174657761790a"
+    },
+    "location": {
+      "scheme": "https",
+      "uri": "https://files.example/hello.txt"
+    },
+    "attempts": [
+      {
+        "location": "https://files.example",
+        "outcome": "VERIFIED"
+      }
+    ],
+    "evidence": {
+      "attempts": [],
+      "requests": 0
+    }
+  }
+}

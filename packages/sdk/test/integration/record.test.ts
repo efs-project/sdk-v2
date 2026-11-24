@@ -120,10 +120,36 @@ describe.runIf(RECORD)("record fixtures", () => {
       layout: "external",
       locations: [{ scheme: "https", uri: "https://files.example/hello.txt" }],
     };
-    const via = (fetch: FetchLike) => createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch });
+    // Publisher https:// is off by default (privacy): these record what an app with https allowed sees.
+    const via = (fetch: FetchLike) =>
+      createEfs({
+        rpcs: [fixture.rpcUrl],
+        deployment,
+        fetch,
+        gateways: { allowSchemes: ["https", "ipfs", "ar", "data"] },
+      });
+    save(
+      "bytes-external-blocked",
+      "readBytes on an https location with the default policy: POLICY_BLOCKED, naming the origin (offer allowOrigins)",
+      await readBytes(
+        createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: gateway(text) }),
+        file,
+      ),
+    );
+    save(
+      "bytes-external-allowed-once",
+      "readBytes with { allowOrigins: ['https://files.example'] } under the default policy: VERIFIED",
+      await readBytes(
+        createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: gateway(text) }),
+        file,
+        {
+          allowOrigins: ["https://files.example"],
+        },
+      ),
+    );
     save(
       "bytes-external-verified",
-      "readBytes on an https location serving the right bytes",
+      "readBytes on an https location serving the right bytes (https allowed)",
       await readBytes(via(gateway(text)), file),
     );
     save(
@@ -138,8 +164,8 @@ describe.runIf(RECORD)("record fixtures", () => {
     );
     save(
       "bytes-policy-blocked",
-      "readBytes on a plain http:// location (blocked by default)",
-      await readBytes(efs, {
+      "readBytes on a plain http:// location (blocked even with https allowed)",
+      await readBytes(via(gateway(text)), {
         ...file,
         locations: [{ scheme: "http", uri: "http://files.example/hello.txt" }],
       }),

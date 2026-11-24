@@ -16,9 +16,13 @@ import {
   decodeSpan,
 } from "../content/codec.js";
 import {
+  type BlockRule,
+  blockAdvice,
   checkHttpUrl,
   DEFAULT_GATEWAYS,
   type GatewayPolicy,
+  normalizeOrigin,
+  originOfUrl,
   planLocator,
 } from "../content/locator.js";
 import { type LedgerRecord, readRecords } from "../content/records.js";
@@ -111,6 +115,12 @@ export interface ByteRangeResult {
   location?: Location;
   attempts: readonly LocationAttempt[];
   reason?: Reason;
+  /**
+   * Origins blocked only because their scheme is not allowed, i.e. exactly the ones `allowOrigins` can unblock for
+   * one call: each can become a "Load from <origin>" button. Present whenever there are any and the bytes are not
+   * VERIFIED. Every blocked location, with the option that would allow it, is named in `reason`.
+   */
+  blockedOrigins?: readonly string[];
   evidence: Evidence;
 }
 
@@ -399,6 +409,13 @@ export async function openFile(
 export interface BytesOpts extends CallOpts {
   /** Refuse files larger than this (default 50 MiB). */
   maxBytes?: bigint;
+  /**
+   * Exact origins (`https://host[:port]`) to allow for this call only, even when the client's policy blocks their
+   * scheme: the "Load from example.com" button. A location is allowed iff its URL has exactly one of these origins,
+   * and a fetch allowed this way never follows a redirect to another origin. Bytes are verified as usual. Entries
+   * with a path, credentials, http (without allowInsecureHttp) or a private host (without allowPrivateHosts) are MISUSE.
+   */
+  allowOrigins?: readonly string[];
 }
 
 /** Bounds on a span walk, independent of the sizes the tree declares. */
@@ -560,14 +577,42 @@ const inBrowser = (): boolean =>
   typeof (globalThis as { document?: unknown }).document !== "undefined";
 
 /** @internal The gateway policy in force for this client. */
-export function gatewayPolicyOf(efs: Efs): GatewayPolicy {
-  return {
+export function gatewayPolicyOf(efs: Efs, allowOrigins?: readonly string[]): GatewayPolicy {
+  const base: GatewayPolicy = {
     ipfs: efs.gateways.ipfs ?? DEFAULT_GATEWAYS.ipfs,
     arweave: efs.gateways.arweave ?? DEFAULT_GATEWAYS.arweave,
     allowSchemes: efs.gateways.allowSchemes ?? DEFAULT_GATEWAYS.allowSchemes,
     allowInsecureHttp: efs.gateways.allowInsecureHttp ?? false,
     allowPrivateHosts: efs.gateways.allowPrivateHosts ?? false,
   };
+  if (!allowOrigins?.length) return base;
+  const origins = allowOrigins.map((entry) => {
+    const n = normalizeOrigin(entry, base);
+    if (typeof n !== "string")
+      throw new EfsFault("MISUSE", `allowOrigins entry ${JSON.stringify(entry)} ${n.refused}`);
+    return n;
+  });
+  return { ...base, allowOrigins: origins };
+}
+
+/** @internal Blocked locations seen during one read: their advice, and the origins allowOrigins could unblock. */
+export class Blocked {
+  private readonly seen = new Map<string, string>();
+  readonly origins: string[] = [];
+  note(plan: { scheme: string; origin?: string; rule?: BlockRule }): void {
+    const label = plan.origin ?? plan.scheme;
+    if (!plan.rule || this.seen.has(label)) return;
+    this.seen.set(label, blockAdvice(label, plan.scheme, plan.rule));
+    if (plan.rule === "scheme" && plan.origin) this.origins.push(plan.origin);
+  }
+  /** The POLICY_BLOCKED reason: every blocked location and the exact option that would allow it. */
+  reason(): Reason {
+    return reason(
+      "POLICY_BLOCKED",
+      "never",
+      `blocked by the gateway policy: ${[...this.seen.values()].join("; ")}`,
+    );
+  }
 }
 
 /** @internal */
@@ -585,14 +630,19 @@ export async function getChecked(
   policy: GatewayPolicy,
   signal: AbortSignalLike | undefined,
   timeout: Promise<never>,
+  sameOriginOnly = false,
 ): Promise<FetchResponse> {
   const follow = inBrowser();
+  // Allowed only through allowOrigins: no other origin may ever see the request. A browser cannot be told "same
+  // origin only", so it refuses every redirect; elsewhere each hop must keep the exact origin.
+  const mode = follow ? (sameOriginOnly ? "error" : "follow") : "manual";
+  const start = sameOriginOnly ? originOfUrl(url) : null;
   const get = (u: string) =>
     Promise.race([
       fetchImpl(u, {
         method: "GET",
         headers: {},
-        redirect: follow ? "follow" : "manual",
+        redirect: mode,
         ...(signal ? { signal } : {}),
       }),
       timeout,
@@ -608,6 +658,7 @@ export async function getChecked(
     const next = res.headers.get("location");
     const target = next ? resolveUrl(next, url) : null;
     if (!target) break;
+    if (start !== null && originOfUrl(target) !== start) break; // a granted origin never redirects elsewhere
     const trusted = withinGateway(gateway, originOf(target));
     if (checkHttpUrl(target, trusted ? gatewayPolicy : policy) !== "ok") break;
     res = await get(target);
@@ -630,9 +681,11 @@ export async function fetchExternal(
   location?: Location;
   attempts: LocationAttempt[];
   reason?: Reason;
+  blockedOrigins?: string[];
 }> {
   const attempts: LocationAttempt[] = [];
-  const policy = gatewayPolicyOf(efs);
+  const blocked = new Blocked();
+  const policy = gatewayPolicyOf(efs, o.allowOrigins);
   const max = o.maxBytes ?? efs.gateways.maxBytes ?? 50n * 1024n * 1024n;
   if (file.size > max)
     return {
@@ -647,8 +700,11 @@ export async function fetchExternal(
     if (!loc.uri) continue;
     const plan = planLocator(loc.uri, policy);
     if (!plan.ok) {
-      attempts.push({ location: loc.scheme, outcome: "FAILED", detail: plan.why });
-      if (plan.why === "POLICY_BLOCKED") lastBlocked = "POLICY_BLOCKED";
+      attempts.push({ location: plan.origin ?? loc.scheme, outcome: "FAILED", detail: plan.why });
+      if (plan.why === "POLICY_BLOCKED") {
+        lastBlocked = "POLICY_BLOCKED";
+        blocked.note(plan);
+      }
       continue;
     }
     sawSupported = true;
@@ -672,7 +728,15 @@ export async function fetchExternal(
         const timeout = new Promise<never>((_, reject) => {
           timer = setTimer(() => reject(new Error("timeout")), efs.gateways.timeoutMs ?? 10_000);
         });
-        const res = await getChecked(fetchImpl, url, plan.scheme, policy, o.signal, timeout);
+        const res = await getChecked(
+          fetchImpl,
+          url,
+          plan.scheme,
+          policy,
+          o.signal,
+          timeout,
+          plan.originGrant === true,
+        );
         if (!res.ok) {
           attempts.push({ location: origin, outcome: "FAILED", detail: `HTTP ${res.status}` });
           continue;
@@ -705,12 +769,16 @@ export async function fetchExternal(
       }
     }
   }
-  if (!sawSupported) return { grade: lastBlocked, attempts };
+  if (!sawSupported)
+    return lastBlocked === "POLICY_BLOCKED"
+      ? { grade: lastBlocked, attempts, reason: blocked.reason(), blockedOrigins: blocked.origins }
+      : { grade: lastBlocked, attempts };
   const anyMismatch = attempts.some((a) => a.outcome === "MISMATCH");
   return {
     grade: anyMismatch ? "MISMATCH" : "UNAVAILABLE",
     attempts,
     reason: reason(anyMismatch ? "DIGEST_MISMATCH" : "GATEWAY_UNAVAILABLE", "transient"),
+    ...(blocked.origins.length ? { blockedOrigins: blocked.origins } : {}),
   };
 }
 
@@ -815,6 +883,7 @@ export async function readRange(
         grade: got.grade,
         attempts: got.attempts,
         ...(got.reason ? { reason: got.reason } : {}),
+        ...(got.blockedOrigins?.length ? { blockedOrigins: got.blockedOrigins } : {}),
         evidence,
       };
     return {

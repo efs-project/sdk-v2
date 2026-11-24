@@ -58,6 +58,7 @@ describe("streamUnverified (browser)", () => {
       deployment,
       fetch: (async () =>
         new Response(text, { headers: { "content-length": String(text.length) } })) as never,
+      gateways: { allowSchemes: ["https", "ipfs", "ar", "data"] },
     });
     const { stream, result } = streamUnverified(efs, {
       file: `0x${"01".repeat(32)}` as SubjectId,

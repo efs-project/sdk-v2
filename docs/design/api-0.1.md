@@ -420,6 +420,21 @@ export interface ChangeResult {
 }
 ```
 
+### Gateway policy and publisher locations (0.1)
+
+The default `gateways.allowSchemes` is `["ipfs", "ar", "data"]`: a publisher's `https://` location is fetched only
+when the app allows it. The reason is that the author chose that server, and it sees the reader's IP address.
+- `gateways.allowSchemes` including `"https"` allows such locations for the whole client.
+- `allowOrigins: ["https://host[:port]"]` on `readBytes`, `readRange`, `fileChunks`, `streamFile`,
+  `streamUnverified` and `unverifiedChunks` allows exact origins for one call. A fetch allowed that way never
+  follows a redirect to another origin (each hop is checked outside browsers; `redirect: "error"` in browsers).
+  Entries with a path, credentials, http (without `allowInsecureHttp`) or a private host (without
+  `allowPrivateHosts`) are MISUSE.
+- Blocked locations: `blockedOrigins` lists the origins `allowOrigins` can unblock, and `reason.detail` names every
+  blocked location with the option that would allow it (`allowOrigins`, `gateways.allowSchemes`,
+  `gateways.allowInsecureHttp`, `gateways.allowPrivateHosts`; credentials never). Stream failures carry the same
+  `blockedOrigins`.
+
 ## 6. Caches (passed in by the caller; async, so IndexedDB can back them later)
 
 ```ts

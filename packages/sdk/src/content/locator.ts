@@ -8,24 +8,61 @@ import { utf8Encode } from "../core/platform.js";
 export interface GatewayPolicy {
   ipfs: readonly string[];
   arweave: readonly string[];
-  /** Schemes that may be fetched at all. */
+  /**
+   * Schemes that may be fetched at all. The default leaves out https: a publisher's https:// location is a server
+   * the file's author chose, and it sees the reader's IP address. Apps opt in with `gateways.allowSchemes`, or per
+   * call with `allowOrigins`.
+   */
   allowSchemes: readonly string[];
   allowInsecureHttp: boolean;
   /** Allow locators that name private, loopback, link-local or metadata hosts (off by default). */
   allowPrivateHosts: boolean;
+  /** Exact origins allowed for one call even when their scheme is not (normalized; see normalizeOrigin). */
+  allowOrigins?: readonly string[];
 }
 export const DEFAULT_GATEWAYS: GatewayPolicy = {
   ipfs: ["https://ipfs.io", "https://dweb.link", "https://trustless-gateway.link"],
   arweave: ["https://arweave.net", "https://ar-io.net"],
-  allowSchemes: ["https", "ipfs", "ar", "data"],
+  allowSchemes: ["ipfs", "ar", "data"],
   allowInsecureHttp: false,
   allowPrivateHosts: false,
 };
 
 export type LocatorPlan =
-  | { ok: true; scheme: string; urls: readonly string[] }
+  /** `originGrant`: allowed only through `allowOrigins`, so redirects must keep this exact origin. */
+  | { ok: true; scheme: string; urls: readonly string[]; originGrant?: true }
   | { ok: true; scheme: "data"; inline: Uint8Array }
-  | { ok: false; scheme: string; why: "UNSUPPORTED_LOCATOR" | "POLICY_BLOCKED" | "MALFORMED" };
+  | {
+      ok: false;
+      scheme: string;
+      why: "UNSUPPORTED_LOCATOR" | "POLICY_BLOCKED" | "MALFORMED";
+      /** For a blocked http(s) location: its origin, so the app can name it and offer to allow it. */
+      origin?: string;
+      /** Why the policy blocked it, which decides the option that would allow it (see blockAdvice). */
+      rule?: BlockRule;
+    };
+
+/**
+ * Why the gateway policy blocked a location. Only `scheme` can be lifted for one call (allowOrigins, http(s) only);
+ * the others are client-wide settings, or (credentials) never.
+ */
+export type BlockRule = "scheme" | "insecure-http" | "private-host" | "credentials";
+
+/** The exact option that would allow a blocked location, in words a developer can act on. */
+export function blockAdvice(label: string, scheme: string, rule: BlockRule): string {
+  switch (rule) {
+    case "scheme":
+      return label.includes("://")
+        ? `${label}: allow once with { allowOrigins: ["${label}"] }, or always with gateways.allowSchemes including "${scheme}"`
+        : `${label}: allow with gateways.allowSchemes including "${scheme}"`;
+    case "insecure-http":
+      return `${label}: plain http needs gateways.allowInsecureHttp`;
+    case "private-host":
+      return `${label}: a private or local host needs gateways.allowPrivateHosts`;
+    case "credentials":
+      return `${label}: a URL carrying credentials is never fetched`;
+  }
+}
 
 const trim = (gw: string): string => gw.replace(/\/+$/, "");
 /** CIDv0 (base58btc "Qm…", 46 chars) or CIDv1 in base32 lowercase ("b…"). */
@@ -63,6 +100,8 @@ type ParsedUrl = {
   username: string;
   password: string;
   hostname: string;
+  /** hostname plus a non-default port */
+  host: string;
   href: string;
 };
 /** The platform's WHATWG URL parser: the same parser fetch() uses, so validation and fetching never disagree. */
@@ -74,6 +113,34 @@ function parseUrl(url: string): ParsedUrl | null {
   } catch {
     return null;
   }
+}
+
+/** The exact origin of an http(s) URL (scheme, host, port; default ports elided), or null. */
+export function originOfUrl(url: string): string | null {
+  const u = parseUrl(url);
+  if (!u || (u.protocol !== "https:" && u.protocol !== "http:")) return null;
+  return `${u.protocol}//${u.host}`.toLowerCase();
+}
+
+/**
+ * Normalize an `allowOrigins` entry, or say why it is refused: it must be exactly an origin (no path, query,
+ * fragment or credentials), https unless insecure http is allowed, and not a private host unless those are allowed.
+ */
+export function normalizeOrigin(
+  entry: string,
+  policy: GatewayPolicy,
+): string | { refused: string } {
+  if (/[\\\s]/.test(entry)) return { refused: "contains a backslash or whitespace" };
+  const u = parseUrl(entry);
+  if (!u || (u.protocol !== "https:" && u.protocol !== "http:"))
+    return { refused: "not an http(s) origin" };
+  if (u.protocol === "http:" && !policy.allowInsecureHttp)
+    return { refused: "http origins need gateways.allowInsecureHttp" };
+  if (u.username !== "" || u.password !== "") return { refused: "contains credentials" };
+  if (!/^[a-z]+:\/\/[^/?#]+\/?$/i.test(entry)) return { refused: "has a path, query or fragment" };
+  if (!policy.allowPrivateHosts && isPrivateHost(u.hostname))
+    return { refused: "a private host needs gateways.allowPrivateHosts" };
+  return `${u.protocol}//${u.host}`.toLowerCase();
 }
 
 function privateV4(a: number, b: number): boolean {
@@ -169,15 +236,33 @@ export function planLocator(locator: string, policy: GatewayPolicy): LocatorPlan
   if (!m) return { ok: false, scheme: "", why: "MALFORMED" };
   const scheme = (m[1] as string).toLowerCase();
   const rest = m[2] as string;
-  if (!policy.allowSchemes.includes(scheme)) {
-    const known = ["https", "http", "ipfs", "ar", "data"].includes(scheme);
-    return { ok: false, scheme, why: known ? "POLICY_BLOCKED" : "UNSUPPORTED_LOCATOR" };
-  }
   if (scheme === "https" || scheme === "http") {
     const verdict = checkHttpUrl(locator, policy);
-    return verdict === "ok"
-      ? { ok: true, scheme, urls: [locator] }
-      : { ok: false, scheme, why: verdict };
+    if (verdict === "MALFORMED") return { ok: false, scheme, why: "MALFORMED" };
+    const u = parseUrl(locator) as ParsedUrl;
+    const origin = `${u.protocol}//${u.host}`.toLowerCase();
+    const granted = (policy.allowOrigins ?? []).includes(origin);
+    const schemeAllowed = policy.allowSchemes.includes(scheme);
+    const rule: BlockRule | null =
+      u.username !== "" || u.password !== ""
+        ? "credentials"
+        : u.protocol === "http:" && !policy.allowInsecureHttp
+          ? "insecure-http"
+          : !policy.allowPrivateHosts && isPrivateHost(u.hostname)
+            ? "private-host"
+            : !schemeAllowed && !granted
+              ? "scheme"
+              : null;
+    if (rule) return { ok: false, scheme, why: "POLICY_BLOCKED", origin, rule };
+    return granted && !schemeAllowed
+      ? { ok: true, scheme, urls: [locator], originGrant: true }
+      : { ok: true, scheme, urls: [locator] };
+  }
+  if (!policy.allowSchemes.includes(scheme)) {
+    const known = ["ipfs", "ar", "data"].includes(scheme);
+    return known
+      ? { ok: false, scheme, why: "POLICY_BLOCKED", rule: "scheme" }
+      : { ok: false, scheme, why: "UNSUPPORTED_LOCATOR" };
   }
   if (scheme === "ipfs" || scheme === "ar") {
     const body = rest.replace(/^\/\//, "");
