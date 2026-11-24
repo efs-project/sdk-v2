@@ -124,6 +124,12 @@ if (!check) {
   // Clean exhaustively: anything in src/ that is neither generated here nor allow-listed goes.
   for (const f of walkSrc())
     if (!(f in out) && !HAND_WRITTEN.has(f)) rmSync(join(PKG, f), { force: true });
+  const prune = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true }))
+      if (e.isDirectory()) prune(join(dir, e.name));
+    if (dir !== join(PKG, "src") && readdirSync(dir).length === 0) rmSync(dir, { recursive: true });
+  };
+  if (existsSync(join(PKG, "src"))) prune(join(PKG, "src"));
   rmSync(join(PKG, "test/generated"), { recursive: true, force: true });
 }
 for (const [rel, bytes] of Object.entries(out)) {
