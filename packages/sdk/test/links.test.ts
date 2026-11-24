@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Object and revision links: canonical, fragment-safe, never mistaken for a path.
 import { describe, expect, it } from "vitest";
-import type { RecordId, SubjectId } from "../src/core/hex.ts";
+import type { PrincipalId, RecordId, SubjectId } from "../src/core/hex.ts";
 import { link, parseLink } from "../src/names/links.ts";
 import { checkName } from "../src/names/name.ts";
 
 const S = `0x${"ab".repeat(32)}` as SubjectId;
 const R = `0x${"0c".repeat(32)}` as RecordId;
+const A = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc"; // an account
+const KEY = `0x${"0".repeat(24)}${A.slice(2)}` as PrincipalId; // its key principal
+const CONTRACT = `0x${"5e".repeat(32)}` as PrincipalId; // a contract principal (not address-shaped)
 
 describe("links", () => {
   it("formats objects and revisions canonically, from link targets or file refs", () => {
@@ -45,6 +48,27 @@ describe("links", () => {
     expect(parseLink(`%7Eefs%2Fo%2F${S}`)).toEqual({ status: "INVALID", rule: "reserved-name" });
   });
 
+  it("carries an ordered Lens on object links: accounts as addresses, other principals as ids", () => {
+    const target = { kind: "object" as const, subject: S, lens: { principals: [KEY, CONTRACT] } };
+    const l = link(target);
+    expect(l).toBe(`~efs/o/${S}?lens=${A},${CONTRACT}`);
+    expect(parseLink(l)).toEqual({ status: "OK", target, canonical: l });
+    const url = new URL(`https://app.example/#/r/sepolia/${l}`);
+    expect(parseLink(url.hash.slice("#/r/sepolia/".length))).toEqual(parseLink(l));
+    // encodeURIComponent'd commas decode once to the same Lens
+    expect(parseLink(`~efs/o/${S}?lens=${encodeURIComponent(`${A},${CONTRACT}`)}`)).toEqual(
+      parseLink(l),
+    );
+    expect(() =>
+      link({ kind: "revision", recordId: R, lens: { principals: [KEY] } } as never),
+    ).not.toThrow();
+    expect(link({ kind: "revision", recordId: R, lens: { principals: [KEY] } } as never)).toBe(
+      `~efs/v/${R}`,
+    );
+    expect(() => link({ ...target, lens: { principals: [KEY, KEY] } })).toThrow(/once/);
+    expect(() => link({ ...target, lens: { principals: [] } })).toThrow(/1 to 64/);
+  });
+
   it("never mistakes a path for a link, nor a link for a path", () => {
     expect(parseLink("docs/readme.txt")).toEqual({ status: "UNSUPPORTED", kind: "path" });
     expect(parseLink(`o/${S}`)).toEqual({ status: "UNSUPPORTED", kind: "path" }); // a root folder named "o"
@@ -65,6 +89,12 @@ describe("links", () => {
     expect(rule(`~efs/o/${S}/extra`)).toBe("bad-id");
     expect(rule("~efs/o/0x1234")).toBe("bad-id");
     expect(rule("~efs/o")).toBe("bad-id");
-    expect(rule(`~efs/o/${S}?lens=0x1`)).toBe("unsupported-parameter");
+    expect(rule(`~efs/v/${R}?lens=${A}`)).toBe("unsupported-parameter"); // a revision needs no Lens
+    expect(rule(`~efs/o/${S}?view=1`)).toBe("unsupported-parameter");
+    expect(rule(`~efs/o/${S}?lens=${A}&x=1`)).toBe("unsupported-parameter");
+    expect(rule(`~efs/o/${S}?lens=0x1`)).toBe("bad-lens");
+    expect(rule(`~efs/o/${S}?lens=`)).toBe("bad-lens");
+    expect(rule(`~efs/o/${S}?lens=${A},${A}`)).toBe("bad-lens");
+    expect(rule(`~efs/o/${S}?lens=alice.eth,${A}`)).toBe("lens-name-unsupported");
   });
 });
