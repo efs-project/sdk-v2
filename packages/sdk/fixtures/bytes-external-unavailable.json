@@ -1,0 +1,31 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "bytes-external-unavailable",
+  "note": "readBytes on an https location answering 404",
+  "result": {
+    "kind": "efs.bytes.range",
+    "offset": {
+      "$efs:bigint": "0"
+    },
+    "length": {
+      "$efs:bigint": "21"
+    },
+    "grade": "UNAVAILABLE",
+    "attempts": [
+      {
+        "location": "https://files.example",
+        "outcome": "FAILED",
+        "detail": "HTTP 404"
+      }
+    ],
+    "reason": {
+      "code": "GATEWAY_UNAVAILABLE",
+      "retry": "transient"
+    },
+    "evidence": {
+      "attempts": [],
+      "requests": 0
+    }
+  }
+}

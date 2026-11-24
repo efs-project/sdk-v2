@@ -15,8 +15,9 @@ const PACKAGES = {
   sdk: {
     dir: "packages/sdk",
     allowed: (p) =>
-      /^(package\.json|README\.md|LICENSE|dist\/.+|src\/.+\.ts)$/.test(p) &&
-      !p.endsWith(".test.ts"),
+      /^(package\.json|README\.md|LICENSE|protocol-inputs\.json|fixtures\/[a-z0-9-]+\.json|dist\/.+|src\/.+\.ts)$/.test(
+        p,
+      ) && !p.endsWith(".test.ts"),
   },
   solidity: {
     dir: "packages/solidity/src",

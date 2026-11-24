@@ -1,0 +1,34 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "open-absent",
+  "note": "openFile on a file subject nobody created",
+  "result": {
+    "kind": "efs.open",
+    "status": "ABSENT_PROVEN",
+    "basis": {
+      "chainId": 31337,
+      "blockNumber": {
+        "$efs:bigint": "61"
+      },
+      "blockHash": "0xf9b264dc2de5c7002da9924f4aa227ca5970202311d3ead44c248abfa48fb374",
+      "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
+      "endpoint": "local fixture"
+    },
+    "evidence": {
+      "attempts": [
+        {
+          "endpoint": "local fixture",
+          "outcome": "OK",
+          "ms": 3
+        },
+        {
+          "endpoint": "local fixture",
+          "outcome": "OK",
+          "ms": 1
+        }
+      ],
+      "requests": 3
+    }
+  }
+}

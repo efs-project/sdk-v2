@@ -1,0 +1,24 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "reconcile-committed",
+  "note": "writer.reconcile() after the lost response",
+  "result": {
+    "kind": "efs.reconcile",
+    "planId": "0x7de26cd80022611f7e2f4f1d498adce1b65d4ca1827e0944f97dccb074e36722",
+    "outcome": "COMMITTED",
+    "final": false,
+    "publication": {
+      "$efs:bigint": "7"
+    },
+    "basis": {
+      "chainId": 31337,
+      "blockNumber": {
+        "$efs:bigint": "62"
+      },
+      "blockHash": "0x59d8f5ef8fc621a289806e346f698ffa8f98378b881249980de5d0486d26f0f4",
+      "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
+      "endpoint": "local fixture"
+    }
+  }
+}

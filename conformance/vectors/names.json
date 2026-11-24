@@ -1,0 +1,508 @@
+{
+ "schema": "efs-sdk-conformance/names/1",
+ "source": "planning Reviews/2026-09-26-efs-v2-naming-reconciliation/experiment/vectors.mjs (independent JS oracle, Node v24.11.0); fields v2 = files-name/2 validity, wire/display = path segment forms, role = keccak256(utf8)",
+ "vectors": [
+  {
+   "name": "readme.txt",
+   "note": "plain ASCII",
+   "hex": "0x726561646d652e747874",
+   "bytes": 10,
+   "v2": true,
+   "role": "0x31f491635b16d6fb45a7d770fcbcc8cbb6eae32ac98ab622631f4bc4a8c7e9ce",
+   "wire": "readme.txt",
+   "display": "readme.txt",
+   "nfc": true
+  },
+  {
+   "name": "Report.TXT",
+   "note": "case pair (with report.txt)",
+   "hex": "0x5265706f72742e545854",
+   "bytes": 10,
+   "v2": true,
+   "role": "0x36810084e09fd082065e1587a57a381b51c77bbb6ee74db5981e5b46b0fa4642",
+   "wire": "Report.TXT",
+   "display": "Report.TXT",
+   "nfc": true
+  },
+  {
+   "name": "report.txt",
+   "note": "case pair",
+   "hex": "0x7265706f72742e747874",
+   "bytes": 10,
+   "v2": true,
+   "role": "0x143801f1f10abf0e6876c8219bfd3c94b8a26e3b604b5ae3c46d383d7a864f70",
+   "wire": "report.txt",
+   "display": "report.txt",
+   "nfc": true
+  },
+  {
+   "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "note": "255 ASCII bytes",
+   "hex": "0x616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+   "bytes": 255,
+   "v2": true,
+   "role": "0xd44e86b57c34f27dd6e59f94c47033054a745cb3266556066ea4bf687c70a568",
+   "wire": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "display": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "nfc": true
+  },
+  {
+   "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "note": "256 bytes: too long",
+   "hex": "0x61616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+   "bytes": 256,
+   "v2": false,
+   "role": "0x1daa7034adab66d9ec9e03e2c89201b83a7497e85dc5b971aa9dae2ccbb7a208"
+  },
+  {
+   "name": "Q&A #1 (final).jpg",
+   "note": "ASCII punctuation, spaces",
+   "hex": "0x512641202331202866696e616c292e6a7067",
+   "bytes": 18,
+   "v2": true,
+   "role": "0x46216254ccddb7100c31c5918e6844b9b65e537462c0a0608fe01c82440fa6b0",
+   "wire": "Q%26A%20%231%20%28final%29.jpg",
+   "display": "Q&A%20%231%20(final).jpg",
+   "nfc": true
+  },
+  {
+   "name": "100% done?.txt",
+   "note": "percent and question mark",
+   "hex": "0x3130302520646f6e653f2e747874",
+   "bytes": 14,
+   "v2": true,
+   "role": "0x162e07b838f16465672f22fdf44d2adbba8a84c25927b6ceb2b46be17e6ba365",
+   "wire": "100%25%20done%3F.txt",
+   "display": "100%25%20done%3F.txt",
+   "nfc": true
+  },
+  {
+   "name": "a+b=c&d.txt",
+   "note": "plus, equals, ampersand",
+   "hex": "0x612b623d6326642e747874",
+   "bytes": 11,
+   "v2": true,
+   "role": "0x7e820e891659fb02da85f2655bafccd4aa27e0ca0604b7bab1b217c13c269923",
+   "wire": "a%2Bb%3Dc%26d.txt",
+   "display": "a+b=c&d.txt",
+   "nfc": true
+  },
+  {
+   "name": "tilde~home.txt",
+   "note": "tilde inside",
+   "hex": "0x74696c64657e686f6d652e747874",
+   "bytes": 14,
+   "v2": true,
+   "role": "0x0222726d7eb9669f74a14d17172ba69dd1da19ab3bc2a8b0b4cbc440cb94f012",
+   "wire": "tilde~home.txt",
+   "display": "tilde~home.txt",
+   "nfc": true
+  },
+  {
+   "name": "~efs-control",
+   "note": "reserved prefix",
+   "hex": "0x7e6566732d636f6e74726f6c",
+   "bytes": 12,
+   "v2": false,
+   "role": "0xe2625997285cecb3773c8ca8b5a10b623cdd4be5cd7ffa9527005b5d36aa2ebd"
+  },
+  {
+   "name": "~backup.txt",
+   "note": "leading tilde (allowed)",
+   "hex": "0x7e6261636b75702e747874",
+   "bytes": 11,
+   "v2": true,
+   "role": "0xd2dbf4e8838899725c495ee291e74219acb9b6c1b36137197fd948523290f81a",
+   "wire": "~backup.txt",
+   "display": "~backup.txt",
+   "nfc": true
+  },
+  {
+   "name": ".hidden",
+   "note": "leading dot",
+   "hex": "0x2e68696464656e",
+   "bytes": 7,
+   "v2": true,
+   "role": "0xa8ae42f1d0f5d3fc036bafb30ed3fcc9bd6e9ade46f5121c1945b13ed277b466",
+   "wire": ".hidden",
+   "display": ".hidden",
+   "nfc": true
+  },
+  {
+   "name": "...",
+   "note": "three dots",
+   "hex": "0x2e2e2e",
+   "bytes": 3,
+   "v2": true,
+   "role": "0xabb51256c1324a1350598653f46aa3ad693ac3cf5d05f36eba3f495a1f51590f",
+   "wire": "...",
+   "display": "...",
+   "nfc": true
+  },
+  {
+   "name": ".",
+   "note": "dot",
+   "hex": "0x2e",
+   "bytes": 1,
+   "v2": false,
+   "role": "0x6f010af653ebe3cb07d297a4ef13366103d392ceffa68dd48232e6e9ff2187bf"
+  },
+  {
+   "name": "..",
+   "note": "dotdot",
+   "hex": "0x2e2e",
+   "bytes": 2,
+   "v2": false,
+   "role": "0xcf7df81cda991f48de70c04bf7a6219e57bafa518c590bee9c5d9a7087825d19"
+  },
+  {
+   "name": "",
+   "note": "empty",
+   "hex": "0x",
+   "bytes": 0,
+   "v2": false,
+   "role": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+  },
+  {
+   "name": "x/y",
+   "note": "slash",
+   "hex": "0x782f79",
+   "bytes": 3,
+   "v2": false,
+   "role": "0x601eee51f573007eae874e0315d979c34125237a651922dd1f5eece46ee324b6"
+  },
+  {
+   "name": "a\\b",
+   "note": "backslash",
+   "hex": "0x615c62",
+   "bytes": 3,
+   "v2": false,
+   "role": "0x3932c2aa8ffda7bcf1e943ba4f47242ff8feda3fa940ec177084d01b9d47ef05"
+  },
+  {
+   "name": "nul\u0000byte",
+   "note": "NUL",
+   "hex": "0x6e756c0062797465",
+   "bytes": 8,
+   "v2": false,
+   "role": "0xba78d639ab81cddfe8dd96de36ec5e31cc6c749a028b8fbfbdf70a8023cfa66b"
+  },
+  {
+   "name": "tab\there",
+   "note": "tab",
+   "hex": "0x7461620968657265",
+   "bytes": 8,
+   "v2": false,
+   "role": "0xfc5a8b1b00fc4c36467f1e4da7897650708b7bb46d338420a6cf2cff6cab87d6"
+  },
+  {
+   "name": "trailing ",
+   "note": "trailing space",
+   "hex": "0x747261696c696e6720",
+   "bytes": 9,
+   "v2": false,
+   "role": "0x63aa094540cb7fb213d31fd063b80b2945df1c8716b617984d8a198273cf676f"
+  },
+  {
+   "name": " leading",
+   "note": "leading space",
+   "hex": "0x206c656164696e67",
+   "bytes": 8,
+   "v2": false,
+   "role": "0x42bacad515c5cbc51f2762c79239c51d535a54f271dcc9059566c8414a3e0eb2"
+  },
+  {
+   "name": "inner space.txt",
+   "note": "inner space",
+   "hex": "0x696e6e65722073706163652e747874",
+   "bytes": 15,
+   "v2": true,
+   "role": "0xb033a6a9b086be23c7ef1a5eeaa02c824e06f99d97afb9f31995be716441df86",
+   "wire": "inner%20space.txt",
+   "display": "inner%20space.txt",
+   "nfc": true
+  },
+  {
+   "name": "café.txt",
+   "note": "precomposed é (NFC)",
+   "hex": "0x636166c3a92e747874",
+   "bytes": 9,
+   "v2": true,
+   "role": "0x51ca49ae9a12210906e1ab86ac1c8731e11cd86edf0df9dbbc4cfd13531de9d9",
+   "wire": "caf%C3%A9.txt",
+   "display": "café.txt",
+   "nfc": true
+  },
+  {
+   "name": "café.txt",
+   "note": "decomposed é (not NFC, QC=Maybe)",
+   "hex": "0x63616665cc812e747874",
+   "bytes": 10,
+   "v2": true,
+   "role": "0x4674ddf120a1c4a844be00bf1c468c373a7faff9f25e6d8fe62fe13608d403be",
+   "wire": "cafe%CC%81.txt",
+   "display": "café.txt",
+   "nfc": false
+  },
+  {
+   "name": "Ångström.txt",
+   "note": "A-ring U+00C5 (NFC)",
+   "hex": "0xc3856e67737472c3b66d2e747874",
+   "bytes": 14,
+   "v2": true,
+   "role": "0xdf9e53e185f9b1ca668acb1a1c68974cfd7c7981eac69845d03dcb00965c043e",
+   "wire": "%C3%85ngstr%C3%B6m.txt",
+   "display": "Ångström.txt",
+   "nfc": true
+  },
+  {
+   "name": "Ångström.txt",
+   "note": "ANGSTROM SIGN U+212B (NFC_QC=No)",
+   "hex": "0xe284ab6e67737472c3b66d2e747874",
+   "bytes": 15,
+   "v2": true,
+   "role": "0x9c9f70797952d48df450bc9078f7d9380ba751de7dce260eea8880b665804dab",
+   "wire": "%E2%84%ABngstr%C3%B6m.txt",
+   "display": "Ångström.txt",
+   "nfc": false
+  },
+  {
+   "name": "東京.txt",
+   "note": "CJK",
+   "hex": "0xe69db1e4baac2e747874",
+   "bytes": 10,
+   "v2": true,
+   "role": "0xc1d140dd028ebef7162124945fa2e9e82b6cf62c72cc60a250101139370c159d",
+   "wire": "%E6%9D%B1%E4%BA%AC.txt",
+   "display": "東京.txt",
+   "nfc": true
+  },
+  {
+   "name": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界",
+   "note": "255-byte CJK",
+   "hex": "0xe7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958c",
+   "bytes": 255,
+   "v2": true,
+   "role": "0xaaf4458370ea746935fafcd99d226290c39b8f0cc52bca8b46ebff3d25cf98dc",
+   "wire": "%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C%E7%95%8C",
+   "display": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界",
+   "nfc": true
+  },
+  {
+   "name": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界",
+   "note": "258-byte CJK: too long",
+   "hex": "0xe7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958ce7958c",
+   "bytes": 258,
+   "v2": false,
+   "role": "0x35bfb95ce42fc6054bb931766fcc713176d76728acb5020d1458231a6c9a299d"
+  },
+  {
+   "name": "한국어.txt",
+   "note": "precomposed Hangul (NFC)",
+   "hex": "0xed959ceab5adec96b42e747874",
+   "bytes": 13,
+   "v2": true,
+   "role": "0xcbb10af2d2e2bb3d138eee9d6747786012bf10496ec4718b95154c2253c1db64",
+   "wire": "%ED%95%9C%EA%B5%AD%EC%96%B4.txt",
+   "display": "한국어.txt",
+   "nfc": true
+  },
+  {
+   "name": "한.txt",
+   "note": "decomposed Hangul jamo (not NFC)",
+   "hex": "0xe18492e185a1e186ab2e747874",
+   "bytes": 13,
+   "v2": true,
+   "role": "0x27b9c3737dda2250db9146f9a68fb11a647474d65f9c8e440d233ee1ba6d36a1",
+   "wire": "%E1%84%92%E1%85%A1%E1%86%AB.txt",
+   "display": "한.txt",
+   "nfc": false
+  },
+  {
+   "name": "ملف.txt",
+   "note": "Arabic",
+   "hex": "0xd985d984d9812e747874",
+   "bytes": 10,
+   "v2": true,
+   "role": "0xaf63a5b59dc2834bb6be59b295c8560db985ae2d6c92387a162229a9f980b4aa",
+   "wire": "%D9%85%D9%84%D9%81.txt",
+   "display": "ملف.txt",
+   "nfc": true
+  },
+  {
+   "name": "नमस्ते.txt",
+   "note": "Devanagari with virama",
+   "hex": "0xe0a4a8e0a4aee0a4b8e0a58de0a4a4e0a5872e747874",
+   "bytes": 22,
+   "v2": true,
+   "role": "0x92bd293f79a0333ebc6c70d89652d4f94318a25167f02bf1375b0b0820f3e35e",
+   "wire": "%E0%A4%A8%E0%A4%AE%E0%A4%B8%E0%A5%8D%E0%A4%A4%E0%A5%87.txt",
+   "display": "नमस्ते.txt",
+   "nfc": true
+  },
+  {
+   "name": "שלום.txt",
+   "note": "Hebrew",
+   "hex": "0xd7a9d79cd795d79d2e747874",
+   "bytes": 12,
+   "v2": true,
+   "role": "0x0f6af3d6901a3cac4e98bdb20e57f4e3d8e8ba854902b4fc3c3393b99a6c771e",
+   "wire": "%D7%A9%D7%9C%D7%95%D7%9D.txt",
+   "display": "שלום.txt",
+   "nfc": true
+  },
+  {
+   "name": "📁.png",
+   "note": "emoji",
+   "hex": "0xf09f93812e706e67",
+   "bytes": 8,
+   "v2": true,
+   "role": "0x5a1bc69c18b84a38befe5bbe3f361f8956cdfe7d76eb9e56562310a7d8c8bc38",
+   "wire": "%F0%9F%93%81.png",
+   "display": "📁.png",
+   "nfc": true
+  },
+  {
+   "name": "👨‍👩‍👧‍👦.png",
+   "note": "ZWJ family sequence",
+   "hex": "0xf09f91a8e2808df09f91a9e2808df09f91a7e2808df09f91a62e706e67",
+   "bytes": 29,
+   "v2": true,
+   "role": "0x888be76c7569bf962040a61a2c915835639638766a3910d38bccc85032bc1652",
+   "wire": "%F0%9F%91%A8%E2%80%8D%F0%9F%91%A9%E2%80%8D%F0%9F%91%A7%E2%80%8D%F0%9F%91%A6.png",
+   "display": "👨%E2%80%8D👩%E2%80%8D👧%E2%80%8D👦.png",
+   "nfc": true
+  },
+  {
+   "name": "🏴󠁧󠁢󠁳󠁣󠁴󠁿.png",
+   "note": "tag-sequence flag",
+   "hex": "0xf09f8fb4f3a081a7f3a081a2f3a081b3f3a081a3f3a081b4f3a081bf2e706e67",
+   "bytes": 32,
+   "v2": true,
+   "role": "0x107282559ad424aae000bf839876067e26ace530083cc11e55c6c977b13572da",
+   "wire": "%F0%9F%8F%B4%F3%A0%81%A7%F3%A0%81%A2%F3%A0%81%B3%F3%A0%81%A3%F3%A0%81%B4%F3%A0%81%BF.png",
+   "display": "🏴%F3%A0%81%A7%F3%A0%81%A2%F3%A0%81%B3%F3%A0%81%A3%F3%A0%81%B4%F3%A0%81%BF.png",
+   "nfc": true
+  },
+  {
+   "name": "test​name.txt",
+   "note": "zero-width space (rejected)",
+   "hex": "0x74657374e2808b6e616d652e747874",
+   "bytes": 15,
+   "v2": false,
+   "role": "0xb9e12d78de7c5b3d3b154dd564db32f2c6f16d7d18e436b8534237b234049d3c"
+  },
+  {
+   "name": "‮evil.txt",
+   "note": "RLO bidi override (rejected)",
+   "hex": "0xe280ae6576696c2e747874",
+   "bytes": 11,
+   "v2": false,
+   "role": "0xfe9dd2f29ddb7bc555f192dc05e1f3b729b0e8b08ee5b40e7897399212a70c9f"
+  },
+  {
+   "name": "a­b.txt",
+   "note": "soft hyphen (rejected)",
+   "hex": "0x61c2ad622e747874",
+   "bytes": 8,
+   "v2": false,
+   "role": "0xb72b95161e39f7749537d97c4be0842a8257c03142dbf97579ceeaa80124f962"
+  },
+  {
+   "name": "﻿bom.txt",
+   "note": "BOM (rejected)",
+   "hex": "0xefbbbf626f6d2e747874",
+   "bytes": 10,
+   "v2": false,
+   "role": "0x1803586688b095f33061fcb704b87446825356441332e8253059712c417774b7"
+  },
+  {
+   "name": "ﬁle.txt",
+   "note": "fi ligature (NFC yes, NFKC no)",
+   "hex": "0xefac816c652e747874",
+   "bytes": 9,
+   "v2": true,
+   "role": "0xe035b53992e2d791cbdf7d36ddcd6138ddc752978bc42f2397960e57fbca3f87",
+   "wire": "%EF%AC%81le.txt",
+   "display": "ﬁle.txt",
+   "nfc": true
+  },
+  {
+   "name": "CON",
+   "note": "Windows device name (allowed by EFS)",
+   "hex": "0x434f4e",
+   "bytes": 3,
+   "v2": true,
+   "role": "0xb94082438de1196383187762753d2b2aae94d4a400b7a04ca545bfd1ce82e3dc",
+   "wire": "CON",
+   "display": "CON",
+   "nfc": true
+  },
+  {
+   "name": "con.txt",
+   "note": "Windows device name with extension",
+   "hex": "0x636f6e2e747874",
+   "bytes": 7,
+   "v2": true,
+   "role": "0xc29802868d3be34f3f4d5aae69462bbe4c794b881de3ede038deefd0c51a6ac7",
+   "wire": "con.txt",
+   "display": "con.txt",
+   "nfc": true
+  },
+  {
+   "name": "ends.",
+   "note": "trailing dot (allowed by EFS)",
+   "hex": "0x656e64732e",
+   "bytes": 5,
+   "v2": true,
+   "role": "0x8bdc1857f8dc623682b824a19a2a500321252865f61fda7f907b8bfca812d1b6",
+   "wire": "ends.",
+   "display": "ends.",
+   "nfc": true
+  },
+  {
+   "name": "%E7%8C%AB.jpg",
+   "note": "literal percent sequence as a name",
+   "hex": "0x2545372538432541422e6a7067",
+   "bytes": 13,
+   "v2": true,
+   "role": "0xf7576b2f1a856935b278b32c92e1110d8c84eff765079a1b895d91a869a3af3b",
+   "wire": "%25E7%258C%25AB.jpg",
+   "display": "%25E7%258C%25AB.jpg",
+   "nfc": true
+  },
+  {
+   "name": "%2F.txt",
+   "note": "literal %2F as a name",
+   "hex": "0x2532462e747874",
+   "bytes": 7,
+   "v2": true,
+   "role": "0xb2f59fea85e8953f6e8bdfec4ce58ef1f4f054fad96b6a80b88ea214fda17fce",
+   "wire": "%252F.txt",
+   "display": "%252F.txt",
+   "nfc": true
+  },
+  {
+   "name": "file‌‍.txt",
+   "note": "ZWNJ+ZWJ (allowed, DI)",
+   "hex": "0x66696c65e2808ce2808d2e747874",
+   "bytes": 14,
+   "v2": true,
+   "role": "0xb65e01c6fe15c2c2be2bb6962d6432c2a785b8c702dcc9bb44f10daa16e4f96f",
+   "wire": "file%E2%80%8C%E2%80%8D.txt",
+   "display": "file%E2%80%8C%E2%80%8D.txt",
+   "nfc": true
+  },
+  {
+   "name": "é́.txt",
+   "note": "stacked combining marks",
+   "hex": "0x65cc81cc812e747874",
+   "bytes": 9,
+   "v2": true,
+   "role": "0x75ab93a377d79c0e6beeb6a1728774aab86da9583815d49fcc15877dea2cfccd",
+   "wire": "e%CC%81%CC%81.txt",
+   "display": "é́.txt",
+   "nfc": false
+  }
+ ]
+}

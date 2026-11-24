@@ -2,7 +2,7 @@
   "name": "@efs/sdk",
   "version": "0.0.0",
   "private": true,
-  "description": "EFS v2 SDK (pre-alpha: repository scaffold only; no SDK functionality yet)",
+  "description": "EFS SDK: verified reads, writes and recovery for the Ethereum File System",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -19,6 +19,14 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./files": {
+      "types": "./dist/files/index.d.ts",
+      "default": "./dist/files/index.js"
+    },
+    "./actions": {
+      "types": "./dist/actions/index.d.ts",
+      "default": "./dist/actions/index.js"
+    },
     "./web": {
       "types": "./dist/web/index.d.ts",
       "default": "./dist/web/index.js"
@@ -29,21 +37,27 @@
         "default": "./dist/node/index.js"
       }
     },
+    "./protocol-inputs.json": "./protocol-inputs.json",
+    "./fixtures/*": "./fixtures/*",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "src",
     "!src/**/*.test.ts",
+    "fixtures",
+    "protocol-inputs.json",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "build": "node ../../tools/clean.mjs dist && tsc -p tsconfig.json && tsc -p tsconfig.dom.json && tsc -p tsconfig.node.json",
+    "build": "node ../../tools/clean.mjs dist && tsc -p tsconfig.json && tsc -p tsconfig.dom.json && tsc -p tsconfig.node.json && node ../../tools/write-protocol-inputs.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.dom.json --noEmit && tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.test.json",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project browser",
     "test:unit": "vitest run --project unit",
-    "test:browser": "vitest run --project browser"
+    "test:browser": "vitest run --project browser",
+    "test:integration": "vitest run --project integration",
+    "record:fixtures": "EFS_RECORD=1 vitest run --project integration test/integration/record.test.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.0",
@@ -51,5 +65,8 @@
     "playwright": "1.63.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "dependencies": {
+    "viem": "^2.58.4"
   }
 }

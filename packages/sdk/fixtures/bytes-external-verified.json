@@ -1,0 +1,33 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "bytes-external-verified",
+  "note": "readBytes on an https location serving the right bytes",
+  "result": {
+    "kind": "efs.bytes.range",
+    "offset": {
+      "$efs:bigint": "0"
+    },
+    "length": {
+      "$efs:bigint": "21"
+    },
+    "grade": "VERIFIED",
+    "bytes": {
+      "$efs:bytes": "68656c6c6f2066726f6d206120676174657761790a"
+    },
+    "location": {
+      "scheme": "https",
+      "uri": "https://files.example/hello.txt"
+    },
+    "attempts": [
+      {
+        "location": "https://files.example",
+        "outcome": "VERIFIED"
+      }
+    ],
+    "evidence": {
+      "attempts": [],
+      "requests": 0
+    }
+  }
+}

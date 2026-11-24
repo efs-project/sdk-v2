@@ -1,0 +1,16 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "send-ambiguous",
+  "note": "writer.send() whose wallet response was lost",
+  "result": {
+    "kind": "efs.send",
+    "status": "AMBIGUOUS",
+    "planId": "0x7de26cd80022611f7e2f4f1d498adce1b65d4ca1827e0944f97dccb074e36722",
+    "reason": {
+      "code": "RESPONSE_LOST",
+      "retry": "after-reconcile",
+      "detail": "network connection lost"
+    }
+  }
+}

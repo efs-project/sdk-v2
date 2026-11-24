@@ -17,7 +17,7 @@
     }
   },
   "scripts": {
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm checks && pnpm build && pnpm pack:all && pnpm lint:package && pnpm test:package",
+    "check": "pnpm lint && pnpm inputs:verify && pnpm generate:check && pnpm typecheck && pnpm test && pnpm checks && pnpm build && pnpm pack:all && pnpm lint:package && pnpm test:package",
     "lint": "biome ci .",
     "format": "biome format --write .",
     "typecheck": "pnpm -r typecheck",
@@ -26,17 +26,23 @@
     "test:unit": "pnpm -r test:unit",
     "test:browser": "pnpm -r test:browser",
     "checks": "node --test tools/release-dry-run.test.mjs && node tools/checks.mjs all",
+    "inputs:sync": "node tools/inputs.mjs sync --from ../contracts-v2",
+    "inputs:verify": "node tools/inputs.mjs verify",
+    "generate": "node tools/codegen.mjs",
+    "generate:check": "node tools/codegen.mjs --check",
     "pack:all": "node tools/pack.mjs",
     "lint:package": "node tools/checks.mjs package",
     "test:package": "node tools/consumers.mjs",
     "release:dry-run": "node tools/release-dry-run.mjs",
-    "changeset": "changeset"
+    "changeset": "changeset",
+    "test:integration": "pnpm -r test:integration"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@biomejs/biome": "2.5.14",
     "@changesets/cli": "3.0.3",
     "publint": "0.3.24",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "viem": "2.58.4"
   }
 }
