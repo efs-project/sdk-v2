@@ -86,6 +86,13 @@ export async function estimate(
   return r.ok ? r.value : { unknown: r.reason.detail ?? r.reason.code };
 }
 
+/**
+ * The per-transaction gas cap (EIP-7825, 2^24). A chain fact: the deployment document will carry it
+ * (efs-deployment.chain.txGasCap); until then this default applies.
+ */
+export const TX_GAS_CAP = 16_777_216n;
+const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
+
 export async function sendPlan(
   efs: Efs,
   journal: Journal,
@@ -124,7 +131,19 @@ export async function sendPlan(
           planId: plan.id,
           reasons: [`simulation reverts with ${est.revert.error}`],
         };
-      const gas = "gas" in est ? (est.gas * 5n) / 4n : undefined; // 25% headroom over the estimate
+      // 25% headroom over the estimate, but never a limit above the per-transaction cap (EIP-7825): a node refuses
+      // a transaction by its gas LIMIT, not by the gas it would use.
+      const cap = TX_GAS_CAP;
+      if ("gas" in est && est.gas > cap)
+        return {
+          kind: "efs.send",
+          status: "STALE",
+          planId: plan.id,
+          reasons: [
+            `the publication needs ${est.gas} gas, over the per-transaction cap of ${cap}: split it`,
+          ],
+        };
+      const gas = "gas" in est ? min((est.gas * 5n) / 4n, cap) : undefined;
       let record: AttemptRecord = {
         schema: "efs-sdk-attempt/1",
         planId: plan.id,

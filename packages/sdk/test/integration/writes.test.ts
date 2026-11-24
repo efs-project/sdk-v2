@@ -6,11 +6,12 @@ import { join } from "node:path";
 import { keccak256, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
-import { createWriter, type Journal, memoryJournal } from "../../src/actions/index.ts";
+import { ACTION, createWriter, type Journal, memoryJournal } from "../../src/actions/index.ts";
 import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
+import { encode } from "../../src/content/codec.ts";
 import { EfsFault } from "../../src/core/errors.ts";
-import type { Hex } from "../../src/core/hex.ts";
+import { type Hex, ZERO_WORD } from "../../src/core/hex.ts";
 import { openFile, readBytes } from "../../src/files/bytes.ts";
 import { fileJournal } from "../../src/node/journal.ts";
 import { putInline } from "./recipes.ts";
@@ -245,6 +246,43 @@ describe("write lifecycle (fixture)", () => {
     const rec = await restarted.reconcile(p.plan.id);
     expect(rec.outcome).toBe("COMMITTED");
     expect(await restarted.pending()).toEqual([]);
+  });
+
+  it("a publication over the per-transaction gas cap is refused before it is sent (tested against the number)", async () => {
+    // The contracts' reference: 64 files-bytes/1 records of 256-byte bodies, inside every Realm limit, ~28M gas.
+    // The fixture's prague anvil would accept it (no EIP-7825 there), so the SDK's refusal is the only guard.
+    const t = efs.deployment.typeIds as Record<string, Hex>;
+    const bodies = Array.from({ length: 64 }, (_, i) =>
+      encode.chunk(new Uint8Array(224).fill(i + 1)),
+    );
+    const actions = bodies.map((b) => ({
+      kind: ACTION.PUBLISH,
+      typeId: t["files-bytes/1"] as Hex,
+      bodyHashOrRecordId: keccak256(b),
+      purpose: ZERO_WORD,
+      subject: ZERO_WORD,
+      role: ZERO_WORD,
+      target: ZERO_WORD,
+      expectedRevision: 0n,
+      salt: ZERO_WORD,
+    }));
+    const w0 = wallet(BOB);
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: w0 },
+      journal: memoryJournal(),
+    });
+    const p = await w.planActions({
+      actions,
+      bodies: bodies.map((b) => `0x${Buffer.from(b).toString("hex")}` as Hex),
+      effects: [{ code: "test.bulk", args: {} }],
+    });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    const r = await w.send(p.plan);
+    expect(r.status).toBe("STALE");
+    expect(r.status === "STALE" && r.reasons.join(" ")).toMatch(
+      /over the per-transaction cap of 16777216/,
+    );
+    expect(w0.sent).toBe(0);
   });
 });
 
