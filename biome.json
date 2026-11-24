@@ -15,7 +15,8 @@
       "!packages/solidity/cache",
       "!protocol-inputs",
       "!packages/sdk/src/generated",
-      "!conformance/vectors"
+      "!conformance/vectors",
+      "!packages/sdk/fixtures"
     ]
   },
   "formatter": {

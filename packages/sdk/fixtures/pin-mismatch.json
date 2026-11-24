@@ -11,7 +11,7 @@
       "blockNumber": {
         "$efs:bigint": "61"
       },
-      "blockHash": "0xf9b264dc2de5c7002da9924f4aa227ca5970202311d3ead44c248abfa48fb374",
+      "blockHash": "0xf94f638d463c957b21da700924efeae0f88290e3da820c00ea9fc62519585a17",
       "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
       "endpoint": "http://127.0.0.1:8600"
     },
@@ -32,7 +32,7 @@
             "retry": "never",
             "detail": "1 mismatch(es)"
           },
-          "ms": 6
+          "ms": 5
         }
       ],
       "requests": 2

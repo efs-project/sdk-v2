@@ -41,6 +41,10 @@
         "default": "./dist/node/index.js"
       }
     },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    },
     "./protocol-inputs.json": "./protocol-inputs.json",
     "./fixtures/*": "./fixtures/*",
     "./package.json": "./package.json"

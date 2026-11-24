@@ -129,8 +129,7 @@ export function decodeJournalRecord(text: string): AttemptRecord {
   }
   const o = r as Partial<AttemptRecord> | null;
   if (
-    !o ||
-    o.schema !== "efs-sdk-attempt/1" ||
+    o?.schema !== "efs-sdk-attempt/1" ||
     typeof o.planId !== "string" ||
     typeof o.stage !== "string" ||
     !o.plan ||
