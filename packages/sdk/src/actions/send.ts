@@ -6,7 +6,7 @@ import { decodeErrorResult, keccak256 } from "viem";
 import { onEndpoint } from "../chain/pool.js";
 import type { Eip1193Like } from "../chain/rpc.js";
 import type { Efs } from "../client.js";
-import { type CallOpts, reason } from "../core/errors.js";
+import { type CallOpts, EfsFault, type Reason, reason } from "../core/errors.js";
 import { type Address, type Hex, lower } from "../core/hex.js";
 import { errorAbi } from "../generated/abis.js";
 import { ERROR_CATALOG } from "../generated/errors.js";
@@ -94,10 +94,12 @@ export async function sendPlan(
   o: SendOpts = {},
 ): Promise<SendResult> {
   const lock = lockKey(plan);
-  const got = await journal.withLock(
-    lock,
-    o.waitForLock ?? false,
-    async (): Promise<SendResult> => {
+  // Set just before the first call that might broadcast. A journal fault before it means nothing was sent; after it
+  // the outcome is AMBIGUOUS (the durable SUBMISSION_POSSIBLE record makes a re-send safe and reconcile decides).
+  let mayHaveBroadcast = false;
+  let got: SendResult | "BUSY";
+  try {
+    got = await journal.withLock(lock, o.waitForLock ?? false, async (): Promise<SendResult> => {
       // Re-read the journal under the lock: an attempt for this exact plan is never sent twice.
       const prior = await journal.get(plan.id);
       if (prior && prior.stage !== "PLANNED" && prior.stage !== "NOT_SENT") {
@@ -161,6 +163,7 @@ export async function sendPlan(
           return { kind: "efs.send", status: "STALE", planId: plan.id, reasons: stale };
         record = stamp(record, "SUBMISSION_POSSIBLE");
         await journal.put(record); // write-ahead: from here on, a crash or lost response is AMBIGUOUS
+        mayHaveBroadcast = true;
         try {
           const tx = {
             from: plan.account,
@@ -171,12 +174,12 @@ export async function sendPlan(
           const hash = lower(
             String(await p.request({ method: "eth_sendTransaction", params: [tx] })) as Hex,
           );
-          await journal.put({ ...stamp(record, "SUBMITTED"), txHash: hash });
+          await bestEffort(journal.put({ ...stamp(record, "SUBMITTED"), txHash: hash }));
           return { kind: "efs.send", status: "SUBMITTED", planId: plan.id, txHash: hash };
         } catch (e) {
           const code = (e as { code?: unknown })?.code;
           if (code === 4001) {
-            await journal.put(stamp(record, "NOT_SENT", "wallet refused (4001)"));
+            await bestEffort(journal.put(stamp(record, "NOT_SENT", "wallet refused (4001)")));
             return {
               kind: "efs.send",
               status: "NOT_SENT",
@@ -254,6 +257,7 @@ export async function sendPlan(
       const txHash = keccak256(signed);
       record = { ...stamp(record, "SUBMISSION_POSSIBLE"), txHash };
       await journal.put(record);
+      mayHaveBroadcast = true;
       const sent = await onEndpoint(
         efs._internal.pool,
         async (s) => {
@@ -275,9 +279,30 @@ export async function sendPlan(
             sent.reason.detail ?? sent.reason.code,
           ),
         };
-      await journal.put(stamp(record, "SUBMITTED"));
+      await bestEffort(journal.put(stamp(record, "SUBMITTED")));
       return { kind: "efs.send", status: "SUBMITTED", planId: plan.id, txHash };
-    },
-  );
+    });
+  } catch (e) {
+    if (!(e instanceof EfsFault) || e.code !== "JOURNAL_UNAVAILABLE") throw e;
+    return mayHaveBroadcast
+      ? {
+          kind: "efs.send",
+          status: "AMBIGUOUS",
+          planId: plan.id,
+          reason: reason("JOURNAL_UNAVAILABLE", "after-reconcile", e.message),
+        }
+      : { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: journalDown(e) };
+  }
   return got === "BUSY" ? { kind: "efs.send", status: "BUSY", planId: plan.id } : got;
+}
+
+const journalDown = (e: EfsFault): Reason => reason("JOURNAL_UNAVAILABLE", "transient", e.message);
+
+/** A journal write after broadcast: the durable SUBMISSION_POSSIBLE record already covers a failure here. */
+async function bestEffort(write: Promise<void>): Promise<void> {
+  try {
+    await write;
+  } catch {
+    // The record stays SUBMISSION_POSSIBLE: a re-send answers AMBIGUOUS and reconcile settles it from the ledger.
+  }
 }

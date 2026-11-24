@@ -6,7 +6,7 @@ import { build } from "esbuild";
 const guest = await build({
   stdin: {
     contents:
-      'import { checkName, createEfs } from "@efs/sdk"; import { openFile } from "@efs/sdk/files"; import { smoke as web } from "@efs/sdk/web"; console.log(checkName, createEfs, openFile, web);',
+      'import { checkName, createEfs } from "@efs/sdk"; import { openFile } from "@efs/sdk/files"; import { indexedDbJournal } from "@efs/sdk/web/journal"; console.log(checkName, createEfs, openFile, indexedDbJournal);',
     resolveDir: process.cwd(),
     loader: "js",
   },

@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MIT
 // The write lifecycle against a real fixture: plan → review → send → journal → reconcile, exactly once.
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { keccak256, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
-import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { createWriter, type Journal, memoryJournal } from "../../src/actions/index.ts";
 import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
+import { EfsFault } from "../../src/core/errors.ts";
 import type { Hex } from "../../src/core/hex.ts";
 import { openFile, readBytes } from "../../src/files/bytes.ts";
+import { fileJournal } from "../../src/node/journal.ts";
 import { putInline } from "./recipes.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -198,4 +202,65 @@ describe("write lifecycle (fixture)", () => {
     const [ra, rb] = await Promise.all([w.send(a.plan), w.send(b.plan)]);
     expect([ra.status, rb.status].sort()).toEqual(["BUSY", "SUBMITTED"]);
   });
+
+  it("a journal that fails before broadcast is NOT_SENT, and nothing reaches the wallet", async () => {
+    const w0 = wallet(BOB);
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: w0 },
+      journal: failingPuts(memoryJournal(), [1]),
+    });
+    const p = await w.planActions(
+      putInline(efs, w.principal, docs, "jfail.txt", new Uint8Array([7]), salt("jfail")),
+    );
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    const r = await w.send(p.plan);
+    expect(r.status).toBe("NOT_SENT");
+    expect(r.status === "NOT_SENT" && r.reason.code).toBe("JOURNAL_UNAVAILABLE");
+    expect(w0.sent).toBe(0);
+  });
+
+  it("a journal that fails after broadcast still reports SUBMITTED; a fresh writer over the same files never re-sends", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "efs-writes-"));
+    const w0 = wallet(BOB);
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: w0 },
+      journal: failingPuts(fileJournal(dir), [2]), // put #1 = write-ahead (ok), put #2 = SUBMITTED (fails)
+    });
+    const p = await w.planActions(
+      putInline(efs, w.principal, docs, "jlate.txt", new Uint8Array([8]), salt("jlate")),
+    );
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    const r = await w.send(p.plan);
+    expect(r.status).toBe("SUBMITTED");
+    expect(w0.sent).toBe(1);
+    // "Restart": a new writer over the same directory sees the attempt as still possibly submitted.
+    const restarted = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: w0 },
+      journal: fileJournal(dir),
+    });
+    expect((await restarted.pending()).map((x) => x.stage)).toEqual(["SUBMISSION_POSSIBLE"]);
+    expect((await restarted.send(p.plan)).status).toBe("AMBIGUOUS");
+    expect(w0.sent).toBe(1);
+    await rpc("evm_mine");
+    const rec = await restarted.reconcile(p.plan.id);
+    expect(rec.outcome).toBe("COMMITTED");
+    expect(await restarted.pending()).toEqual([]);
+  });
 });
+
+/** Wrap a journal so the listed put calls (1-based) fail as an unavailable store would. */
+function failingPuts(inner: Journal, fail: number[]): Journal {
+  let n = 0;
+  return {
+    durable: inner.durable,
+    get: (id) => inner.get(id),
+    unresolved: (lock) => inner.unresolved(lock),
+    withLock: (lock, wait, fn) => inner.withLock(lock, wait, fn),
+    async put(record) {
+      n++;
+      if (fail.includes(n))
+        throw new EfsFault("JOURNAL_UNAVAILABLE", `injected failure on put #${n}`);
+      return inner.put(record);
+    },
+  };
+}

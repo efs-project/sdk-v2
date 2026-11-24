@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// The public root entry imports cleanly and exposes the stable surface. The node subpath is still an S0 placeholder.
+// The public root entry imports cleanly and exposes the stable surface; the node subpath exposes its adapters.
 import { describe, expect, it } from "vitest";
 import { checkName, checksumAddress, createEfs, PROTOCOL_INPUTS } from "../src/index.ts";
-import { smoke as nodeSmoke } from "../src/node/index.ts";
+import { fileJournal } from "../src/node/index.ts";
 
 describe("root entry", () => {
   it("exposes the stable surface", () => {
@@ -12,7 +12,7 @@ describe("root entry", () => {
     );
     expect(typeof createEfs).toBe("function");
     expect(PROTOCOL_INPUTS.contractsCommit).toMatch(/^[0-9a-f]{40}$/);
-    expect(nodeSmoke).toBe("efs-sdk/node smoke placeholder");
+    expect(typeof fileJournal).toBe("function");
   });
   it("refuses an invalid deployment document as misuse", () => {
     expect(() =>
