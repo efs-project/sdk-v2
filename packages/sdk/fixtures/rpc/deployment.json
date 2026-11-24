@@ -23,7 +23,7 @@
     },
     "txHash": "0xa4ff3fd15932a549b1fd5e99d95eb6c50f97c68fff0f21c73f954dd3e2a6f309",
     "blockNumber": 38,
-    "blockHash": "0x0b7720c2be2fcc1fdc77c1e051dfbc09ecf6550a427175714f7955d8612bb67a"
+    "blockHash": "0xc9e681a6f194fc3234fa686f9d86ac77854baf3383a4a3d5fe3d6f664919b841"
   },
   "activation": {
     "revision": 1,
@@ -1389,7 +1389,7 @@
     "hardfork": "prague"
   },
   "rpc": {
-    "url": "http://127.0.0.1:8600",
+    "url": "http://127.0.0.1:8604",
     "chainId": 31337,
     "hardfork": "prague"
   },

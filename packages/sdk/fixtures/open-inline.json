@@ -29,7 +29,7 @@
       "blockNumber": {
         "$efs:bigint": "62"
       },
-      "blockHash": "0x57fed99195f940fe2e580b663a6bf5925b460df58852af3754be788c53ab21c0",
+      "blockHash": "0x0f00e4397571024804fd11f8e16b1c06c2c7fce219b0048e42985e6225e946fb",
       "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
       "endpoint": "local fixture"
     },
