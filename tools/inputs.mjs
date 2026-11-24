@@ -35,6 +35,13 @@ const SNAPSHOT = [
   "tools/fixture-registry.mjs",
   "tools/deploy-plan.mjs",
   "schemas",
+  // The Solidity consumer closure, re-exported by @efs/solidity (tools/solidity.mjs): interfaces outside
+  // internal/ and the compile-in libraries. The closure probe is vendored as the reference for what it must cover.
+  "src/interfaces",
+  "src/lib/Keys.sol",
+  "src/lib/EfsNative.sol",
+  "src/lib/EfsFiles.sol",
+  "test/closure",
   "LICENSE",
 ];
 
