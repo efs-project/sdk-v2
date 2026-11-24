@@ -56,3 +56,28 @@ describe("indexedDB journal on a fresh origin", () => {
     expect((await reader.get(SAMPLE.planId))?.planId).toBe(SAMPLE.planId);
   });
 });
+
+describe("indexedDbByteStore", () => {
+  it("persists verified bytes across instances, stays under its cap, and creates nothing on reads", async () => {
+    const { indexedDbByteStore } = await import("../src/web/cache.ts");
+    const name = `efs-test-cache-${Date.now()}`;
+    const k = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as `0x${string}`;
+    const a = indexedDbByteStore({ name, maxBytes: 100 });
+    expect(await a.get(k(1))).toBeUndefined();
+    expect((await indexedDB.databases()).some((d) => d.name === name)).toBe(false);
+    const tick = () => new Promise((r) => setTimeout(r, 5)); // distinct "last used" times
+    await a.put(k(1), new Uint8Array(40).fill(1));
+    await tick();
+    await a.put(k(2), new Uint8Array(40).fill(2));
+    await tick();
+    const b = indexedDbByteStore({ name, maxBytes: 100 });
+    expect((await b.get(k(1)))?.[0]).toBe(1); // a fresh instance (a reload) sees it, and 1 is now the most recent
+    await tick();
+    await a.put(k(3), new Uint8Array(40).fill(3)); // over 100: the least recently used (2) goes
+    const c = indexedDbByteStore({ name, maxBytes: 100 });
+    expect(await c.get(k(2))).toBeUndefined();
+    expect((await c.get(k(3)))?.[0]).toBe(3);
+    await c.clear();
+    expect(await c.get(k(3))).toBeUndefined();
+  });
+});

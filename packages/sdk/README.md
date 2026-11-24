@@ -45,12 +45,13 @@ await readBytes(efs, opened.file, { allowOrigins: ["https://files.example.org"] 
 
 | Import | For |
 | --- | --- |
-| `@efs/sdk` | `createEfs`, pinning, names, links, ids, the JSON codec |
+| `@efs/sdk` | `createEfs`, pinning, names, links, ids, the JSON codec, memory caches |
 | `@efs/sdk/links` | the route and link grammar alone, with no runtime dependencies (for startup routers) |
 | `@efs/sdk/files` | `openFile`, `readBytes`, `readRange`, `fileChunks`, `unverifiedChunks` |
 | `@efs/sdk/actions` | `createWriter`: plan, review, send and reconcile writes, exactly once |
 | `@efs/sdk/web` | `streamFile` / `streamUnverified` (ReadableStream) |
 | `@efs/sdk/web/journal` | `indexedDbJournal`, the durable write journal for pages and workers |
+| `@efs/sdk/web/cache` | `indexedDbByteStore`, an opt-in persistent cache of verified bytes |
 | `@efs/sdk/node` | `fileJournal` (Node only) |
 | `@efs/sdk/testing` | RPC transcript replay for chain-free tests (development only) |
 | `@efs/sdk/fixtures/*.json` | recorded results and RPC transcripts from a real fixture chain |

@@ -29,6 +29,7 @@ import { clearTimer, setTimer } from "../core/platform.js";
 import {
   Blocked,
   type ByteGrade,
+  cachedContent,
   type FetchResponse,
   follow,
   gatewayPolicyOf,
@@ -254,6 +255,18 @@ export function unverifiedChunks(
   }
 
   async function* source(): AsyncGenerator<Uint8Array> {
+    const hit = await cachedContent(efs, file);
+    if (hit) {
+      attempts.push({ location: "cache", outcome: "VERIFIED" });
+      yield hit;
+      finish({
+        grade: "VERIFIED",
+        emitted: BigInt(hit.length),
+        location: { scheme: "cache" },
+        attempts,
+      });
+      return;
+    }
     let sawSupported = false;
     let lastBlocked: ByteGrade = "UNSUPPORTED_LOCATOR";
     const queue = locationQueue(file);

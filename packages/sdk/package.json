@@ -39,6 +39,10 @@
       "types": "./dist/web/journal.d.ts",
       "default": "./dist/web/journal.js"
     },
+    "./web/cache": {
+      "types": "./dist/web/cache.d.ts",
+      "default": "./dist/web/cache.js"
+    },
     "./node": {
       "node": {
         "types": "./dist/node/index.d.ts",

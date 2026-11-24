@@ -3,6 +3,7 @@
 // on-chain chunks are verified against their record ids; span trees chunk by chunk; external locations against
 // the descriptor's sha256. Bytes that fail a check are never handed back.
 import { decodeFunctionResult, encodeFunctionData, sha256 } from "viem";
+import { cacheGet, cachePut } from "../cache/stores.js";
 import { callsAt } from "../chain/basis.js";
 import { type Attempt, type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { FetchLike } from "../chain/rpc.js";
@@ -145,7 +146,13 @@ export type Ctx = { efs: Efs; requests: number };
 
 async function readOne(ctx: Ctx, s: Session, basis: Basis, id: Hex): Promise<Step<LedgerRecord>> {
   ctx.requests += 1;
-  const r = await readRecords(s, ctx.efs.deployment, basis.blockHash, [id]);
+  const r = await readRecords(
+    s,
+    ctx.efs.deployment,
+    basis.blockHash,
+    [id],
+    ctx.efs._internal.cache.bytes,
+  );
   return r.ok ? { ok: true, value: r.value[0] as LedgerRecord } : r;
 }
 
@@ -719,6 +726,14 @@ export function follow(
   queue.splice(at + 1, 0, { loc, uri: target, hops: hops + 1 });
 }
 
+/** @internal The verified bytes for a file's digest, if the byte cache holds them (re-checked; a bad entry is a miss). */
+export async function cachedContent(efs: Efs, file: OpenedFile): Promise<Uint8Array | undefined> {
+  const raw = await cacheGet(() => efs._internal.cache.bytes.get(file.sha256));
+  return raw && BigInt(raw.length) === file.size && sha256(raw) === file.sha256.toLowerCase()
+    ? raw
+    : undefined;
+}
+
 /** @internal */
 export async function fetchExternal(
   efs: Efs,
@@ -742,6 +757,15 @@ export async function fetchExternal(
       attempts,
       reason: reason("TOO_LARGE", "never", `file is ${file.size} bytes; limit ${max}`),
     };
+  // Verified bytes already held for this digest: re-checked, then served with no request at all (so no policy is
+  // involved: nobody learns anything from a cache hit).
+  const hit = await cachedContent(efs, file);
+  if (hit) {
+    attempts.push({ location: "cache", outcome: "VERIFIED" });
+    return { grade: "VERIFIED", bytes: hit, location: { scheme: "cache" }, attempts };
+  }
+  const keep = (bytes: Uint8Array) =>
+    cachePut(() => efs._internal.cache.bytes.put(file.sha256, bytes));
   const fetchImpl = efs._internal.fetch ?? (globalThis as { fetch?: FetchLike }).fetch;
   let sawSupported = false;
   let lastBlocked: ByteGrade = "UNSUPPORTED_LOCATOR";
@@ -784,6 +808,7 @@ export async function fetchExternal(
       }
       if (BigInt(out.bytes.length) === file.size && sha256(out.bytes) === file.sha256) {
         attempts.push({ location: label, outcome: "VERIFIED" });
+        await keep(out.bytes);
         return { grade: "VERIFIED", bytes: out.bytes, location: loc, attempts };
       }
       attempts.push({ location: label, outcome: "MISMATCH" });
@@ -826,6 +851,7 @@ export async function fetchExternal(
         }
         if (BigInt(bytes.length) === file.size && sha256(bytes) === file.sha256) {
           attempts.push({ location: origin, outcome: "VERIFIED" });
+          await keep(bytes);
           return { grade: "VERIFIED", bytes, location: loc, attempts };
         }
         attempts.push({ location: origin, outcome: "MISMATCH" }); // fail over: a hostile first gateway never wins
