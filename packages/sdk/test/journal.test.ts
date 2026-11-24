@@ -4,7 +4,12 @@ import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { lockKey, memoryJournal } from "../src/actions/journal.ts";
+import {
+  decodeJournalRecord,
+  encodeJournalRecord,
+  lockKey,
+  memoryJournal,
+} from "../src/actions/journal.ts";
 import { fileJournal } from "../src/node/journal.ts";
 import { journalContract, SAMPLE } from "./journal-contract.ts";
 
@@ -19,6 +24,18 @@ journalContract(
   },
   { reopen: () => fileJournal(dir) },
 );
+
+describe("journal record codec", () => {
+  it("round-trips the storage form and refuses anything that is not an efs-sdk-attempt/1 record", () => {
+    expect(encodeJournalRecord(decodeJournalRecord(encodeJournalRecord(SAMPLE)))).toBe(
+      encodeJournalRecord(SAMPLE),
+    );
+    expect(() => decodeJournalRecord("{torn")).toThrow(/invalid JSON/);
+    expect(() => decodeJournalRecord(JSON.stringify({ schema: "efs-sdk-attempt/2" }))).toThrow(
+      /not an efs-sdk-attempt\/1/,
+    );
+  });
+});
 
 describe("file journal specifics", () => {
   it("never leaves temporary files behind, and refuses a path-like plan id", async () => {
@@ -36,7 +53,7 @@ describe("file journal specifics", () => {
     const j = fileJournal(d);
     await j.put(SAMPLE);
     writeFileSync(join(d, "attempts", `0x${"cd".repeat(32)}.json`), "{torn");
-    await expect(j.unresolved(lockKey(SAMPLE.plan))).rejects.toThrow(/not valid JSON/);
+    await expect(j.unresolved(lockKey(SAMPLE.plan))).rejects.toThrow(/is unreadable/);
   });
 
   it("another process holding the lock makes this one BUSY; a dead holder's lock is taken over", async () => {

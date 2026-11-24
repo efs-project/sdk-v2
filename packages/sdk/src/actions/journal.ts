@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // The attempt journal: durable before its promise resolves. Every write records SUBMISSION_POSSIBLE before the wallet
 // call that might broadcast, so a crash or a lost response can never leave an attempt that looks safe to re-send.
+import { misuse } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
+import { fromJson, toJson } from "../core/json.js";
 import { clearTimer, clone, setTimer } from "../core/platform.js";
 import type { Plan } from "./types.js";
 
@@ -111,3 +113,29 @@ export function memoryJournal(): Journal {
 }
 
 export const isResolved = (stage: AttemptStage): boolean => RESOLVED.has(stage);
+
+/** The storage form of a record (see docs/design/journal-storage.md): JSON, bigints as tagged decimal strings. */
+export function encodeJournalRecord(record: AttemptRecord): string {
+  return toJson(record);
+}
+
+/** Parse a stored record. Throws MISUSE for text that is not an `efs-sdk-attempt/1` record. */
+export function decodeJournalRecord(text: string): AttemptRecord {
+  let r: unknown;
+  try {
+    r = fromJson(text);
+  } catch (e) {
+    throw misuse("not a journal record: invalid JSON", { cause: String(e) });
+  }
+  const o = r as Partial<AttemptRecord> | null;
+  if (
+    !o ||
+    o.schema !== "efs-sdk-attempt/1" ||
+    typeof o.planId !== "string" ||
+    typeof o.stage !== "string" ||
+    !o.plan ||
+    !Array.isArray(o.history)
+  )
+    throw misuse("not an efs-sdk-attempt/1 journal record");
+  return o as AttemptRecord;
+}

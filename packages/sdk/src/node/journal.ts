@@ -11,13 +11,14 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import {
   type AttemptRecord,
+  decodeJournalRecord,
+  encodeJournalRecord,
   isResolved,
   type Journal,
   localLocks,
   lockKey,
 } from "../actions/journal.js";
 import { EfsFault } from "../core/errors.js";
-import { fromJson, toJson } from "../core/json.js";
 
 export interface FileJournalOptions {
   /** A lock file older than this is taken over even if its process looks alive (pid reuse). Default 30 minutes. */
@@ -105,10 +106,10 @@ export function fileJournal(dir: string, options: FileJournalOptions = {}): Jour
       throw unavailable(e, `cannot read ${file}`);
     }
     try {
-      return fromJson<AttemptRecord>(text);
+      return decodeJournalRecord(text);
     } catch (e) {
       // Never skip a record silently: an unreadable record may be an attempt that still needs reconciling.
-      throw new EfsFault("INVARIANT", `attempt journal record ${file} is not valid JSON`, {
+      throw new EfsFault("INVARIANT", `attempt journal record ${file} is unreadable`, {
         cause: e,
       });
     }
@@ -215,7 +216,7 @@ export function fileJournal(dir: string, options: FileJournalOptions = {}): Jour
       if (!PLAN_ID.test(id)) throw new EfsFault("MISUSE", `not a plan id: ${record.planId}`);
       await ensure();
       try {
-        await writeDurably(attempts, `${id}.json`, `${toJson(record, 2)}\n`);
+        await writeDurably(attempts, `${id}.json`, `${encodeJournalRecord(record)}\n`);
       } catch (e) {
         throw unavailable(e, `cannot write ${id}.json`);
       }

@@ -8,7 +8,7 @@ import { checkName, createEfs, PROTOCOL_INPUTS, wireSegment } from "@efs/sdk";
 import { createWriter, memoryJournal } from "@efs/sdk/actions";
 import { openFile } from "@efs/sdk/files";
 import { fileJournal } from "@efs/sdk/node";
-import { indexedDbJournal } from "@efs/sdk/web";
+import { indexedDbJournal } from "@efs/sdk/web/journal";
 
 assert.equal(checkName("readme.txt").status, "VALID");
 assert.equal(wireSegment(new TextEncoder().encode("a b")), "a%20b");

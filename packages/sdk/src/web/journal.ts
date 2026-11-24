@@ -4,13 +4,14 @@
 // the origin shares, so two of them never submit for one account at once.
 import {
   type AttemptRecord,
+  decodeJournalRecord,
+  encodeJournalRecord,
   isResolved,
   type Journal,
   localLocks,
   lockKey,
 } from "../actions/journal.js";
 import { EfsFault } from "../core/errors.js";
-import { fromJson, toJson } from "../core/json.js";
 
 export interface IndexedDbJournalOptions {
   /** IndexedDB database name. Default "efs-sdk-journal"; one per origin is normal. */
@@ -138,7 +139,7 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
         planId: record.planId.toLowerCase(),
         lock: lockKey(record.plan),
         stage: record.stage,
-        json: toJson(record),
+        json: encodeJournalRecord(record),
       };
       t.objectStore(STORE).put(row);
       try {
@@ -150,14 +151,14 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
     async get(planId) {
       const t = await tx("readonly");
       const row = (await done(t.objectStore(STORE).get(planId.toLowerCase()))) as Row | undefined;
-      return row ? fromJson<AttemptRecord>(row.json) : undefined;
+      return row ? decodeJournalRecord(row.json) : undefined;
     },
     async unresolved(lock) {
       const t = await tx("readonly");
       const rows = (await done(t.objectStore(STORE).index(BY_LOCK).getAll(lock))) as Row[];
       return rows
         .filter((r) => !isResolved(r.stage as AttemptRecord["stage"]))
-        .map((r) => fromJson<AttemptRecord>(r.json));
+        .map((r) => decodeJournalRecord(r.json));
     },
     withLock: webLock,
     close() {

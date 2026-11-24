@@ -3,7 +3,7 @@
 import { type Basis, checkName, createEfs, type NameCheck, type PinResult } from "@efs/sdk";
 import { type OpenResult, openFile } from "@efs/sdk/files";
 import { fileJournal } from "@efs/sdk/node";
-import { indexedDbJournal, type WebJournal } from "@efs/sdk/web";
+import { indexedDbJournal, type WebJournal } from "@efs/sdk/web/journal";
 
 const check: NameCheck = checkName("readme.txt");
 export const ok: boolean = check.status === "VALID";

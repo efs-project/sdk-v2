@@ -2,7 +2,14 @@
 /** `@efs/sdk/actions`: plan, review, send and reconcile publications, with a durable attempt journal. */
 
 export type { AttemptRecord, AttemptStage, Journal, WithLock } from "./journal.js";
-export { isResolved, localLocks, lockKey, memoryJournal } from "./journal.js";
+export {
+  decodeJournalRecord,
+  encodeJournalRecord,
+  isResolved,
+  localLocks,
+  lockKey,
+  memoryJournal,
+} from "./journal.js";
 export type { PlanInput } from "./plan.js";
 export { actionsHash, planPublication } from "./plan.js";
 export type { ReconcileOpts } from "./reconcile.js";

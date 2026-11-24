@@ -31,6 +31,10 @@
       "types": "./dist/web/index.d.ts",
       "default": "./dist/web/index.js"
     },
+    "./web/journal": {
+      "types": "./dist/web/journal.d.ts",
+      "default": "./dist/web/journal.js"
+    },
     "./node": {
       "node": {
         "types": "./dist/node/index.d.ts",
