@@ -19,6 +19,14 @@ export type { DeploymentInfo, ManifestCheck, ProtocolLimits } from "./deployment
 export { validateDeploymentManifest } from "./deployment/manifest.js";
 export type { Evidence, LiveDeployment, PinMismatch, PinResult } from "./deployment/pin.js";
 export { PROTOCOL_INPUTS } from "./generated/inputs.js";
+export type {
+  LinkParse,
+  LinkRule,
+  LinkTarget,
+  ObjectLink,
+  RevisionLink,
+} from "./names/links.js";
+export { LINK_PREFIX, link, parseLink } from "./names/links.js";
 export type { NameCheck, NameInput, NameRule } from "./names/name.js";
 export { checkName, MAX_NAME_BYTES, NAME_PROFILE, normalizeName } from "./names/name.js";
 export type { SegmentParse } from "./names/segment.js";

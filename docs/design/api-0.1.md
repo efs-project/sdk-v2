@@ -212,6 +212,23 @@ export interface PathCodec {
 }
 ```
 
+**Object and revision links (shipped in 0.1, root exports `link` / `parseLink`).** A link is one fragment-safe
+string that an app places in its route, for example after `#/files/`:
+
+| Link | Form | Opens | Lens |
+|---|---|---|---|
+| object | `~efs/o/0x<64 hex subject id>` | the current head of that subject (a file today; folders reuse the form) | yes |
+| revision | `~efs/v/0x<64 hex revision record id>` | exactly that revision's bytes | no |
+
+- The first segment is `~efs`. The name profile reserves that prefix, so no path can look like a link. This
+  departs from the naming review's `o/<id>` and `v/<id>`, which collide with root folders named `o` or `v`.
+- `link()` emits lowercase ids. `parseLink()` accepts any hex case and one percent-decode per segment, and returns
+  `canonical` so a router can redirect to the canonical form. `%2F` is never a separator.
+- `parseLink()` returns `{ status: "OK", target: ObjectLink | RevisionLink, canonical }`,
+  `{ status: "INVALID", rule }`, or `{ status: "UNSUPPORTED", kind: "path" }` for anything that does not start with
+  `~efs`. Path links wait for the folder model, and a query (such as a future `?lens=`) is INVALID until it is
+  specified.
+
 ## 5. Files reader (`@efs/sdk/files`)
 
 ```ts
