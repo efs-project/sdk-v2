@@ -40,7 +40,7 @@ import {
 } from "../core/hex.js";
 import { clearTimer, setTimer } from "../core/platform.js";
 import { lensReaderAbi } from "../generated/abis.js";
-import { PURPOSES } from "../generated/purposes.js";
+import { PURPOSES } from "../generated/constants.js";
 import { chainStatus } from "../protocol/status.js";
 
 export interface FileRef {

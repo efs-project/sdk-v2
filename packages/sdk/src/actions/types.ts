@@ -15,15 +15,7 @@ export interface ActionData {
   expectedRevision: bigint;
   salt: Hex;
 }
-export const ACTION = {
-  PUBLISH: 1,
-  REUSE: 2,
-  BIND: 3,
-  UNBIND: 4,
-  CREATE: 5,
-  WITHDRAW: 6,
-  RELEASE: 7,
-} as const;
+export { ACTION } from "../generated/constants.js";
 
 /** Stable codes for the client's message catalog. `text` is English, for logs only. */
 export interface EffectView {

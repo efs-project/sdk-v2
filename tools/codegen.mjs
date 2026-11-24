@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { keccak256, stringToHex } from "viem";
 import { fail, ok, ROOT } from "./lib/util.mjs";
 
 const IN = join(ROOT, "protocol-inputs/contracts");
@@ -24,6 +25,7 @@ const ABIS = {
   ledgerViewsAbi: "LedgerViews",
   lensReaderAbi: "LensReader",
   filesPageReaderAbi: "FilesPageReader",
+  web3GatewayAbi: "EfsWeb3Gateway", // ERC-6860 resource requests (web3://)
 };
 
 function header(inputs) {
@@ -93,45 +95,89 @@ const files = {};
   files["errors.ts"] = src;
 }
 
-// ---- Purposes and the status vocabulary
-// Purpose ids are hashed protocol strings; they are taken from contracts-produced data, never typed here.
-// TODO(contracts): switch to a named `purposes` field once the deployment document carries one.
+// ---- Protocol constants (release.json `constants`, parsed by contracts from their Solidity sources)
+// Nothing here is typed by hand. Every hashed id is re-derived from its preimage, and the purposes are cross-checked
+// against how the deployment's own seed and index use them, so a wrong or drifted constant fails codegen.
 {
   const dep = json("release/efs-deployment.json");
   const rel = json("release/release.json");
+  const c = rel.constants;
+  if (!c) throw new Error("codegen: release.json has no `constants`");
+  const hashed = (what, entry) => {
+    const want = keccak256(stringToHex(entry.preimage));
+    if (want !== entry.id.toLowerCase())
+      throw new Error(`codegen: ${what} id is not keccak256("${entry.preimage}")`);
+    return entry.id.toLowerCase();
+  };
+  const purposes = Object.fromEntries(
+    Object.entries(c.purposes).map(([k, v]) => [k, hashed(`purpose ${k}`, v)]),
+  );
+  const vocabId = hashed("status vocabulary", c.status);
+  const profileVocab = rel.profiles?.statusVocabularyId;
+  if (profileVocab && profileVocab.toLowerCase() !== vocabId)
+    throw new Error("codegen: constants.status.id disagrees with profiles.statusVocabularyId");
+
+  // Cross-check HEAD and FOLDER against the deployment's seed and index (the derivation codegen used before).
   const ZERO = `0x${"0".repeat(64)}`;
-  const folder = dep.index?.units?.[0]?.purposeFilter;
+  const folder = dep.index?.units?.[0]?.purposeFilter?.toLowerCase();
   const fileSubjects = new Set((dep.seed?.files ?? []).map((f) => f.subjectId.toLowerCase()));
   const binds = (dep.seed?.transactions ?? [])
     .flatMap((t) => t.actions)
-    .filter((a) => a.kind === 3);
-  const headBinds = binds.filter(
-    (a) => fileSubjects.has(a.subject.toLowerCase()) && a.role === ZERO,
+    .filter((a) => a.kind === c.actionKinds.BIND);
+  const heads = new Set(
+    binds
+      .filter((a) => fileSubjects.has(a.subject.toLowerCase()) && a.role === ZERO)
+      .map((a) => a.purpose.toLowerCase()),
   );
-  const heads = [...new Set(headBinds.map((a) => a.purpose.toLowerCase()))];
-  const folders = [
-    ...new Set(binds.filter((a) => a.role !== ZERO).map((a) => a.purpose.toLowerCase())),
-  ];
-  if (!/^0x[0-9a-f]{64}$/i.test(folder ?? ""))
-    throw new Error("codegen: index.units[0].purposeFilter (FOLDER) missing");
-  if (heads.length !== 1)
+  if (folder !== purposes.FOLDER)
     throw new Error(
-      `codegen: expected exactly one HEAD purpose in the seed, found ${heads.length}`,
+      "codegen: constants FOLDER purpose disagrees with the deployment's index purpose filter",
     );
-  if (folders.length !== 1 || folders[0] !== folder.toLowerCase())
-    throw new Error("codegen: seed FOLDER binds disagree with the index purpose filter");
-  if (heads[0] === folders[0]) throw new Error("codegen: HEAD and FOLDER purposes coincide");
-  const vocab =
-    rel.profiles?.statusVocabularyId ??
-    JSON.stringify(rel).match(/"statusVocabularyId":\s*"(0x[0-9a-fA-F]{64})"/)?.[1];
-  if (!vocab) throw new Error("codegen: release.json statusVocabularyId missing");
-  let src = header(["release/efs-deployment.json", "release/release.json"]);
+  if (heads.size !== 1 || !heads.has(purposes.HEAD))
+    throw new Error(
+      "codegen: constants HEAD purpose disagrees with the deployment's seed head binds",
+    );
+
+  const codes = (table) =>
+    Object.fromEntries(
+      Object.entries(table)
+        .filter(([n]) => n !== "0")
+        .map(([n, v]) => [Number(n), v]),
+    );
+  const reserved = (name) => /_RESERVED$/.test(name);
+  const fc = c.files;
+  let src = header(["release/release.json", "release/efs-deployment.json"]);
+  src += `/** Action kinds (Actions.sol). \`*_RESERVED\` kinds are refused by the ledger. */\n`;
+  src += `export const ACTION_KINDS = ${literal(c.actionKinds)} as const;\n\n`;
+  src += "/** The action kinds a plan may use. */\n";
+  src += `export const ACTION = ${literal(Object.fromEntries(Object.entries(c.actionKinds).filter(([k]) => !reserved(k))))} as const;\n\n`;
+  src += "/** Deployment capability bits (describe().capabilities). */\n";
+  src += `export const CAPABILITIES = ${literal(c.capabilities)} as const;\n\n`;
+  src += "/** Binding purpose ids (keccak256 of their preimages, checked at codegen). */\n";
+  src += `export const PURPOSES = ${literal({ head: purposes.HEAD, folder: purposes.FOLDER, tag: purposes.TAG })} as const;\n\n`;
   src +=
-    "/** Binding purposes (derived from the deployment's seed and index manifest; see codegen.mjs). */\n";
-  src += `export const PURPOSES = ${literal({ head: heads[0], folder: folder.toLowerCase() })} as const;\n\n`;
-  src += "/** The status vocabulary id the mapping in protocol/status.ts implements. */\n";
-  src += `export const STATUS_VOCABULARY_ID = ${JSON.stringify(vocab.toLowerCase())} as const;\n`;
-  files["purposes.ts"] = src;
+    "/** The status vocabulary this SDK maps. The pin refuses a deployment with another vocabulary id. */\n";
+  src += `export const STATUS_VOCABULARY_ID = ${JSON.stringify(vocabId)} as const;\n`;
+  src += "/** Reader status codes (Results.sol). 0 is reserved and never returned. */\n";
+  src += `export const STATUS_CODES = ${literal(codes(c.status.codes))} as const;\n\n`;
+  src += "/** Index coverage codes (Results.sol). 0 is reserved. */\n";
+  src += `export const COVERAGE_CODES = ${literal(codes(c.coverage.codes))} as const;\n\n`;
+  src += "/** Files body constants (EfsFiles.sol, FilesProfile.sol). */\n";
+  src += `export const FILES = ${literal({
+    form: fc.form,
+    contentCarrier: fc.contentCarrier,
+    externalCarrier: fc.externalCarrier,
+    hashAlg: fc.hashAlg,
+    alias: fc.alias,
+    targetKind: fc.targetKind,
+    sha256Empty: fc.sha256Empty.toLowerCase(),
+    contentVersion: fc.contentVersion,
+    externalVersion: fc.externalVersion,
+    chunkingId: fc.chunking.id,
+    chunkPayload: fc.chunking.chunkPayload,
+  })} as const;\n`;
+  src += `/** The largest declared length a Files body may carry (uint64). */\nexport const FILES_LENGTH_MAX = ${BigInt(fc.lengthMax)}n;\n`;
+  files["constants.ts"] = src;
 }
 
 // ---- Protocol inputs provenance (what this SDK build was generated from)

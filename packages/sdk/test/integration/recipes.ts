@@ -6,7 +6,7 @@ import { ACTION, type ActionData } from "../../src/actions/index.ts";
 import type { Efs } from "../../src/client.ts";
 import { encode } from "../../src/content/codec.ts";
 import { bytesToHex, type Hex, type PrincipalId, ZERO_WORD } from "../../src/core/hex.ts";
-import { PURPOSES } from "../../src/generated/purposes.ts";
+import { PURPOSES } from "../../src/generated/constants.ts";
 import { recordId, subjectId } from "../../src/protocol/keys.ts";
 
 const blank: ActionData = {

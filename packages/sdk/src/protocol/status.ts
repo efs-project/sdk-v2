@@ -1,20 +1,10 @@
 // SPDX-License-Identifier: MIT
-// The on-chain status vocabulary (contracts src/interfaces/Results.sol). The pin checks describe().statusVocabularyId
-// against STATUS_VOCABULARY_ID, so this mapping is never applied to a deployment that uses another vocabulary.
-export const STATUS_CODES = {
-  1: "UNKNOWN",
-  2: "PRESENT",
-  3: "ABSENT_PROVEN",
-  4: "MASKED",
-  5: "RELEASED",
-  6: "CONFLICT",
-  7: "NOT_ON_PAGE",
-  8: "NOT_APPLICABLE",
-  9: "INVALID",
-  10: "UNSUPPORTED",
-  11: "BASIS_STALE",
-  12: "LIMIT_EXCEEDED",
-} as const;
+// The on-chain status vocabulary (contracts src/interfaces/Results.sol, generated from the release). The pin checks
+// describe().statusVocabularyId against STATUS_VOCABULARY_ID, so this mapping is never applied to a deployment that
+// uses another vocabulary.
+import { STATUS_CODES } from "../generated/constants.js";
+
+export { STATUS_CODES };
 export type ChainStatus = (typeof STATUS_CODES)[keyof typeof STATUS_CODES];
 
 /** Map a reader's numeric status. 0 is never returned by a reader; it means the call itself failed. */
