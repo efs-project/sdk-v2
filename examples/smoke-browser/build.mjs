@@ -36,5 +36,31 @@ try {
 }
 assert.equal(resolved, false, "@efs/sdk/node resolved under browser conditions");
 
+// The startup grammar: @efs/sdk/links must bundle from SDK files alone (no viem, ox, abitype or @noble).
+const startup = await build({
+  stdin: {
+    contents:
+      'import { formatRealm, link, parseLink, splitRealm } from "@efs/sdk/links"; console.log(formatRealm, link, parseLink, splitRealm);',
+    resolveDir: process.cwd(),
+    loader: "js",
+  },
+  bundle: true,
+  platform: "browser",
+  format: "esm",
+  metafile: true,
+  write: false,
+  logLevel: "silent",
+});
+const startupInputs = Object.keys(startup.metafile.inputs)
+  .filter((p) => p !== "<stdin>")
+  .map((p) => p.replace(/^.*\/@efs\/sdk\//, "@efs/sdk/"));
+assert.deepEqual(
+  startupInputs.sort(),
+  ["@efs/sdk/dist/core/errors.js", "@efs/sdk/dist/links/index.js", "@efs/sdk/dist/names/links.js"],
+  `@efs/sdk/links pulled in more than the grammar: ${startupInputs.join(", ")}`,
+);
+const startupBytes = startup.outputFiles.reduce((n, f) => n + f.contents.length, 0);
+console.log(`smoke-browser: @efs/sdk/links bundles alone (${startupBytes} bytes)`);
+
 const bytes = guest.outputFiles.reduce((n, f) => n + f.contents.length, 0);
 console.log(`smoke-browser: ok (${inputs.length} input modules, ${bytes} bytes; trend only)`);

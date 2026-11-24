@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Shareable links to EFS objects, as one fragment-safe string an app puts in its route (for example after
-// `#/files/`). Two kinds exist today:
+// Shareable links to EFS objects, as one fragment-safe string an app puts in its route after the realm, as in
+// `#/r/<realm>/<link>`. Two kinds exist today:
 //
 //   ~efs/o/<subject>[?lens=<p>,<p>…]   an object link: a subject id (stable across renames). It opens the current
 //                                      head under a Lens: the route's default, or the ordered principals given
@@ -14,7 +14,7 @@
 // The strings contain only [0-9a-z~/x?=,], so they need no escaping in a URL path, query or fragment.
 import type { Lens } from "../client.js";
 import { misuse } from "../core/errors.js";
-import type { PrincipalId, RecordId, SubjectId } from "../core/hex.js";
+import type { Address, PrincipalId, RecordId, SubjectId } from "../core/hex.js";
 
 /** An object by subject id. Files open from it today; folders will reuse the same form. */
 export interface ObjectLink {
@@ -143,4 +143,79 @@ export function parseLink(input: string): LinkParse {
     target.lens = lens;
   }
   return { status: "OK", target, canonical: link(target) };
+}
+
+// ---- the realm part of a route (naming review §6)
+//
+//   #/r/<alias>/<link>                      an app-configured alias (sepolia, local-1): the app resolves it
+//   #/r/eip155:<chainId>/0x<ledger>/<link>  the full form, always accepted: chain id + the deployment's ledger proxy
+//
+// One ledger is one Realm (the realm id derives from genesis chain, ledger and salt), so no realm id is needed.
+
+export interface RealmRef {
+  chainId: number;
+  ledger: Address;
+}
+
+export type RealmSplit =
+  /** The full form. `rest` is what follows it (the link), `canonical` the realm part in canonical form. */
+  | { status: "FULL"; realm: RealmRef; canonical: string; rest: string }
+  /** An alias the app resolves from its own configuration. */
+  | { status: "ALIAS"; alias: string; rest: string }
+  | { status: "INVALID"; rule: RealmRule };
+
+export type RealmRule =
+  | "empty"
+  | "bad-escape"
+  | "unsupported-namespace"
+  | "bad-chain-id"
+  | "bad-ledger"
+  | "bad-alias";
+
+const CHAIN_ID = /^[1-9][0-9]{0,15}$/;
+const ALIAS = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+/** The full realm form for a deployment: `eip155:<chainId>/0x<ledger, lowercase>`. */
+export function formatRealm(realm: RealmRef): string {
+  if (!Number.isSafeInteger(realm.chainId) || realm.chainId <= 0)
+    throw misuse("formatRealm: chainId must be a positive integer");
+  if (!ADDRESS.test(realm.ledger)) throw misuse("formatRealm: ledger must be a 20-byte address");
+  return `eip155:${realm.chainId}/${realm.ledger.toLowerCase()}`;
+}
+
+/**
+ * Split the realm off the front of a route path (what follows `#/r/`). The full form spans two segments; an alias
+ * is one. Aliases are lowercase letters, digits and hyphens; a colon always means a chain namespace, and only
+ * `eip155` is supported.
+ */
+export function splitRealm(path: string): RealmSplit {
+  const raw = path.startsWith("/") ? path.slice(1) : path;
+  const at = (i: number) => {
+    let n = -1;
+    for (let k = 0; k < i; k++) {
+      n = raw.indexOf("/", n + 1);
+      if (n < 0) return raw.length;
+    }
+    return n;
+  };
+  const firstEnd = at(1);
+  const first = decodeOnce(raw.slice(0, firstEnd));
+  if (first === null) return { status: "INVALID", rule: "bad-escape" };
+  if (first === "") return { status: "INVALID", rule: "empty" };
+  const after = (end: number) => (end < raw.length ? raw.slice(end + 1) : "");
+  if (!first.includes(":")) {
+    if (!ALIAS.test(first)) return { status: "INVALID", rule: "bad-alias" };
+    return { status: "ALIAS", alias: first, rest: after(firstEnd) };
+  }
+  const [ns, id] = first.split(/:(.*)/s, 2) as [string, string];
+  if (ns !== "eip155") return { status: "INVALID", rule: "unsupported-namespace" };
+  if (!CHAIN_ID.test(id) || !Number.isSafeInteger(Number(id)))
+    return { status: "INVALID", rule: "bad-chain-id" };
+  const secondEnd = at(2);
+  const ledger = decodeOnce(raw.slice(firstEnd + 1, secondEnd));
+  if (ledger === null) return { status: "INVALID", rule: "bad-escape" };
+  if (firstEnd >= raw.length || !ADDRESS.test(ledger))
+    return { status: "INVALID", rule: "bad-ledger" };
+  const realm: RealmRef = { chainId: Number(id), ledger: ledger.toLowerCase() as Address };
+  return { status: "FULL", realm, canonical: formatRealm(realm), rest: after(secondEnd) };
 }
