@@ -456,35 +456,33 @@ so no new party sees the reader, and `web3` is in the default `allowSchemes`.
 ## 6. Caches (shipped in 0.1)
 
 ```ts
-/** Exact verified bytes, keyed by content id (record id or sha256). Eviction is a cache miss, never "absent". */
+/** Exact verified bytes, keyed by content id. Eviction is a cache miss, never "absent". */
 export interface ByteStore {
   get(key: Hex): Promise<Uint8Array | undefined>;
   put(key: Hex, bytes: Uint8Array): Promise<void>;
 }
-/** Results qualified by deployment, endpoint and block hash, keyed by a string the SDK builds. */
-export interface ResultStore {
-  get(key: string): Promise<unknown | undefined>;
-  put(key: string, value: unknown): Promise<void>;
-}
 export function memoryByteStore(o?: { maxBytes?: number }): ByteStore;       // default, 32 MiB
-export function memoryResultStore(o?: { maxEntries?: number }): ResultStore;  // default, 1,024 entries
 // @efs/sdk/web/cache (opt-in, persistent):
 export function indexedDbByteStore(o?: { name?: string; maxBytes?: number }): WebByteStore; // 256 MiB, LRU
 ```
 
-Pass them as `createEfs({ cache: { bytes, results } })`. The defaults live in memory only, so a guest visit writes
+Pass a store as `createEfs({ cache: { bytes } })`. The default lives in memory only, so a guest visit writes
 nothing to storage. The persistent store, like the journal, creates no database on reads.
-- **Ledger records** are cached by record id as `typeId ‖ body`. On every read the entry is re-hashed against its
-  id, so a tampered or corrupted entry is a miss. A second read of a span file needs no record calls.
-- **External content** is cached by sha256 and checked against the digest and size on every read. A hit is served
-  with no request at all, so no gateway policy is involved: nobody learns anything from it. One consequence:
-  bytes a person once allowed with `allowOrigins` are served again by the same client without asking, because no
-  request is made. The permission itself is never remembered. Span files are never cached whole under their sha256
-  claim, so a lying claim still grades MISMATCH.
-- **Pins** are cached per deployment, endpoint and block hash, the only key under which a pin stays true.
-  `efs.at("latest")` at a block that endpoint already verified costs one call. A new block or another endpoint is
-  verified in full.
+- **Ledger records** are cached as `typeId ‖ body` under a key scoped to the chain and ledger. On every read the
+  entry is re-hashed against its record id, so a tampered or corrupted entry is a miss. The scoping means that
+  only records this ledger itself returned as PRESENT are reused: a body cached from another deployment can never
+  make a file read here while this ledger lacks its records. A second read of a span file needs no record calls.
+- **External content** is cached by sha256 and checked against the digest and size on every read. A hit makes no
+  request, so no gateway policy is involved: nobody learns anything from it. The PM ruled on this (#19).
+  Consequences: bytes allowed once with `allowOrigins` are reused by the same client without asking, and with a
+  persistent store they are also reused after a reload. The permission itself is never remembered. Span files are
+  never cached whole under their sha256 claim, so a lying claim still grades MISMATCH.
+- **Pins** are security decisions, so they are never read from a caller's store. Each client remembers its
+  verified pins privately in memory, per deployment, endpoint and block hash. `efs.at("latest")` at a block that
+  endpoint already verified costs one call, and a new block or another endpoint is verified in full.
 - A cache that throws is a miss on read and is ignored on write. It never fails a read.
+- `ResultStore` (caching other results) is deferred: every result cached so far is either content-addressed
+  (bytes) or a security decision (pins).
 
 ## 7. Writes (`@efs/sdk/actions`)
 

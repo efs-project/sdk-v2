@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Read ledger records at one basis and check each body against its content-addressed id. An endpoint that returns
 // a body whose recordId(type, body) differs from the id asked for is lying or broken: the read fails over.
-import { decodeFunctionResult, encodeFunctionData } from "viem";
+import { decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256 } from "viem";
 import { type ByteStore, cacheGet, cachePut } from "../cache/stores.js";
 import { callsAt } from "../chain/basis.js";
 import type { Session, Step } from "../chain/pool.js";
@@ -33,12 +33,29 @@ type RecordOut = readonly [
 const BATCH = 16;
 
 /**
- * A present record's cache entry: typeId (32 bytes) ‖ body. Keyed by the record id, which commits to both, so an
- * entry is checked with one hash when it is read and a tampered entry is a miss.
+ * The cache key of a record on one ledger. Scoped to the chain and ledger, so an entry is only ever a record this
+ * ledger itself returned as PRESENT (and records are never removed): a body cached from another deployment can
+ * never make a file read here when this ledger lacks its records (an incomplete upload must stay visible).
  */
-async function fromCache(cache: ByteStore | undefined, id: Hex): Promise<LedgerRecord | undefined> {
+const recordKey = (d: DeploymentInfo, id: Hex): Hex =>
+  keccak256(
+    encodeAbiParameters(
+      [{ type: "uint256" }, { type: "address" }, { type: "bytes32" }],
+      [BigInt(d.chainId), d.ledger, id],
+    ),
+  );
+
+/**
+ * A present record's cache entry: typeId (32 bytes) ‖ body. The record id commits to both, so an entry is checked
+ * with one hash when it is read and a tampered entry is a miss.
+ */
+async function fromCache(
+  cache: ByteStore | undefined,
+  d: DeploymentInfo,
+  id: Hex,
+): Promise<LedgerRecord | undefined> {
   if (!cache) return undefined;
-  const raw = await cacheGet(() => cache.get(id));
+  const raw = await cacheGet(() => cache.get(recordKey(d, id)));
   if (!raw || raw.length < 32) return undefined;
   const typeId = bytesToHex(raw.subarray(0, 32));
   const body = raw.slice(32);
@@ -55,7 +72,7 @@ export async function readRecords(
 ): Promise<Step<LedgerRecord[]>> {
   const found = new Map<string, LedgerRecord>();
   for (const id of ids) {
-    const hit = await fromCache(cache, id);
+    const hit = await fromCache(cache, d, id);
     if (hit) found.set(hit.id, hit);
   }
   const misses = ids.filter((id) => !found.has(lower(id)));
@@ -124,7 +141,7 @@ export async function readRecords(
           const entry = new Uint8Array(32 + bytes.length);
           entry.set(hexToBytes(lower(h.typeId)), 0);
           entry.set(bytes, 32);
-          await cachePut(() => cache.put(id, entry));
+          await cachePut(() => cache.put(recordKey(d, id), entry));
         }
       }
       found.set(id, rec);

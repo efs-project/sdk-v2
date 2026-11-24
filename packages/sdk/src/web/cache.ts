@@ -2,7 +2,9 @@
 // A persistent byte cache for pages and workers: verified record bodies and external content, kept across reloads
 // in IndexedDB. Opt-in (pass it as `createEfs({ cache: { bytes } })`): the default cache is memory only, so a guest
 // visit writes nothing. Reads never create the database. Every entry is re-verified by the SDK when it is read
-// (record id or sha256), so a tampered or corrupted entry is only a miss.
+// (record id or sha256), so a tampered or corrupted entry is only a miss. Note for apps: external bytes a person
+// loaded once with `allowOrigins` stay readable from this store after a reload (no request is made for a cache
+// hit). The permission itself is never stored.
 import type { ByteStore } from "../cache/stores.js";
 import type { Hex } from "../core/hex.js";
 import { committed, done, lazyDb } from "./idb.js";

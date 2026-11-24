@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { describe, expect, it } from "vitest";
-import { memoryByteStore, memoryResultStore } from "../src/cache/stores.ts";
+import { memoryByteStore } from "../src/cache/stores.ts";
 
 const k = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as const;
 
@@ -20,18 +20,5 @@ describe("memory caches", () => {
     await s.put(k(4), new Uint8Array(101));
     expect(await s.get(k(4))).toBeUndefined();
     expect(await s.get(k(1).toUpperCase().replace("0X", "0x") as `0x${string}`)).toBeDefined();
-  });
-
-  it("result store: bounded entries, structured copies", async () => {
-    const s = memoryResultStore({ maxEntries: 2 });
-    await s.put("a", { n: 1n });
-    await s.put("b", { n: 2n });
-    await s.get("a");
-    await s.put("c", { n: 3n });
-    expect(await s.get("b")).toBeUndefined();
-    expect(await s.get("a")).toEqual({ n: 1n });
-    const v = (await s.get("c")) as { n: bigint };
-    v.n = 0n;
-    expect(await s.get("c")).toEqual({ n: 3n });
   });
 });
