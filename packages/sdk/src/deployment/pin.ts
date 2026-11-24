@@ -64,6 +64,14 @@ type Describe = {
   statusVocabularyId: Hex;
 };
 
+/**
+ * Endpoints (by label, per pool) whose five code hashes already verified. Code at an address cannot change after
+ * deployment (EIP-6780), so later pins on that endpoint skip the bytecode downloads. They still read describe() and
+ * the ERC-1967 implementation slot every time, so an upgrade is caught, and a reorg to before deployment fails
+ * describe(). Any mismatch clears the entry.
+ */
+const codeVerified = new WeakMap<Pool, Set<string>>();
+
 export async function pinDeployment(
   pool: Pool,
   d: DeploymentInfo,
@@ -85,15 +93,23 @@ export async function pinDeployment(
         functionName: "describe",
         args: [d.ledger],
       });
-      requests += 1; // one batch envelope (7 calls)
+      const verified = codeVerified.get(pool) ?? new Set<string>();
+      codeVerified.set(pool, verified);
+      const checkCode = !verified.has(s.port.label);
+      const codeAddresses = [
+        d.ledgerImplementation,
+        d.readers.ledgerReads,
+        d.readers.ledgerViews,
+        d.readers.lens,
+        d.readers.filesPage,
+      ];
+      requests += 1; // one batch envelope (2 calls, or 7 with the code checks)
       const outs = await s.send([
         { method: "eth_call", params: [{ to: d.readers.ledgerReads, data: describeCall }, at] },
         { method: "eth_getStorageAt", params: [d.ledger, IMPLEMENTATION_SLOT, at] },
-        { method: "eth_getCode", params: [d.ledgerImplementation, at] },
-        { method: "eth_getCode", params: [d.readers.ledgerReads, at] },
-        { method: "eth_getCode", params: [d.readers.ledgerViews, at] },
-        { method: "eth_getCode", params: [d.readers.lens, at] },
-        { method: "eth_getCode", params: [d.readers.filesPage, at] },
+        ...(checkCode
+          ? codeAddresses.map((a) => ({ method: "eth_getCode", params: [a, at] }))
+          : []),
       ]);
       const failed = outs.find((x) => !x.ok);
       if (failed && !failed.ok) return { ok: false, retryElsewhere: true, reason: failed.reason };
@@ -125,17 +141,19 @@ export async function pinDeployment(
       eq("status vocabulary", STATUS_VOCABULARY_ID, described.statusVocabularyId);
       eq("implementation (ERC-1967 slot)", d.ledgerImplementation, implFromSlot);
       eq("implementation (describe)", d.ledgerImplementation, described.ledgerImpl);
-      const hashes = codes.map((c) => (c && c !== "0x" ? keccak256(c) : "absent"));
-      eq("code: ledger implementation", d.codehashes.ledgerImplementation, hashes[0] ?? "absent");
       eq(
         "code: describe().ledgerImplCodehash",
         d.codehashes.ledgerImplementation,
         described.ledgerImplCodehash,
       );
-      eq("code: LedgerReads", d.codehashes.ledgerReads, hashes[1] ?? "absent");
-      eq("code: LedgerViews", d.codehashes.ledgerViews, hashes[2] ?? "absent");
-      eq("code: LensReader", d.codehashes.lens, hashes[3] ?? "absent");
-      eq("code: FilesPageReader", d.codehashes.filesPage, hashes[4] ?? "absent");
+      if (checkCode) {
+        const hashes = codes.map((c) => (c && c !== "0x" ? keccak256(c) : "absent"));
+        eq("code: ledger implementation", d.codehashes.ledgerImplementation, hashes[0] ?? "absent");
+        eq("code: LedgerReads", d.codehashes.ledgerReads, hashes[1] ?? "absent");
+        eq("code: LedgerViews", d.codehashes.ledgerViews, hashes[2] ?? "absent");
+        eq("code: LensReader", d.codehashes.lens, hashes[3] ?? "absent");
+        eq("code: FilesPageReader", d.codehashes.filesPage, hashes[4] ?? "absent");
+      }
       const basis: Basis = {
         chainId: d.chainId,
         blockNumber: block.value.number,
@@ -152,6 +170,7 @@ export async function pinDeployment(
         admissions: BigInt(described.admissions),
       };
       if (mismatches.length) {
+        verified.delete(s.port.label);
         lastMismatch = { basis, mismatches };
         return {
           ok: false,
@@ -159,6 +178,7 @@ export async function pinDeployment(
           reason: reason("NOT_VERIFIED_DEPLOYMENT", "never", `${mismatches.length} mismatch(es)`),
         };
       }
+      verified.add(s.port.label);
       return { ok: true, value: { basis, mismatches, live } };
     },
     o,
