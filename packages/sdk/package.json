@@ -19,6 +19,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./files": {
+      "types": "./dist/files/index.d.ts",
+      "default": "./dist/files/index.js"
+    },
     "./web": {
       "types": "./dist/web/index.d.ts",
       "default": "./dist/web/index.js"
@@ -29,21 +33,24 @@
         "default": "./dist/node/index.js"
       }
     },
+    "./protocol-inputs.json": "./protocol-inputs.json",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "src",
     "!src/**/*.test.ts",
+    "protocol-inputs.json",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "build": "node ../../tools/clean.mjs dist && tsc -p tsconfig.json && tsc -p tsconfig.dom.json && tsc -p tsconfig.node.json",
+    "build": "node ../../tools/clean.mjs dist && tsc -p tsconfig.json && tsc -p tsconfig.dom.json && tsc -p tsconfig.node.json && node ../../tools/write-protocol-inputs.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.dom.json --noEmit && tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.test.json",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project browser",
     "test:unit": "vitest run --project unit",
-    "test:browser": "vitest run --project browser"
+    "test:browser": "vitest run --project browser",
+    "test:integration": "vitest run --project integration"
   },
   "devDependencies": {
     "@types/node": "24.19.0",

@@ -34,7 +34,8 @@
     "lint:package": "node tools/checks.mjs package",
     "test:package": "node tools/consumers.mjs",
     "release:dry-run": "node tools/release-dry-run.mjs",
-    "changeset": "changeset"
+    "changeset": "changeset",
+    "test:integration": "pnpm -r test:integration"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",

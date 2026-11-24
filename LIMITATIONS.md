@@ -1,9 +1,9 @@
 # Limitations
 
-**Status: repository initialization (S0). This repository contains no EFS SDK functionality.**
-
-Nothing here reads, writes, verifies or encodes EFS data yet. Both packages are `private`
-and have never been published. Do not depend on anything in this repository.
+**Status: early development of EFS SDK 0.1.** Implemented: deployment pinning, verified byte reads (inline, span
+trees, external locations), names and path segments, protocol ids. **Not yet:** folder listings and paths (waiting
+on the tags-vs-directories decision), writes and recovery, the Solidity package contents. Both packages are
+`private` and have never been published. Do not depend on anything in this repository yet.
 
 ## Placeholders
 
@@ -14,14 +14,13 @@ fails if a file carrying the `S0 placeholder` marker is missing from this list.
 
 | File | Proves |
 | --- | --- |
-| `packages/sdk/src/index.ts` | portable build (no Node/DOM types), root export |
 | `packages/sdk/src/web/index.ts` | DOM and Worker projects, `./web` export |
 | `packages/sdk/src/node/index.ts` | Node project, `node`-condition-only `./node` export |
-| `packages/sdk/test/smoke.test.ts` | Vitest in Node |
+| `packages/sdk/test/smoke.test.ts` | the root entry, plus the node placeholder |
 | `packages/sdk/test/smoke.browser.test.ts` | Vitest browser mode in real Chromium |
 | `packages/solidity/src/smoke/Smoke.sol` | Foundry build, internal-library rule, npm/archive packaging |
 | `packages/solidity/test/Smoke.t.sol` | forge-std, remappings, Forge test runner |
-| `examples/smoke-node/index.mjs` | Node ESM consumer of the packed tarball |
+| `examples/smoke-node/index.mjs` | Node ESM consumer of the packed tarball (the web/node entries are still placeholders) |
 | `examples/smoke-ts-strict/index.ts` | strict TypeScript consumer of the published declarations |
 | `examples/smoke-browser/build.mjs` | browser bundle excludes Node code; `./node` unresolvable in browsers |
 | `examples/smoke-foundry/src/UsesSmoke.sol` | Foundry consumer of the release archive via the documented remapping |

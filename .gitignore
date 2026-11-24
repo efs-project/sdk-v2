@@ -13,3 +13,4 @@ examples/smoke-foundry/out/
 examples/smoke-foundry/cache/
 examples/smoke-foundry/lib/
 .DS_Store
+packages/sdk/protocol-inputs.json

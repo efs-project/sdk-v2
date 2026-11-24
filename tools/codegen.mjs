@@ -93,6 +93,47 @@ const files = {};
   files["errors.ts"] = src;
 }
 
+// ---- Purposes and the status vocabulary
+// Purpose ids are hashed protocol strings; they are taken from contracts-produced data, never typed here.
+// TODO(contracts): switch to a named `purposes` field once the deployment document carries one.
+{
+  const dep = json("release/efs-deployment.json");
+  const rel = json("release/release.json");
+  const ZERO = `0x${"0".repeat(64)}`;
+  const folder = dep.index?.units?.[0]?.purposeFilter;
+  const fileSubjects = new Set((dep.seed?.files ?? []).map((f) => f.subjectId.toLowerCase()));
+  const binds = (dep.seed?.transactions ?? [])
+    .flatMap((t) => t.actions)
+    .filter((a) => a.kind === 3);
+  const headBinds = binds.filter(
+    (a) => fileSubjects.has(a.subject.toLowerCase()) && a.role === ZERO,
+  );
+  const heads = [...new Set(headBinds.map((a) => a.purpose.toLowerCase()))];
+  const folders = [
+    ...new Set(binds.filter((a) => a.role !== ZERO).map((a) => a.purpose.toLowerCase())),
+  ];
+  if (!/^0x[0-9a-f]{64}$/i.test(folder ?? ""))
+    throw new Error("codegen: index.units[0].purposeFilter (FOLDER) missing");
+  if (heads.length !== 1)
+    throw new Error(
+      `codegen: expected exactly one HEAD purpose in the seed, found ${heads.length}`,
+    );
+  if (folders.length !== 1 || folders[0] !== folder.toLowerCase())
+    throw new Error("codegen: seed FOLDER binds disagree with the index purpose filter");
+  if (heads[0] === folders[0]) throw new Error("codegen: HEAD and FOLDER purposes coincide");
+  const vocab =
+    rel.profiles?.statusVocabularyId ??
+    JSON.stringify(rel).match(/"statusVocabularyId":\s*"(0x[0-9a-fA-F]{64})"/)?.[1];
+  if (!vocab) throw new Error("codegen: release.json statusVocabularyId missing");
+  let src = header(["release/efs-deployment.json", "release/release.json"]);
+  src +=
+    "/** Binding purposes (derived from the deployment's seed and index manifest; see codegen.mjs). */\n";
+  src += `export const PURPOSES = ${literal({ head: heads[0], folder: folder.toLowerCase() })} as const;\n\n`;
+  src += "/** The status vocabulary id the mapping in protocol/status.ts implements. */\n";
+  src += `export const STATUS_VOCABULARY_ID = ${JSON.stringify(vocab.toLowerCase())} as const;\n`;
+  files["purposes.ts"] = src;
+}
+
 // ---- Protocol inputs provenance (what this SDK build was generated from)
 {
   let src = header([]);
