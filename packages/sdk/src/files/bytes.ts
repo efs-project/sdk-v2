@@ -502,6 +502,16 @@ const resolveUrl = (target: string, base: string): string | null => {
   }
 };
 
+/** Hostname of an absolute URL via the WHATWG parser, or null. */
+const hostOf = (url: string): string | null => {
+  const U = (globalThis as unknown as { URL?: new (u: string) => { hostname: string } }).URL;
+  try {
+    return U ? new U(url).hostname.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+};
+
 /** In browsers the page's own network policy applies and redirects are followed; elsewhere each hop is re-checked. */
 const inBrowser = (): boolean =>
   typeof (globalThis as { document?: unknown }).document !== "undefined";
@@ -577,10 +587,19 @@ async function fetchExternal(
           ]);
         let res = await get(url);
         // Outside browsers, follow at most 5 redirects, re-checking every target against the policy.
+        // A gateway the user configured (even a local one) may redirect within its own host, e.g. to a
+        // subdomain gateway; any other target is re-checked as untrusted.
+        const gatewayHost = plan.scheme === "ipfs" || plan.scheme === "ar" ? hostOf(url) : null;
         for (let hop = 0; !follow && res.status >= 300 && res.status < 400 && hop < 5; hop++) {
           const next = res.headers.get("location");
           const target = next ? resolveUrl(next, url) : null;
-          if (!target || checkHttpUrl(target, policy) !== "ok") break;
+          if (!target) break;
+          const host = hostOf(target);
+          const withinGateway =
+            gatewayHost !== null &&
+            host !== null &&
+            (host === gatewayHost || host.endsWith(`.${gatewayHost}`));
+          if (!withinGateway && checkHttpUrl(target, policy) !== "ok") break;
           res = await get(target);
         }
         if (!res.ok) {
