@@ -12,6 +12,7 @@ import {
   lockKey,
 } from "../actions/journal.js";
 import { EfsFault } from "../core/errors.js";
+import { committed, done, lazyDb } from "./idb.js";
 
 export interface IndexedDbJournalOptions {
   /** IndexedDB database name. Default "efs-sdk-journal"; one per origin is normal. */
@@ -46,19 +47,6 @@ interface LockManagerLike {
   ): Promise<T>;
 }
 
-const done = <T>(req: IDBRequest<T>): Promise<T> =>
-  new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-
-const committed = (tx: IDBTransaction): Promise<void> =>
-  new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error ?? new Error("transaction aborted"));
-  });
-
 const unavailable = (e: unknown): EfsFault =>
   new EfsFault("JOURNAL_UNAVAILABLE", "the attempt journal (IndexedDB) is unavailable", {
     cause: e,
@@ -74,76 +62,17 @@ const unavailable = (e: unknown): EfsFault =>
  */
 export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJournal {
   const name = options.name ?? "efs-sdk-journal";
-  // Only connections are cached, never "absent": a database another tab creates later is still found.
-  let conn: Promise<IDBDatabase> | undefined;
-  const factory = (): IDBFactory => {
-    const idb = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
-    if (!idb) throw unavailable(new Error("no indexedDB in this context"));
-    return idb;
-  };
-  const adopt = (c: IDBDatabase): IDBDatabase => {
-    // Another context upgrading the schema: step aside, reopen on next use.
-    c.onversionchange = () => {
-      c.close();
-      conn = undefined;
-    };
-    return c;
-  };
-  /** Open the database if it exists, creating nothing: a read on a fresh origin writes no storage. */
-  const openExisting = (): Promise<IDBDatabase | null> =>
-    new Promise((resolve, reject) => {
-      const req = factory().open(name);
-      let fresh = false;
-      req.onupgradeneeded = (ev: IDBVersionChangeEvent) => {
-        if (ev.oldVersion === 0) {
-          fresh = true;
-          req.transaction?.abort(); // aborting the creating upgrade leaves no database behind
-        }
-      };
-      req.onsuccess = () => {
-        if (fresh) {
-          req.result.close();
-          resolve(null);
-        } else resolve(req.result);
-      };
-      req.onerror = (ev: Event) => {
-        if (fresh) {
-          ev.preventDefault();
-          resolve(null);
-        } else reject(unavailable(req.error));
-      };
-    });
-  const openCreating = (): Promise<IDBDatabase> =>
-    new Promise((resolve, reject) => {
-      const req = factory().open(name, 1);
-      req.onupgradeneeded = () => {
-        const store = req.result.createObjectStore(STORE, { keyPath: "planId" });
-        store.createIndex(BY_LOCK, "lock", { unique: false });
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(unavailable(req.error));
-    });
-  /** The connection, or null when `create` is false and the database does not exist yet. */
-  const connect = async (create: boolean): Promise<IDBDatabase | null> => {
-    if (conn) return conn;
-    if (!create) {
-      const found = await openExisting();
-      if (!found) return null;
-      if (conn) {
-        found.close(); // a concurrent caller connected first
-        return conn;
-      }
-      conn = Promise.resolve(adopt(found));
-      return conn;
-    }
-    conn = openCreating().then(adopt, (e) => {
-      conn = undefined;
-      throw e;
-    });
-    return conn;
-  };
+  const db = lazyDb(
+    name,
+    1,
+    (conn) => {
+      const store = conn.createObjectStore(STORE, { keyPath: "planId" });
+      store.createIndex(BY_LOCK, "lock", { unique: false });
+    },
+    unavailable,
+  );
   const tx = async (mode: IDBTransactionMode): Promise<IDBTransaction | null> => {
-    const c = await connect(mode === "readwrite");
+    const c = await db.connect(mode === "readwrite");
     if (!c) return null;
     try {
       return c.transaction(STORE, mode, { durability: "strict" });
@@ -210,9 +139,7 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
     },
     withLock: webLock,
     close() {
-      const pending = conn;
-      conn = undefined;
-      void pending?.then((c) => c.close()).catch(() => {});
+      db.close();
     },
   };
 }

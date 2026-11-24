@@ -93,19 +93,29 @@ describe("publisher https:// locations", () => {
     const r = await readBytes(efs, f, { allowOrigins: ["https://files.example.org"] });
     expect(r.grade).toBe("VERIFIED");
     expect(new TextDecoder().decode(r.bytes)).toBe("hosted elsewhere\n");
-    expect((await readBytes(efs, f)).grade).toBe("POLICY_BLOCKED"); // the next call is back to the policy
+    // The permission was for that call only: a client that has not loaded these bytes is back to the policy …
+    expect((await readBytes(client(n.fetch), f)).grade).toBe("POLICY_BLOCKED");
+    // … while this one serves the bytes it already verified from its cache, contacting nobody.
+    const again = await readBytes(efs, f);
+    expect(again.grade).toBe("VERIFIED");
+    expect(again.attempts).toEqual([{ location: "cache", outcome: "VERIFIED" }]);
+    expect(n.log.filter((x) => x.url.startsWith("https://files.example.org")).length).toBe(1);
     for (const other of [
       "https://files.example.org:8443/a.txt",
       "https://cdn.files.example.org/a.txt",
       "https://example.org/a.txt",
     ])
       expect(
-        (await readBytes(efs, file(other), { allowOrigins: ["https://files.example.org"] })).grade,
-      ).toBe("POLICY_BLOCKED");
+        (
+          await readBytes(client(n.fetch), file(other), {
+            allowOrigins: ["https://files.example.org"],
+          })
+        ).grade,
+      ).toBe("POLICY_BLOCKED"); // fresh clients: this checks origin matching, not the cache
     // A trailing slash and case are normalized; the default port is the same origin.
     expect(
       (
-        await readBytes(efs, file("https://FILES.example.org:443/a.txt"), {
+        await readBytes(client(n.fetch), file("https://FILES.example.org:443/a.txt"), {
           allowOrigins: ["https://files.example.org/"],
         })
       ).grade,
@@ -171,7 +181,7 @@ describe("publisher https:// locations", () => {
       parts.push(p);
     expect(parts.length).toBe(1);
     try {
-      for await (const _ of fileChunks(efs, f)) void _;
+      for await (const _ of fileChunks(client(n.fetch), f)) void _; // a client without the bytes cached
       throw new Error("expected a failure");
     } catch (e) {
       expect(e).toBeInstanceOf(EfsFault);
@@ -189,7 +199,7 @@ describe("publisher https:// locations", () => {
     const u = unverifiedChunks(efs, f, { allowOrigins: ["https://files.example.org"] });
     for await (const _ of u) void _;
     expect((await u.result).grade).toBe("VERIFIED");
-    const blocked = unverifiedChunks(efs, f);
+    const blocked = unverifiedChunks(client(n.fetch), f);
     await expect(blocked.next()).rejects.toThrow(/POLICY_BLOCKED/);
     expect((await blocked.result).blockedOrigins).toEqual(["https://files.example.org"]);
   });

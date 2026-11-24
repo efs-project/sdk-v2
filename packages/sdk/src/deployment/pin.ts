@@ -3,6 +3,7 @@
 // ERC-1967 implementation slot and five code hashes, compared with the deployment document. Until this passes,
 // nothing describe() says about code is trusted.
 import { decodeFunctionResult, encodeFunctionData } from "viem";
+import { cacheGet, cachePut, type ResultStore } from "../cache/stores.js";
 import { getBlock } from "../chain/basis.js";
 import {
   type Attempt,
@@ -82,11 +83,22 @@ export function codehashProbe(addresses: readonly Hex[]): Hex {
   return `0x${code}`;
 }
 
+const isCachedPin = (v: unknown, blockHash: Hex): v is { basis: Basis; live: LiveDeployment } => {
+  const c = v as { basis?: Basis; live?: LiveDeployment } | undefined;
+  return (
+    !!c?.basis &&
+    !!c.live &&
+    c.basis.blockHash === blockHash &&
+    typeof c.basis.blockNumber === "bigint"
+  );
+};
+
 export async function pinDeployment(
   pool: Pool,
   d: DeploymentInfo,
   policy: BasisPolicy,
   o: CallOpts = {},
+  results?: ResultStore,
 ): Promise<PinResult> {
   let requests = 0;
   // A mismatch on one endpoint may mean that endpoint lies: try the others, and report MISMATCH only if none verifies.
@@ -97,6 +109,13 @@ export async function pinDeployment(
       requests += 1;
       const block = await getBlock(s, policy);
       if (!block.ok) return block;
+      // A VERIFIED pin for this exact deployment, endpoint and block hash: state at a block hash never changes, so
+      // it stays true. Anything else (another block, another endpoint) is verified again in full.
+      const key =
+        `efs-pin/1:${d.chainId}:${d.ledger}:${d.realmId}:${s.port.label}:${block.value.hash}`.toLowerCase();
+      const seen = results ? await cacheGet(() => results.get(key)) : undefined;
+      if (isCachedPin(seen, block.value.hash))
+        return { ok: true, value: { ...seen, mismatches: [] } };
       const at = { blockHash: block.value.hash };
       const describeCall = encodeFunctionData({
         abi: ledgerReadsAbi,
@@ -190,6 +209,7 @@ export async function pinDeployment(
           reason: reason("NOT_VERIFIED_DEPLOYMENT", "never", `${mismatches.length} mismatch(es)`),
         };
       }
+      if (results) await cachePut(() => results.put(key, { basis, live }));
       return { ok: true, value: { basis, mismatches, live } };
     },
     o,

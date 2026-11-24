@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MIT
 // createEfs: an immutable client for one deployment. No network or storage I/O happens at creation; the first
 // read pins the deployment (pin.ts) and later reads reuse that result.
+
+import {
+  type ByteStore,
+  memoryByteStore,
+  memoryResultStore,
+  type ResultStore,
+} from "./cache/stores.js";
 import { type Basis, type BasisPolicy, createPool, type Pool } from "./chain/pool.js";
 import { type FetchLike, type RequestEvent, type RpcEndpoint, toPort } from "./chain/rpc.js";
 import { type CallOpts, EfsFault } from "./core/errors.js";
@@ -39,6 +46,11 @@ export interface EfsConfig {
   onRequest?: (event: RequestEvent) => void;
   fetch?: FetchLike;
   timeoutMs?: number;
+  /**
+   * Caches. The defaults are in memory only, so nothing is written to storage unless the app passes a persistent
+   * store (for example `indexedDbByteStore()` from `@efs/sdk/web/cache`). Entries are re-verified on every read.
+   */
+  cache?: { bytes?: ByteStore; results?: ResultStore };
 }
 
 export interface Capabilities {
@@ -75,6 +87,7 @@ export interface Efs {
     pool: Pool;
     fetch: FetchLike | undefined;
     onRequest: ((e: RequestEvent) => void) | undefined;
+    cache: { bytes: ByteStore; results: ResultStore };
   };
 }
 
@@ -124,10 +137,14 @@ export function createEfs(config: EfsConfig): Efs {
     config.rpcs.map((e) => toPort(e, portOpts)),
     config.timeoutMs ?? 10_000,
   );
+  const cache = {
+    bytes: config.cache?.bytes ?? memoryByteStore(),
+    results: config.cache?.results ?? memoryResultStore(),
+  };
   let pinned: Promise<PinResult> | undefined;
   const pin = (o?: CallOpts): Promise<PinResult> => {
     if (!pinned) {
-      pinned = pinDeployment(pool, deployment, "latest", o).then((r) => {
+      pinned = pinDeployment(pool, deployment, "latest", o, cache.results).then((r) => {
         if (r.status !== "VERIFIED") pinned = undefined; // not cached: a later call tries again
         return r;
       });
@@ -147,10 +164,10 @@ export function createEfs(config: EfsConfig): Efs {
     lens: lensTools(deployment.defaultLens, deployment.limits.maxLensPrincipals),
     gateways: config.gateways ?? {},
     pin,
-    // Correct first: every logical read takes a full pin at its own basis. A cheaper re-pin (block + describe,
-    // code re-checked only when the revision changes) is a later optimization.
-    at: (policy = "latest", o) => pinDeployment(pool, deployment, policy, o),
-    _internal: { pool, fetch: config.fetch, onRequest: config.onRequest },
+    // Every logical read takes a pin at its own basis. A VERIFIED pin is remembered for that endpoint and block
+    // hash only, so a new block (or another endpoint) is verified again in full.
+    at: (policy = "latest", o) => pinDeployment(pool, deployment, policy, o, cache.results),
+    _internal: { pool, fetch: config.fetch, onRequest: config.onRequest, cache },
   };
   return Object.freeze(efs);
 }

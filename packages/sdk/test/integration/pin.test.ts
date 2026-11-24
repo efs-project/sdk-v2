@@ -92,7 +92,14 @@ describe("cold pin (fixture)", () => {
         arrayBuffer: async () => new TextEncoder().encode(text).buffer,
       };
     };
-    const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: wrapped });
+    // No pin cache: this tests what each full verification checks (cache.test.ts covers the cached path).
+    const noResults = { get: async () => undefined, put: async () => {} };
+    const efs = createEfs({
+      rpcs: [fixture.rpcUrl],
+      deployment,
+      fetch: wrapped,
+      cache: { results: noResults },
+    });
     for (let i = 0; i < 2; i++) {
       methods.length = 0;
       expect((await efs.at("latest")).status).toBe("VERIFIED");

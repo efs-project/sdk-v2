@@ -24,9 +24,12 @@ const seed = (name: string) =>
 const SEED_URL = deployment.readers.web3Gateway.seedUrl; // web3://<gateway>:<chain>/<seed principal>/
 
 let calls: string[] = [];
+// No byte cache: several tests claim the same digest on purpose, and each must reach the gateway.
+const noBytes = { get: async () => undefined, put: async () => {} };
 const efs = createEfs({
   rpcs: [fixture.rpcUrl],
   deployment,
+  cache: { bytes: noBytes },
   onRequest: (e) => {
     calls.push(...e.methods);
   },

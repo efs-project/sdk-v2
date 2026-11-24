@@ -2,10 +2,11 @@
 // Read ledger records at one basis and check each body against its content-addressed id. An endpoint that returns
 // a body whose recordId(type, body) differs from the id asked for is lying or broken: the read fails over.
 import { decodeFunctionResult, encodeFunctionData } from "viem";
+import { type ByteStore, cacheGet, cachePut } from "../cache/stores.js";
 import { callsAt } from "../chain/basis.js";
 import type { Session, Step } from "../chain/pool.js";
 import { reason } from "../core/errors.js";
-import { type Hex, hexToBytes, lower } from "../core/hex.js";
+import { bytesToHex, type Hex, hexToBytes, lower } from "../core/hex.js";
 import type { DeploymentInfo } from "../deployment/manifest.js";
 import { ledgerReadsAbi } from "../generated/abis.js";
 import { recordId } from "../protocol/keys.js";
@@ -16,7 +17,8 @@ export interface LedgerRecord {
   status: ChainStatus | "TRANSPORT_FAULT" | "UNRECOGNIZED";
   typeId: Hex;
   length: number;
-  firstAdmission: bigint;
+  /** Absent when the record came from the verified record cache (only its type and body are content-addressed). */
+  firstAdmission?: bigint;
   /** Present when status is PRESENT; already checked against the id. */
   body?: Uint8Array;
 }
@@ -30,15 +32,36 @@ type RecordOut = readonly [
 
 const BATCH = 16;
 
+/**
+ * A present record's cache entry: typeId (32 bytes) ‖ body. Keyed by the record id, which commits to both, so an
+ * entry is checked with one hash when it is read and a tampered entry is a miss.
+ */
+async function fromCache(cache: ByteStore | undefined, id: Hex): Promise<LedgerRecord | undefined> {
+  if (!cache) return undefined;
+  const raw = await cacheGet(() => cache.get(id));
+  if (!raw || raw.length < 32) return undefined;
+  const typeId = bytesToHex(raw.subarray(0, 32));
+  const body = raw.slice(32);
+  if (recordId(typeId, body) !== lower(id)) return undefined;
+  return { id: lower(id), status: "PRESENT", typeId, length: body.length, body };
+}
+
 export async function readRecords(
   s: Session,
   d: DeploymentInfo,
   blockHash: Hex,
   ids: readonly Hex[],
+  cache?: ByteStore,
 ): Promise<Step<LedgerRecord[]>> {
+  const found = new Map<string, LedgerRecord>();
+  for (const id of ids) {
+    const hit = await fromCache(cache, id);
+    if (hit) found.set(hit.id, hit);
+  }
+  const misses = ids.filter((id) => !found.has(lower(id)));
   const out: LedgerRecord[] = [];
-  for (let i = 0; i < ids.length; i += BATCH) {
-    const slice = ids.slice(i, i + BATCH);
+  for (let i = 0; i < misses.length; i += BATCH) {
+    const slice = misses.slice(i, i + BATCH);
     const results = await callsAt(
       s,
       blockHash,
@@ -97,9 +120,17 @@ export async function readRecords(
           };
         }
         rec.body = bytes;
+        if (cache) {
+          const entry = new Uint8Array(32 + bytes.length);
+          entry.set(hexToBytes(lower(h.typeId)), 0);
+          entry.set(bytes, 32);
+          await cachePut(() => cache.put(id, entry));
+        }
       }
-      out.push(rec);
+      found.set(id, rec);
     }
   }
+  // Answer in the order asked for, cache hits and fresh reads alike.
+  for (const id of ids) out.push(found.get(lower(id)) as LedgerRecord);
   return { ok: true, value: out };
 }
