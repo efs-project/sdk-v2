@@ -148,3 +148,31 @@ describe("the realm part of a route", () => {
     expect(() => formatRealm({ chainId: 0, ledger: LEDGER })).toThrow(/positive/);
   });
 });
+
+describe("@efs/sdk/links has no runtime dependencies", () => {
+  it("its runtime import graph is three local files and nothing else", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { dirname, join, relative } = await import("node:path");
+    const src = join(import.meta.dirname, "../src");
+    const seen = new Set<string>();
+    const bare: string[] = [];
+    const walk = (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const text = readFileSync(file, "utf8");
+      // Runtime imports and re-exports only: `import type` / `export type` are erased by the compiler.
+      for (const m of text.matchAll(/^(?:import|export)\s+(?!type\b)[^;]*?from\s+"([^"]+)"/gms)) {
+        const spec = m[1] as string;
+        if (!spec.startsWith(".")) bare.push(`${relative(src, file)} → ${spec}`);
+        else walk(join(dirname(file), spec.replace(/\.js$/, ".ts")));
+      }
+    };
+    walk(join(src, "links/index.ts"));
+    expect(bare).toEqual([]);
+    expect([...seen].map((f) => relative(src, f)).sort()).toEqual([
+      "core/errors.ts",
+      "links/index.ts",
+      "names/links.ts",
+    ]);
+  });
+});

@@ -19,6 +19,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./links": {
+      "types": "./dist/links/index.d.ts",
+      "default": "./dist/links/index.js"
+    },
     "./files": {
       "types": "./dist/files/index.d.ts",
       "default": "./dist/files/index.js"

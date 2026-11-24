@@ -26,6 +26,7 @@
 | Import | Contains | Guest-safe? |
 |---|---|---|
 | `@efs/sdk` | `createEfs`, the result and evidence types, names and paths, `validateDeploymentManifest` | yes |
+| `@efs/sdk/links` | the route and link grammar alone (`link`, `parseLink`, `formatRealm`, `splitRealm`): no runtime dependencies, for startup routers | yes |
 | `@efs/sdk/files` | the Files reader (`resolve`, `list`, `lookup`, `open`, `read`, `stream`, `history`, …) | yes |
 | `@efs/sdk/actions` | `createWriter`, plans, `review`, `send`, `reconcile`, `memoryJournal` | no |
 | `@efs/sdk/web` | browser helpers (no journal) | yes |
