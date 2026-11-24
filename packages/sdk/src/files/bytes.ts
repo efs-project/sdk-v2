@@ -120,7 +120,8 @@ const EMPTY_BASIS = {
   phase: 0,
 };
 
-type Ctx = { efs: Efs; requests: number };
+/** @internal */
+export type Ctx = { efs: Efs; requests: number };
 
 async function readOne(ctx: Ctx, s: Session, basis: Basis, id: Hex): Promise<Step<LedgerRecord>> {
   ctx.requests += 1;
@@ -396,8 +397,8 @@ export interface BytesOpts extends CallOpts {
 /** Bounds on a span walk, independent of the sizes the tree declares. */
 const MAX_SPAN_DEPTH = 64;
 
-/** Collect the verified chunk payloads of a span tree overlapping [offset, offset + length). */
-async function spanRange(
+/** @internal Collect the verified chunk payloads of a span tree overlapping [offset, offset + length). */
+export async function spanRange(
   ctx: Ctx,
   s: Session,
   basis: Basis,
@@ -551,7 +552,8 @@ export const withinGateway = (gateway: Origin | null, target: Origin | null): bo
 const inBrowser = (): boolean =>
   typeof (globalThis as { document?: unknown }).document !== "undefined";
 
-async function fetchExternal(
+/** @internal */
+export async function fetchExternal(
   efs: Efs,
   file: OpenedFile,
   o: BytesOpts,

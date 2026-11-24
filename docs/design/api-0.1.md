@@ -255,6 +255,19 @@ export interface FilesReader {
   locations(revision: RevisionRef, o?: ReadOpts): Promise<LocationsResult>; // every carrier for the sha256
 }
 
+**Streaming (shipped in 0.1).** The portable core compiles without DOM types, so streaming ships in two layers:
+`fileChunks(efs, opened, o)` in `@efs/sdk/files` is an async iterator of verified chunks that works in every runtime,
+and `streamFile(efs, opened, o)` in `@efs/sdk/web` wraps it as a pull-based `ReadableStream<Uint8Array>` (one window
+per pull). `StreamOpts`: `offset`, `length`, `windowBytes` (rounded up to whole 8,160-byte chunks; default 16
+chunks), `maxBytes` (the buffering cap for external files) and `signal`.
+- Ledger layouts stream window by window, and each chunk record is verified before its bytes are emitted. A
+  whole-file stream also checks the author's sha256 claim at the end, so it can never disagree with `bytes()`.
+- External files have a single digest for the whole body, so they are fetched and verified first, then emitted.
+  Bytes that fail are never emitted.
+- A stream that cannot continue throws or errors with `EfsFault("STREAM_FAILED")`, with details
+  `{ grade, reason, emitted }`. Resume with `offset + emitted`. Cancel (`return()`, `cancel()` or the signal) aborts
+  the requests in flight.
+
 /** A name as text (encoded to UTF-8 as given; the SDK never re-normalizes it) or as exact bytes. */
 export type NameInput = string | Uint8Array;
 
