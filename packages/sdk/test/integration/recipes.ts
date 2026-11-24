@@ -68,3 +68,52 @@ export function putInline(
     effects: [{ code: "files.put", args: { name } }],
   };
 }
+
+/**
+ * New external file `name` in folder `dir`, stored at `locator` (mirrors the contracts seed's remote.txt: the empty
+ * files-bytes/1 sentinel, a files-external/1 record, and a form-1 root naming it).
+ */
+export function putExternal(
+  efs: Efs,
+  me: PrincipalId,
+  dir: Hex,
+  name: string,
+  content: { length: bigint; sha256: Hex; locator: string },
+  salt: Hex,
+) {
+  const t = efs.deployment.typeIds as Record<string, Hex>;
+  const file = subjectId(me, salt);
+  const sentinelBody = encode.chunk(new Uint8Array());
+  const sentinel = recordId(t["files-bytes/1"] as Hex, sentinelBody);
+  const externalBody = encode.external(sentinel, content.length, content.sha256, content.locator);
+  const external = recordId(t["files-external/1"] as Hex, externalBody);
+  const rootBody = encode.rootContent(file, external);
+  const nameBytes = new TextEncoder().encode(name);
+  const steps = [
+    publish(t["files-bytes/1"] as Hex, sentinelBody),
+    publish(t["files-external/1"] as Hex, externalBody),
+    plain({ kind: ACTION.CREATE, salt }),
+    publish(t["files-root/1"] as Hex, rootBody),
+    publish(t["files-name/2"] as Hex, nameBytes),
+    plain({
+      kind: ACTION.BIND,
+      purpose: PURPOSES.head,
+      subject: file,
+      role: ZERO_WORD,
+      target: recordId(t["files-root/1"] as Hex, rootBody),
+    }),
+    plain({
+      kind: ACTION.BIND,
+      purpose: PURPOSES.folder,
+      subject: dir,
+      role: keccak256(nameBytes),
+      target: file,
+    }),
+  ];
+  return {
+    file,
+    actions: steps.map((s) => s.action),
+    bodies: steps.map((s) => s.body),
+    effects: [{ code: "files.put", args: { name } }],
+  };
+}

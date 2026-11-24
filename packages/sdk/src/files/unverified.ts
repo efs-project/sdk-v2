@@ -289,10 +289,21 @@ export function unverifiedChunks(
         // is emitted before it verifies, so failing over is still honest).
         throwIfAborted(o.signal);
         const label = web3Label(plan.web3);
+        // Buffered (web3 chunks are not verifiable one by one), so bounded by the client's cap, never by the
+        // size the file declares.
+        const cap = efs.gateways.maxBytes ?? 50n * 1024n * 1024n;
+        if (file.size > cap) {
+          attempts.push({
+            location: label,
+            outcome: "TOO_LARGE",
+            detail: `file is ${file.size} bytes; limit ${cap}`,
+          });
+          continue;
+        }
         const out = await readWeb3(
           efs,
           plan.web3,
-          { size: file.size, max: file.size },
+          { size: file.size, max: cap },
           signal ? { signal } : {},
         );
         if (out.kind === "REDIRECT") {

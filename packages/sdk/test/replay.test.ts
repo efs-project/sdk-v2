@@ -20,11 +20,16 @@ const client = (t: RpcTranscript) => {
 };
 
 describe("RPC transcript replay", () => {
-  it("ships the four cases and the deployment document", () => {
+  it("ships the five cases and the deployment document", () => {
     expect(readdirSync(DIR).sort()).toEqual(
-      ["deployment", "open-absent", "open-inline", "open-span", "pin-verified"].map(
-        (n) => `${n}.json`,
-      ),
+      [
+        "deployment",
+        "open-absent",
+        "open-external-https",
+        "open-inline",
+        "open-span",
+        "pin-verified",
+      ].map((n) => `${n}.json`),
     );
   });
 
@@ -66,6 +71,32 @@ describe("RPC transcript replay", () => {
     expect(r.bytes?.length).toBe(20);
     expect((await readBytes(efs, o.file)).grade).toBe("VERIFIED");
     expect(replay.misses).toEqual([]);
+  });
+
+  it("open-external-https: blocked by default, then allowed for one origin (the https half routed)", async () => {
+    const t = load("open-external-https");
+    const text = new TextEncoder().encode(t.ids["httpsText"] as string);
+    const rpc = replayFetch(t);
+    const fetch = (async (url: string, init: { method: string; body?: string }) =>
+      url === t.ids["httpsUrl"]
+        ? {
+            ok: true,
+            status: 200,
+            headers: { get: (n: string) => (n === "content-length" ? String(text.length) : null) },
+            text: async () => "",
+            arrayBuffer: async () => text.slice().buffer,
+          }
+        : rpc(url, init as never)) as never;
+    const efs = createEfs({ rpcs: [RPC], deployment, fetch });
+    const o = await openFile(efs, { kind: "file", subject: t.ids["file"] as SubjectId });
+    if (o.status !== "PRESENT") throw new Error(o.status);
+    const blocked = await readBytes(efs, o.file);
+    expect(blocked.grade).toBe("POLICY_BLOCKED");
+    expect(blocked.blockedOrigins).toEqual(["https://files.example"]);
+    expect((await readBytes(efs, o.file, { allowOrigins: ["https://files.example"] })).grade).toBe(
+      "VERIFIED",
+    );
+    expect(rpc.replay.misses).toEqual([]);
   });
 
   it("a call outside the transcript is a visible miss, answered with a JSON-RPC error and the caller's id", () => {

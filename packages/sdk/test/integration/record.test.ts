@@ -5,6 +5,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { keccak256, sha256, toHex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import type { FetchLike } from "../../src/chain/rpc.ts";
@@ -14,7 +15,7 @@ import { toJson } from "../../src/core/json.ts";
 import { type OpenedFile, openFile, readBytes, readRange } from "../../src/files/bytes.ts";
 import { PROTOCOL_INPUTS } from "../../src/generated/inputs.ts";
 import { type RpcTranscript, recordingFetch } from "../../src/testing/index.ts";
-import { putInline } from "./recipes.ts";
+import { putExternal, putInline } from "./recipes.ts";
 
 const RECORD = process.env["EFS_RECORD"] === "1";
 const OUT = join(import.meta.dirname, "../../fixtures");
@@ -282,8 +283,9 @@ describe.runIf(RECORD)("record RPC transcripts", () => {
     note: string,
     ids: Record<string, string>,
     run: (efs: ReturnType<typeof createEfs>, steps: string[]) => Promise<void>,
+    inner: FetchLike = globalThis.fetch as unknown as FetchLike,
   ) => {
-    const rec = recordingFetch(globalThis.fetch as unknown as FetchLike);
+    const rec = recordingFetch(inner);
     const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: rec.fetch });
     const steps: string[] = [];
     await run(efs, steps);
@@ -358,6 +360,67 @@ describe.runIf(RECORD)("record RPC transcripts", () => {
         );
         expect((await readBytes(efs, o.file)).grade).toBe("VERIFIED");
       },
+    );
+
+    // open-external-https: a file whose only location is a publisher's https:// URL, published here as the
+    // fixture principal (so the default Lens sees it). The https half is plain fetch, not RPC: a replay must route
+    // HTTPS_URL to serve HTTPS_TEXT.
+    const HTTPS_URL = "https://files.example/hello.txt";
+    const HTTPS_TEXT = new TextEncoder().encode("hello from a gateway\n");
+    const owner = privateKeyToAccount(
+      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80", // anvil dev key #0: public, test only
+    );
+    const plainEfs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
+    const w = await createWriter(plainEfs, {
+      authorizer: { kind: "local", profile: "direct", account: owner },
+      journal: memoryJournal(),
+    });
+    const docs = (deployment as unknown as { seed: { folder: { directoryRecordId: Hex } } }).seed
+      .folder.directoryRecordId;
+    const put = putExternal(
+      plainEfs,
+      w.principal,
+      docs,
+      "hello.txt",
+      { length: BigInt(HTTPS_TEXT.length), sha256: sha256(HTTPS_TEXT), locator: HTTPS_URL },
+      keccak256(toHex("fixture-https-hello")),
+    );
+    const p = await w.planActions(put);
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect((await w.run(p.plan)).reconcile?.outcome).toBe("COMMITTED");
+    const serveHttps: FetchLike = async (url, init) =>
+      url === HTTPS_URL
+        ? {
+            ok: true,
+            status: 200,
+            headers: {
+              get: (n: string) => (n === "content-length" ? String(HTTPS_TEXT.length) : null),
+            },
+            text: async () => "",
+            arrayBuffer: async () => HTTPS_TEXT.slice().buffer,
+          }
+        : (globalThis.fetch as unknown as FetchLike)(url, init);
+    await record(
+      "open-external-https",
+      "openFile(docs/hello.txt, external at a publisher https:// URL) → readBytes with the default policy " +
+        "(POLICY_BLOCKED, blockedOrigins [https://files.example], nothing fetched) → readBytes with " +
+        "{ allowOrigins: ['https://files.example'] } → VERIFIED. Route ids.httpsUrl to serve ids.httpsText.",
+      { file: put.file, httpsUrl: HTTPS_URL, httpsText: "hello from a gateway\n" },
+      async (efs, steps) => {
+        steps.push(
+          "openFile(efs, { kind: 'file', subject: ids.file })",
+          "readBytes(efs, opened.file)  // POLICY_BLOCKED",
+          "readBytes(efs, opened.file, { allowOrigins: ['https://files.example'] })  // VERIFIED",
+        );
+        const o = await openFile(efs, { kind: "file", subject: put.file });
+        if (o.status !== "PRESENT") throw new Error(o.status);
+        const blocked = await readBytes(efs, o.file);
+        expect(blocked.grade).toBe("POLICY_BLOCKED");
+        expect(blocked.blockedOrigins).toEqual(["https://files.example"]);
+        const once = await readBytes(efs, o.file, { allowOrigins: ["https://files.example"] });
+        expect(once.grade).toBe("VERIFIED");
+      },
+      serveHttps,
     );
   });
 });

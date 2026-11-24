@@ -633,8 +633,11 @@ read API.
 "contractsCommit", "ids", "steps", "calls" }`) hold the JSON-RPC traffic of the real SDK, as ordered
 `{ request, response }` bodies. `rpc/deployment.json` is the matching `efs-deployment/1` document. With them the real
 SDK runs end to end with no chain, for example behind a Playwright `page.route` on a fake RPC origin. The cases are
-`pin-verified`, `open-inline` (followed by `readBytes`), `open-absent`, and `open-span` (followed by `readRange` across
-a chunk edge and `readBytes`). `ids.file` names the subject each one opens. `@efs/sdk/testing` exports the matcher:
+`pin-verified`, `open-inline` (followed by `readBytes`), `open-absent`, `open-span` (followed by `readRange` across
+a chunk edge and `readBytes`), and `open-external-https`. That last one opens a file whose only location is a
+publisher's https URL, reads it with the default policy (POLICY_BLOCKED, nothing fetched), then reads it with
+`allowOrigins`. Its https half is plain fetch, not RPC: route `ids.httpsUrl` to serve `ids.httpsText`.
+`ids.file` names the subject each case opens. `@efs/sdk/testing` exports the matcher:
 `createRpcReplay(t).answer(body)` and `replayFetch(t)` for `createEfs({ fetch })`. It matches each call on
 `[method, params]` and ignores the JSON-RPC id. Calls inside a batch are matched one by one, and an unmatched call
 gets a JSON-RPC error and is listed in `misses`.

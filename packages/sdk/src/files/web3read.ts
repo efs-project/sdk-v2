@@ -22,6 +22,13 @@ const abi = parseAbi([
 ]);
 /** "5219", left-aligned in bytes32 (ERC-6944). */
 const MODE_5219 = `0x35323139${"0".repeat(56)}`;
+/**
+ * Bounds that never come from the file or the contract: a hostile contract could otherwise answer with tiny chunks
+ * and turn one read into millions of eth_calls against the user's endpoint.
+ */
+const MAX_CHUNKS = 8192;
+/** Every chunk but the last must carry at least this much (the EFS gateway's carry 8,160 bytes). */
+const MIN_CHUNK_BYTES = 1024;
 
 export type Web3Outcome =
   | { kind: "BODY"; bytes: Uint8Array }
@@ -34,6 +41,8 @@ export async function readWeb3(
   expected: { size: bigint; max: bigint },
   o: CallOpts = {},
 ): Promise<Web3Outcome> {
+  // The whole read, across chunks and endpoints, gets ten per-call timeouts (100 s by default).
+  const deadline = Date.now() + 10 * (efs.gateways.timeoutMs ?? 10_000);
   const r = await onEndpoint<Web3Outcome>(
     efs._internal.pool,
     async (s): Promise<Step<Web3Outcome>> => {
@@ -127,8 +136,24 @@ export async function readWeb3(
         parts.push(bytes);
         const more = header(headers, "web3-next-chunk");
         if (more === undefined) break;
-        if (bytes.length === 0 || BigInt(i) >= expected.size)
-          return done({ kind: "FAILED", outcome: "FAILED", detail: "a chunk made no progress" });
+        if (bytes.length < MIN_CHUNK_BYTES)
+          return done({
+            kind: "FAILED",
+            outcome: "FAILED",
+            detail: `a chunk before the last carried ${bytes.length} bytes (at least ${MIN_CHUNK_BYTES} required)`,
+          });
+        if (i + 1 >= MAX_CHUNKS)
+          return done({
+            kind: "FAILED",
+            outcome: "FAILED",
+            detail: `more than ${MAX_CHUNKS} chunks`,
+          });
+        if (Date.now() > deadline)
+          return done({
+            kind: "FAILED",
+            outcome: "FAILED",
+            detail: "the web3 read ran past its time budget",
+          });
         const pq = parsePathQuery(more);
         if (!pq)
           return done({ kind: "FAILED", outcome: "FAILED", detail: "a malformed web3-next-chunk" });
