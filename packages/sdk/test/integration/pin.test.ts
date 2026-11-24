@@ -22,17 +22,13 @@ describe("cold pin (fixture)", () => {
       expect(pin.basis.endpoint).toBe(new URL(fixture.rpcUrl).origin);
       expect(pin.live.revision).toBeGreaterThanOrEqual(1);
     }
-    // chain check + block + one batch of 7
+    // chain check + block + one batch: describe(), the ERC-1967 slot, and the code hash probe
     expect(methods.flat()).toEqual([
       "eth_chainId",
       "eth_getBlockByNumber",
       "eth_call",
       "eth_getStorageAt",
-      "eth_getCode",
-      "eth_getCode",
-      "eth_getCode",
-      "eth_getCode",
-      "eth_getCode",
+      "eth_call",
     ]);
     expect(await efs.pin()).toBe(pin); // cached
   });
@@ -56,27 +52,36 @@ describe("cold pin (fixture)", () => {
     expect(pin.evidence.attempts.map((a) => a.outcome)).toEqual(["FAILED", "OK"]);
   });
 
-  it("re-pins skip the bytecode once verified on an endpoint, yet still catch an implementation change", async () => {
-    let lie = false;
+  it("every pin checks every code hash in one small call, and catches a changed implementation or code", async () => {
+    let lie: "slot" | "code" | null = null;
     const methods: string[] = [];
+    type Req = { id: number; method: string; params: [{ to?: string }] };
     const wrapped: FetchLike = async (url, init) => {
-      const body = JSON.parse(init.body ?? "null") as
-        | { id: number; method: string }[]
-        | { id: number; method: string };
+      const body = JSON.parse(init.body ?? "null") as Req[] | Req;
       const reqs = Array.isArray(body) ? body : [body];
       methods.push(...reqs.map((r) => r.method));
       const res = await fetch(url, init as RequestInit);
       let text = await res.text();
       if (lie) {
-        // What an upgrade looks like to the pin: the ERC-1967 slot names another implementation.
-        const slotIds = new Set(
-          reqs.filter((r) => r.method === "eth_getStorageAt").map((r) => r.id),
+        const ids = new Set(
+          reqs
+            .filter((r) =>
+              lie === "slot"
+                ? r.method === "eth_getStorageAt"
+                : r.method === "eth_call" && r.params[0]?.to === undefined,
+            )
+            .map((r) => r.id),
         );
         const parsed = JSON.parse(text) as
           | { id: number; result?: string }[]
           | { id: number; result?: string };
-        for (const item of Array.isArray(parsed) ? parsed : [parsed])
-          if (slotIds.has(item.id)) item.result = `0x${"00".repeat(12)}${"11".repeat(20)}`;
+        for (const item of Array.isArray(parsed) ? parsed : [parsed]) {
+          if (!ids.has(item.id) || !item.result) continue;
+          item.result =
+            lie === "slot"
+              ? `0x${"00".repeat(12)}${"11".repeat(20)}` // an upgrade: the slot names another implementation
+              : `${item.result.slice(0, 2 + 3 * 64)}${"ee".repeat(32)}${item.result.slice(2 + 4 * 64)}`; // LensReader
+        }
         text = JSON.stringify(parsed);
       }
       return {
@@ -88,21 +93,27 @@ describe("cold pin (fixture)", () => {
       };
     };
     const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: wrapped });
-    const codes = () => methods.filter((m) => m === "eth_getCode").length;
-    expect((await efs.at("latest")).status).toBe("VERIFIED");
-    expect(codes()).toBe(5);
-    methods.length = 0;
-    expect((await efs.at("latest")).status).toBe("VERIFIED");
-    expect(codes()).toBe(0);
-    expect(methods.sort()).toEqual(["eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
-    lie = true;
+    for (let i = 0; i < 2; i++) {
+      methods.length = 0;
+      expect((await efs.at("latest")).status).toBe("VERIFIED");
+      expect(methods.filter((m) => m !== "eth_chainId").sort()).toEqual([
+        "eth_call",
+        "eth_call",
+        "eth_getBlockByNumber",
+        "eth_getStorageAt",
+      ]);
+    }
+    lie = "slot";
     const upgraded = await efs.at("latest");
-    expect(upgraded.status).toBe("MISMATCH");
-    if (upgraded.status === "MISMATCH")
-      expect(upgraded.mismatches.map((m) => m.what)).toContain("implementation (ERC-1967 slot)");
-    lie = false;
-    methods.length = 0;
+    expect(upgraded.status === "MISMATCH" && upgraded.mismatches.map((m) => m.what)).toContain(
+      "implementation (ERC-1967 slot)",
+    );
+    lie = "code";
+    const swapped = await efs.at("latest");
+    expect(swapped.status === "MISMATCH" && swapped.mismatches.map((m) => m.what)).toEqual([
+      "code: LensReader",
+    ]);
+    lie = null;
     expect((await efs.at("latest")).status).toBe("VERIFIED");
-    expect(codes()).toBe(5); // the mismatch cleared the cache: full code checks again
   });
 });

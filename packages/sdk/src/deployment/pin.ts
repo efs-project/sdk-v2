@@ -2,7 +2,7 @@
 // The cold pin (contracts tools/RELEASE.md "Cold pin"): one block, describe() at that block, the ledger proxy's
 // ERC-1967 implementation slot and five code hashes, compared with the deployment document. Until this passes,
 // nothing describe() says about code is trusted.
-import { decodeFunctionResult, encodeFunctionData, keccak256 } from "viem";
+import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { getBlock } from "../chain/basis.js";
 import {
   type Attempt,
@@ -64,13 +64,23 @@ type Describe = {
   statusVocabularyId: Hex;
 };
 
+/** keccak256 of empty code: EXTCODEHASH of an account that exists but has no code. */
+const EMPTY_CODEHASH = "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470";
+
 /**
- * Endpoints (by label, per pool) whose five code hashes already verified. Code at an address cannot change after
- * deployment (EIP-6780), so later pins on that endpoint skip the bytecode downloads. They still read describe() and
- * the ERC-1967 implementation slot every time, so an upgrade is caught, and a reorg to before deployment fails
- * describe(). Any mismatch clears the entry.
+ * Initcode for a deployless eth_call (no `to`) that returns EXTCODEHASH of each address as consecutive words:
+ * per address `PUSH20 addr; EXTCODEHASH; PUSH1 32*i; MSTORE`, then `PUSH1 32*n; PUSH1 0; RETURN`. It checks every
+ * code hash on every pin for 32 bytes of response per contract, instead of downloading each contract's bytecode.
  */
-const codeVerified = new WeakMap<Pool, Set<string>>();
+export function codehashProbe(addresses: readonly Hex[]): Hex {
+  if (addresses.length > 7) throw new RangeError("at most 7 addresses per probe");
+  let code = "";
+  addresses.forEach((a, i) => {
+    code += `73${a.slice(2).toLowerCase()}3f60${(i * 32).toString(16).padStart(2, "0")}52`;
+  });
+  code += `60${(addresses.length * 32).toString(16).padStart(2, "0")}6000f3`;
+  return `0x${code}`;
+}
 
 export async function pinDeployment(
   pool: Pool,
@@ -93,9 +103,6 @@ export async function pinDeployment(
         functionName: "describe",
         args: [d.ledger],
       });
-      const verified = codeVerified.get(pool) ?? new Set<string>();
-      codeVerified.set(pool, verified);
-      const checkCode = !verified.has(s.port.label);
       const codeAddresses = [
         d.ledgerImplementation,
         d.readers.ledgerReads,
@@ -103,17 +110,15 @@ export async function pinDeployment(
         d.readers.lens,
         d.readers.filesPage,
       ];
-      requests += 1; // one batch envelope (2 calls, or 7 with the code checks)
+      requests += 1; // one batch envelope (3 calls)
       const outs = await s.send([
         { method: "eth_call", params: [{ to: d.readers.ledgerReads, data: describeCall }, at] },
         { method: "eth_getStorageAt", params: [d.ledger, IMPLEMENTATION_SLOT, at] },
-        ...(checkCode
-          ? codeAddresses.map((a) => ({ method: "eth_getCode", params: [a, at] }))
-          : []),
+        { method: "eth_call", params: [{ data: codehashProbe(codeAddresses) }, at] },
       ]);
       const failed = outs.find((x) => !x.ok);
       if (failed && !failed.ok) return { ok: false, retryElsewhere: true, reason: failed.reason };
-      const [desc, slot, ...codes] = outs.map((x) => (x.ok ? (x.result as Hex) : "0x")) as Hex[];
+      const [desc, slot, probe] = outs.map((x) => (x.ok ? (x.result as Hex) : "0x")) as Hex[];
       let described: Describe;
       try {
         described = decodeFunctionResult({
@@ -146,14 +151,22 @@ export async function pinDeployment(
         d.codehashes.ledgerImplementation,
         described.ledgerImplCodehash,
       );
-      if (checkCode) {
-        const hashes = codes.map((c) => (c && c !== "0x" ? keccak256(c) : "absent"));
-        eq("code: ledger implementation", d.codehashes.ledgerImplementation, hashes[0] ?? "absent");
-        eq("code: LedgerReads", d.codehashes.ledgerReads, hashes[1] ?? "absent");
-        eq("code: LedgerViews", d.codehashes.ledgerViews, hashes[2] ?? "absent");
-        eq("code: LensReader", d.codehashes.lens, hashes[3] ?? "absent");
-        eq("code: FilesPageReader", d.codehashes.filesPage, hashes[4] ?? "absent");
-      }
+      const words = /^0x[0-9a-f]*$/i.test(String(probe)) ? String(probe).slice(2) : "";
+      if (words.length !== codeAddresses.length * 64)
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason("RPC_ERROR", "transient", "code hash probe returned the wrong length"),
+        };
+      const hashes = codeAddresses.map((_, i) => {
+        const h = `0x${words.slice(i * 64, i * 64 + 64).toLowerCase()}`;
+        return /^0x0{64}$/.test(h) || h === EMPTY_CODEHASH ? "absent" : h;
+      });
+      eq("code: ledger implementation", d.codehashes.ledgerImplementation, hashes[0] ?? "absent");
+      eq("code: LedgerReads", d.codehashes.ledgerReads, hashes[1] ?? "absent");
+      eq("code: LedgerViews", d.codehashes.ledgerViews, hashes[2] ?? "absent");
+      eq("code: LensReader", d.codehashes.lens, hashes[3] ?? "absent");
+      eq("code: FilesPageReader", d.codehashes.filesPage, hashes[4] ?? "absent");
       const basis: Basis = {
         chainId: d.chainId,
         blockNumber: block.value.number,
@@ -170,7 +183,6 @@ export async function pinDeployment(
         admissions: BigInt(described.admissions),
       };
       if (mismatches.length) {
-        verified.delete(s.port.label);
         lastMismatch = { basis, mismatches };
         return {
           ok: false,
@@ -178,7 +190,6 @@ export async function pinDeployment(
           reason: reason("NOT_VERIFIED_DEPLOYMENT", "never", `${mismatches.length} mismatch(es)`),
         };
       }
-      verified.add(s.port.label);
       return { ok: true, value: { basis, mismatches, live } };
     },
     o,
