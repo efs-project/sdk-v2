@@ -22,7 +22,14 @@ import {
   planLocator,
 } from "../content/locator.js";
 import { type LedgerRecord, readRecords } from "../content/records.js";
-import { type CallOpts, EfsFault, type Reason, reason, throwIfAborted } from "../core/errors.js";
+import {
+  type AbortSignalLike,
+  type CallOpts,
+  EfsFault,
+  type Reason,
+  reason,
+  throwIfAborted,
+} from "../core/errors.js";
 import {
   type Hex,
   lower,
@@ -552,6 +559,66 @@ export const withinGateway = (gateway: Origin | null, target: Origin | null): bo
 const inBrowser = (): boolean =>
   typeof (globalThis as { document?: unknown }).document !== "undefined";
 
+/** @internal The gateway policy in force for this client. */
+export function gatewayPolicyOf(efs: Efs): GatewayPolicy {
+  return {
+    ipfs: efs.gateways.ipfs ?? DEFAULT_GATEWAYS.ipfs,
+    arweave: efs.gateways.arweave ?? DEFAULT_GATEWAYS.arweave,
+    allowSchemes: efs.gateways.allowSchemes ?? DEFAULT_GATEWAYS.allowSchemes,
+    allowInsecureHttp: efs.gateways.allowInsecureHttp ?? false,
+    allowPrivateHosts: efs.gateways.allowPrivateHosts ?? false,
+  };
+}
+
+/** @internal */
+export type FetchResponse = Awaited<ReturnType<FetchLike>>;
+
+/**
+ * @internal GET one candidate URL. Outside browsers, follow at most 5 redirects, checking every target against the
+ * policy. A gateway the user configured (even a local, plain-http one) keeps that trust for hops on its own scheme
+ * and port and its host or a subdomain (a subdomain gateway); every other target is checked as untrusted.
+ */
+export async function getChecked(
+  fetchImpl: FetchLike,
+  url: string,
+  scheme: string,
+  policy: GatewayPolicy,
+  signal: AbortSignalLike | undefined,
+  timeout: Promise<never>,
+): Promise<FetchResponse> {
+  const follow = inBrowser();
+  const get = (u: string) =>
+    Promise.race([
+      fetchImpl(u, {
+        method: "GET",
+        headers: {},
+        redirect: follow ? "follow" : "manual",
+        ...(signal ? { signal } : {}),
+      }),
+      timeout,
+    ]);
+  let res = await get(url);
+  const gateway = scheme === "ipfs" || scheme === "ar" ? originOf(url) : null;
+  const gatewayPolicy: GatewayPolicy = {
+    ...policy,
+    allowInsecureHttp: true,
+    allowPrivateHosts: true,
+  };
+  for (let hop = 0; !follow && res.status >= 300 && res.status < 400 && hop < 5; hop++) {
+    const next = res.headers.get("location");
+    const target = next ? resolveUrl(next, url) : null;
+    if (!target) break;
+    const trusted = withinGateway(gateway, originOf(target));
+    if (checkHttpUrl(target, trusted ? gatewayPolicy : policy) !== "ok") break;
+    res = await get(target);
+  }
+  return res;
+}
+
+/** @internal The origin of a URL for attempt records (never the path or query). */
+export const originLabel = (url: string, fallback: string): string =>
+  /^[a-z]+:\/\/[^/?#]+/i.exec(url)?.[0] ?? fallback;
+
 /** @internal */
 export async function fetchExternal(
   efs: Efs,
@@ -565,13 +632,7 @@ export async function fetchExternal(
   reason?: Reason;
 }> {
   const attempts: LocationAttempt[] = [];
-  const policy: GatewayPolicy = {
-    ipfs: efs.gateways.ipfs ?? DEFAULT_GATEWAYS.ipfs,
-    arweave: efs.gateways.arweave ?? DEFAULT_GATEWAYS.arweave,
-    allowSchemes: efs.gateways.allowSchemes ?? DEFAULT_GATEWAYS.allowSchemes,
-    allowInsecureHttp: efs.gateways.allowInsecureHttp ?? false,
-    allowPrivateHosts: efs.gateways.allowPrivateHosts ?? false,
-  };
+  const policy = gatewayPolicyOf(efs);
   const max = o.maxBytes ?? efs.gateways.maxBytes ?? 50n * 1024n * 1024n;
   if (file.size > max)
     return {
@@ -601,7 +662,7 @@ export async function fetchExternal(
     }
     for (const url of plan.urls) {
       throwIfAborted(o.signal);
-      const origin = /^[a-z]+:\/\/[^/?#]+/i.exec(url)?.[0] ?? plan.scheme;
+      const origin = originLabel(url, plan.scheme);
       if (!fetchImpl) {
         attempts.push({ location: origin, outcome: "FAILED", detail: "no fetch implementation" });
         continue;
@@ -611,35 +672,7 @@ export async function fetchExternal(
         const timeout = new Promise<never>((_, reject) => {
           timer = setTimer(() => reject(new Error("timeout")), efs.gateways.timeoutMs ?? 10_000);
         });
-        const follow = inBrowser();
-        const get = (u: string) =>
-          Promise.race([
-            fetchImpl(u, {
-              method: "GET",
-              headers: {},
-              redirect: follow ? "follow" : "manual",
-              ...(o.signal ? { signal: o.signal } : {}),
-            }),
-            timeout,
-          ]);
-        let res = await get(url);
-        // Outside browsers, follow at most 5 redirects, checking every target against the policy. A gateway the
-        // user configured (even a local, plain-http one) keeps that trust for hops on its own scheme and port and
-        // its host or a subdomain (a subdomain gateway); every other target is checked as untrusted.
-        const gateway = plan.scheme === "ipfs" || plan.scheme === "ar" ? originOf(url) : null;
-        const gatewayPolicy: GatewayPolicy = {
-          ...policy,
-          allowInsecureHttp: true,
-          allowPrivateHosts: true,
-        };
-        for (let hop = 0; !follow && res.status >= 300 && res.status < 400 && hop < 5; hop++) {
-          const next = res.headers.get("location");
-          const target = next ? resolveUrl(next, url) : null;
-          if (!target) break;
-          const trusted = withinGateway(gateway, originOf(target));
-          if (checkHttpUrl(target, trusted ? gatewayPolicy : policy) !== "ok") break;
-          res = await get(target);
-        }
+        const res = await getChecked(fetchImpl, url, plan.scheme, policy, o.signal, timeout);
         if (!res.ok) {
           attempts.push({ location: origin, outcome: "FAILED", detail: `HTTP ${res.status}` });
           continue;
