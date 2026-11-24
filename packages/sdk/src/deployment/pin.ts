@@ -3,7 +3,6 @@
 // ERC-1967 implementation slot and five code hashes, compared with the deployment document. Until this passes,
 // nothing describe() says about code is trusted.
 import { decodeFunctionResult, encodeFunctionData } from "viem";
-import { cacheGet, cachePut, type ResultStore } from "../cache/stores.js";
 import { getBlock } from "../chain/basis.js";
 import {
   type Attempt,
@@ -83,22 +82,34 @@ export function codehashProbe(addresses: readonly Hex[]): Hex {
   return `0x${code}`;
 }
 
-const isCachedPin = (v: unknown, blockHash: Hex): v is { basis: Basis; live: LiveDeployment } => {
-  const c = v as { basis?: Basis; live?: LiveDeployment } | undefined;
-  return (
-    !!c?.basis &&
-    !!c.live &&
-    c.basis.blockHash === blockHash &&
-    typeof c.basis.blockNumber === "bigint"
-  );
-};
+/**
+ * Pins this client verified, by deployment, endpoint and block hash. Private and in memory only: a pin is a
+ * security decision, so it is never read back from a store anything else could write (a caller's persistent
+ * cache, another tab). Bounded; a new block or another endpoint is verified again in full.
+ */
+export class PinMemory {
+  private readonly entries = new Map<string, { basis: Basis; live: LiveDeployment }>();
+  private readonly max: number;
+  constructor(max = 256) {
+    this.max = max;
+  }
+  get(key: string): { basis: Basis; live: LiveDeployment } | undefined {
+    return this.entries.get(key);
+  }
+  set(key: string, v: { basis: Basis; live: LiveDeployment }): void {
+    this.entries.delete(key);
+    this.entries.set(key, v);
+    while (this.entries.size > this.max)
+      this.entries.delete(this.entries.keys().next().value as string);
+  }
+}
 
 export async function pinDeployment(
   pool: Pool,
   d: DeploymentInfo,
   policy: BasisPolicy,
   o: CallOpts = {},
-  results?: ResultStore,
+  memory?: PinMemory,
 ): Promise<PinResult> {
   let requests = 0;
   // A mismatch on one endpoint may mean that endpoint lies: try the others, and report MISMATCH only if none verifies.
@@ -113,9 +124,8 @@ export async function pinDeployment(
       // it stays true. Anything else (another block, another endpoint) is verified again in full.
       const key =
         `efs-pin/1:${d.chainId}:${d.ledger}:${d.realmId}:${s.port.label}:${block.value.hash}`.toLowerCase();
-      const seen = results ? await cacheGet(() => results.get(key)) : undefined;
-      if (isCachedPin(seen, block.value.hash))
-        return { ok: true, value: { ...seen, mismatches: [] } };
+      const seen = memory?.get(key);
+      if (seen) return { ok: true, value: { ...seen, mismatches: [] } };
       const at = { blockHash: block.value.hash };
       const describeCall = encodeFunctionData({
         abi: ledgerReadsAbi,
@@ -209,7 +219,7 @@ export async function pinDeployment(
           reason: reason("NOT_VERIFIED_DEPLOYMENT", "never", `${mismatches.length} mismatch(es)`),
         };
       }
-      if (results) await cachePut(() => results.put(key, { basis, live }));
+      memory?.set(key, { basis, live });
       return { ok: true, value: { basis, mismatches, live } };
     },
     o,

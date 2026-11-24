@@ -92,17 +92,12 @@ describe("cold pin (fixture)", () => {
         arrayBuffer: async () => new TextEncoder().encode(text).buffer,
       };
     };
-    // No pin cache: this tests what each full verification checks (cache.test.ts covers the cached path).
-    const noResults = { get: async () => undefined, put: async () => {} };
-    const efs = createEfs({
-      rpcs: [fixture.rpcUrl],
-      deployment,
-      fetch: wrapped,
-      cache: { results: noResults },
-    });
+    // A fresh client per check: verified pins are remembered per client (cache.test.ts covers that path), and
+    // this test is about what each full verification checks.
+    const fresh = () => createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: wrapped });
     for (let i = 0; i < 2; i++) {
       methods.length = 0;
-      expect((await efs.at("latest")).status).toBe("VERIFIED");
+      expect((await fresh().at("latest")).status).toBe("VERIFIED");
       expect(methods.filter((m) => m !== "eth_chainId").sort()).toEqual([
         "eth_call",
         "eth_call",
@@ -111,16 +106,16 @@ describe("cold pin (fixture)", () => {
       ]);
     }
     lie = "slot";
-    const upgraded = await efs.at("latest");
+    const upgraded = await fresh().at("latest");
     expect(upgraded.status === "MISMATCH" && upgraded.mismatches.map((m) => m.what)).toContain(
       "implementation (ERC-1967 slot)",
     );
     lie = "code";
-    const swapped = await efs.at("latest");
+    const swapped = await fresh().at("latest");
     expect(swapped.status === "MISMATCH" && swapped.mismatches.map((m) => m.what)).toEqual([
       "code: LensReader",
     ]);
     lie = null;
-    expect((await efs.at("latest")).status).toBe("VERIFIED");
+    expect((await fresh().at("latest")).status).toBe("VERIFIED");
   });
 });

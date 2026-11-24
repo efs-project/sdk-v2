@@ -122,3 +122,51 @@ describe("caches (fixture)", () => {
     expect(fresh.stats.methods.filter((m) => m === "eth_call").length).toBe(2); // describe() + the code probe
   });
 });
+
+describe("cache scope (security review)", () => {
+  it("a pin is never read from a store: a planted 'VERIFIED' entry cannot skip verification", async () => {
+    // Before: pins were cached in a caller-supplied ResultStore. There is no such option now; the only pin memory is
+    // private to the client. A forged deployment document still fails, whatever any store holds.
+    const forged = structuredClone(deployment) as unknown as {
+      readers: { lensReader: { runtimeCodehash: string } };
+    };
+    forged.readers.lensReader.runtimeCodehash = `0x${"ab".repeat(32)}`;
+    const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment: forged });
+    expect((await efs.at("latest")).status).toBe("MISMATCH");
+  });
+
+  it("a record body cached for another ledger is never served here", async () => {
+    // A shared store filled by a client of the real deployment …
+    const shared = new Map<string, Uint8Array>();
+    const store: ByteStore = {
+      get: async (k) => shared.get(k.toLowerCase()),
+      put: async (k, b) => {
+        shared.set(k.toLowerCase(), b);
+      },
+    };
+    const real = createEfs({ rpcs: [fixture.rpcUrl], deployment, cache: { bytes: store } });
+    const o = await openFile(real, { kind: "file", subject: subject("big.bin") });
+    if (o.status !== "PRESENT") throw new Error(o.status);
+    expect((await readBytes(real, o.file)).grade).toBe("VERIFIED");
+    expect(shared.size).toBeGreaterThan(0);
+    // … holds nothing under the keys a client of another ledger (same chain) would use.
+    const other = structuredClone(deployment) as unknown as { ledger: string };
+    other.ledger = "0x000000000000000000000000000000000000dEaD";
+    const { keccak256, encodeAbiParameters } = await import("viem");
+    const rec = (o.file.root ?? "0x") as `0x${string}`;
+    const keyHere = keccak256(
+      encodeAbiParameters(
+        [{ type: "uint256" }, { type: "address" }, { type: "bytes32" }],
+        [31337n, (deployment as unknown as { ledger: `0x${string}` }).ledger, rec],
+      ),
+    );
+    const keyThere = keccak256(
+      encodeAbiParameters(
+        [{ type: "uint256" }, { type: "address" }, { type: "bytes32" }],
+        [31337n, other.ledger as `0x${string}`, rec],
+      ),
+    );
+    expect(shared.has(keyHere.toLowerCase())).toBe(true);
+    expect(shared.has(keyThere.toLowerCase())).toBe(false);
+  });
+});
