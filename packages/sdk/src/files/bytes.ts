@@ -15,7 +15,12 @@ import {
   decodeRevision,
   decodeSpan,
 } from "../content/codec.js";
-import { DEFAULT_GATEWAYS, type GatewayPolicy, planLocator } from "../content/locator.js";
+import {
+  checkHttpUrl,
+  DEFAULT_GATEWAYS,
+  type GatewayPolicy,
+  planLocator,
+} from "../content/locator.js";
 import { type LedgerRecord, readRecords } from "../content/records.js";
 import { type CallOpts, EfsFault, type Reason, reason, throwIfAborted } from "../core/errors.js";
 import {
@@ -372,6 +377,9 @@ export interface BytesOpts extends CallOpts {
   maxBytes?: bigint;
 }
 
+/** Bounds on a span walk, independent of the sizes the tree declares. */
+const MAX_SPAN_DEPTH = 64;
+
 /** Collect the verified chunk payloads of a span tree overlapping [offset, offset + length). */
 async function spanRange(
   ctx: Ctx,
@@ -383,24 +391,31 @@ async function spanRange(
 ): Promise<Step<Uint8Array>> {
   const parts: Uint8Array[] = [];
   const end = offset + length;
-  const visit = async (id: Hex, start: bigint): Promise<Step<bigint>> => {
+  // Each requested chunk costs one chunk read plus at most one span read per tree level.
+  let budget = Math.ceil(Number(length) / 8160 + 2) * (MAX_SPAN_DEPTH + 1);
+  const fail = (code: string, detail: string): Step<never> => ({
+    ok: false,
+    retryElsewhere: false,
+    reason: reason(code, "never", detail),
+  });
+  const visit = async (id: Hex, start: bigint, depth: number): Promise<Step<bigint>> => {
+    if (depth > MAX_SPAN_DEPTH)
+      return fail("LIMIT_EXCEEDED", `span tree deeper than ${MAX_SPAN_DEPTH}`);
+    budget -= 1;
+    if (budget < 0) return fail("LIMIT_EXCEEDED", "span walk exceeded its node budget");
     const rec = await readOne(ctx, s, basis, id);
     if (!rec.ok) return rec;
-    if (rec.value.status !== "PRESENT" || !rec.value.body)
+    if (rec.value.status !== "PRESENT" || !rec.value.body) {
       return {
         ok: false,
         retryElsewhere: true,
         reason: reason("RPC_ERROR", "transient", `chunk record ${id} not present`),
       };
+    }
     const t = typeName(ctx.efs, rec.value.typeId);
     if (t === "files-bytes/1") {
       const chunk = decodeChunk(rec.value.body);
-      if (!chunk)
-        return {
-          ok: false,
-          retryElsewhere: false,
-          reason: reason("DIGEST_MISMATCH", "never", `chunk ${id} fails its sha256`),
-        };
+      if (!chunk) return fail("DIGEST_MISMATCH", `chunk ${id} fails its sha256`);
       const len = BigInt(chunk.payload.length);
       const lo = offset > start ? offset - start : 0n;
       const hi = end < start + len ? end - start : len;
@@ -409,30 +424,27 @@ async function spanRange(
     }
     if (t === "files-span/1") {
       const span = decodeSpan(rec.value.body);
-      if (!span)
-        return {
-          ok: false,
-          retryElsewhere: false,
-          reason: reason("UNSUPPORTED_PROFILE", "never", "malformed span"),
-        };
+      if (!span) return fail("UNSUPPORTED_PROFILE", "malformed span");
       if (start + span.length <= offset || start >= end) return { ok: true, value: span.length }; // outside the range
-      const left = await visit(span.left, start);
+      const left = await visit(span.left, start, depth + 1);
       if (!left.ok) return left;
+      if (left.value > span.length)
+        return fail("DIGEST_MISMATCH", `span ${id}: left child longer than the node`);
       if (start + left.value < end) {
-        const right = await visit(span.right, start + left.value);
+        const right = await visit(span.right, start + left.value, depth + 1);
         if (!right.ok) return right;
+        if (left.value + right.value !== span.length)
+          return fail("DIGEST_MISMATCH", `span ${id}: children do not add up to its length`);
       }
       return { ok: true, value: span.length };
     }
-    return {
-      ok: false,
-      retryElsewhere: false,
-      reason: reason("UNSUPPORTED_PROFILE", "never", `span child is ${t ?? "an unknown Type"}`),
-    };
+    return fail("UNSUPPORTED_PROFILE", `span child is ${t ?? "an unknown Type"}`);
   };
-  const done = await visit(root, 0n);
+  const done = await visit(root, 0n, 0);
   if (!done.ok) return done;
   const total = parts.reduce((n, p) => n + p.length, 0);
+  if (BigInt(total) !== length)
+    return fail("DIGEST_MISMATCH", `span tree yielded ${total} bytes for a ${length}-byte range`);
   const out = new Uint8Array(total);
   let at = 0;
   for (const p of parts) {
@@ -441,6 +453,58 @@ async function spanRange(
   }
   return { ok: true, value: out };
 }
+
+type BodyReader = {
+  read(): Promise<{ done: boolean; value?: Uint8Array }>;
+  cancel(): Promise<void>;
+};
+
+/** Read a response body, refusing more than `max` bytes while reading (never trusting content-length alone). */
+async function boundedBody(
+  res: { body?: unknown; arrayBuffer(): Promise<ArrayBuffer> },
+  max: bigint,
+): Promise<Uint8Array | "TOO_LARGE"> {
+  const reader = (res.body as { getReader?: () => BodyReader } | undefined)?.getReader?.();
+  if (!reader) {
+    const all = new Uint8Array(await res.arrayBuffer());
+    return BigInt(all.length) > max ? "TOO_LARGE" : all;
+  }
+  const parts: Uint8Array[] = [];
+  let total = 0n;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += BigInt(value.length);
+    if (total > max) {
+      await reader.cancel().catch(() => {});
+      return "TOO_LARGE";
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(Number(total));
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/** The global URL constructor, typed structurally (the portable core has no DOM types). */
+const resolveUrl = (target: string, base: string): string | null => {
+  const U = (globalThis as unknown as { URL?: new (u: string, b?: string) => { href: string } })
+    .URL;
+  try {
+    return U ? new U(target, base).href : null;
+  } catch {
+    return null;
+  }
+};
+
+/** In browsers the page's own network policy applies and redirects are followed; elsewhere each hop is re-checked. */
+const inBrowser = (): boolean =>
+  typeof (globalThis as { document?: unknown }).document !== "undefined";
 
 async function fetchExternal(
   efs: Efs,
@@ -457,7 +521,9 @@ async function fetchExternal(
   const policy: GatewayPolicy = {
     ipfs: efs.gateways.ipfs ?? DEFAULT_GATEWAYS.ipfs,
     arweave: efs.gateways.arweave ?? DEFAULT_GATEWAYS.arweave,
-    allowInsecureHttp: false,
+    allowSchemes: efs.gateways.allowSchemes ?? DEFAULT_GATEWAYS.allowSchemes,
+    allowInsecureHttp: efs.gateways.allowInsecureHttp ?? false,
+    allowPrivateHosts: efs.gateways.allowPrivateHosts ?? false,
   };
   const max = o.maxBytes ?? efs.gateways.maxBytes ?? 50n * 1024n * 1024n;
   if (file.size > max)
@@ -498,25 +564,39 @@ async function fetchExternal(
         const timeout = new Promise<never>((_, reject) => {
           timer = setTimer(() => reject(new Error("timeout")), efs.gateways.timeoutMs ?? 10_000);
         });
-        const res = await Promise.race([
-          fetchImpl(url, {
-            method: "GET",
-            headers: {},
-            redirect: "follow",
-            ...(o.signal ? { signal: o.signal } : {}),
-          }),
-          timeout,
-        ]);
+        const follow = inBrowser();
+        const get = (u: string) =>
+          Promise.race([
+            fetchImpl(u, {
+              method: "GET",
+              headers: {},
+              redirect: follow ? "follow" : "manual",
+              ...(o.signal ? { signal: o.signal } : {}),
+            }),
+            timeout,
+          ]);
+        let res = await get(url);
+        // Outside browsers, follow at most 5 redirects, re-checking every target against the policy.
+        for (let hop = 0; !follow && res.status >= 300 && res.status < 400 && hop < 5; hop++) {
+          const next = res.headers.get("location");
+          const target = next ? resolveUrl(next, url) : null;
+          if (!target || checkHttpUrl(target, policy) !== "ok") break;
+          res = await get(target);
+        }
         if (!res.ok) {
           attempts.push({ location: origin, outcome: "FAILED", detail: `HTTP ${res.status}` });
           continue;
         }
         const declared = res.headers.get("content-length");
-        if (declared && BigInt(declared) > max) {
+        if (declared && /^\d+$/.test(declared) && BigInt(declared) > max) {
           attempts.push({ location: origin, outcome: "TOO_LARGE" });
           continue;
         }
-        const bytes = new Uint8Array(await Promise.race([res.arrayBuffer(), timeout]));
+        const bytes = await Promise.race([boundedBody(res, max), timeout]);
+        if (bytes === "TOO_LARGE") {
+          attempts.push({ location: origin, outcome: "TOO_LARGE" });
+          continue;
+        }
         if (BigInt(bytes.length) === file.size && sha256(bytes) === file.sha256) {
           attempts.push({ location: origin, outcome: "VERIFIED" });
           return { grade: "VERIFIED", bytes, location: loc, attempts };
@@ -561,6 +641,16 @@ export async function readRange(
         ? file.size - offset
         : range.length;
   const base = { kind: "efs.bytes.range" as const, offset, length };
+  const cap = o.maxBytes ?? efs.gateways.maxBytes ?? 50n * 1024n * 1024n;
+  if (length > cap) {
+    return {
+      ...base,
+      grade: "UNAVAILABLE",
+      attempts: [],
+      reason: reason("TOO_LARGE", "never", `range is ${length} bytes; limit ${cap}`),
+      evidence: { attempts: [], requests: 0 },
+    };
+  }
   if (file.layout === "inline") {
     const bytes = (file.inline ?? new Uint8Array()).slice(Number(offset), Number(offset + length));
     return {

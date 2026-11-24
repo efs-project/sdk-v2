@@ -14,6 +14,7 @@ import {
 import { type CallOpts, type Reason, reason } from "../core/errors.js";
 import { type Hex, lower } from "../core/hex.js";
 import { ledgerReadsAbi } from "../generated/abis.js";
+import { STATUS_VOCABULARY_ID } from "../generated/purposes.js";
 import type { DeploymentInfo } from "./manifest.js";
 
 /** keccak256("eip1967.proxy.implementation") - 1 */
@@ -60,6 +61,7 @@ type Describe = {
   ledgerImplCodehash: Hex;
   frozen: boolean;
   admissions: bigint;
+  statusVocabularyId: Hex;
 };
 
 export async function pinDeployment(
@@ -119,6 +121,8 @@ export async function pinDeployment(
       eq("realmId", d.realmId, described.realmId);
       eq("acceptedChainId", String(d.chainId), String(described.acceptedChainId));
       eq("layoutId", d.layoutId, described.layoutId);
+      // The status mapping this SDK applies (protocol/status.ts) must be the deployment's own vocabulary.
+      eq("status vocabulary", STATUS_VOCABULARY_ID, described.statusVocabularyId);
       eq("implementation (ERC-1967 slot)", d.ledgerImplementation, implFromSlot);
       eq("implementation (describe)", d.ledgerImplementation, described.ledgerImpl);
       const hashes = codes.map((c) => (c && c !== "0x" ? keccak256(c) : "absent"));

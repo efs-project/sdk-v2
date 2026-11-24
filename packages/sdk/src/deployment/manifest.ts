@@ -30,6 +30,8 @@ export interface DeploymentInfo {
   releaseDigest: Hex | null;
   ledger: Address;
   ledgerImplementation: Address;
+  /** LedgerIngress: acceptanceProfileOf, indexFloor and nativeIntentDigest live here. */
+  ingress: Address;
   readers: {
     ledgerReads: Address;
     ledgerViews: Address;
@@ -111,6 +113,7 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
     releaseDigest: isWord(d["releaseDigest"]) ? lower(d["releaseDigest"] as Hex) : null,
     ledger: addr("ledger", d["ledger"]),
     ledgerImplementation: addr("proxies.ledger.implementation", proxy["implementation"]),
+    ingress: addr("contracts.LedgerIngress.address", unit("LedgerIngress")["address"]),
     readers: {
       ledgerReads: addr("readers.ledgerReads", readers["ledgerReads"]),
       ledgerViews: addr("readers.ledgerViews", readers["ledgerViews"]),

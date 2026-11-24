@@ -10,6 +10,7 @@ type G = {
   TextDecoder: new (label?: string, o?: { fatal?: boolean; ignoreBOM?: boolean }) => Decoder;
   setTimeout(fn: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
+  structuredClone<T>(value: T): T;
 };
 const g = (): G => globalThis as unknown as G;
 
@@ -27,4 +28,9 @@ export function setTimer(fn: () => void, ms: number): unknown {
 }
 export function clearTimer(handle: unknown): void {
   g().clearTimeout(handle);
+}
+
+/** structuredClone (deep copy of plain data). */
+export function clone<T>(value: T): T {
+  return g().structuredClone(value);
 }

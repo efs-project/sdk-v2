@@ -14,10 +14,19 @@ import { type PinResult, pinDeployment } from "./deployment/pin.js";
 import { keyPrincipal } from "./protocol/keys.js";
 
 export interface GatewayConfig {
+  /** Ordered IPFS gateway origins (default ipfs.io, dweb.link, trustless-gateway.link). */
   ipfs?: readonly string[];
+  /** Ordered Arweave gateway origins (default arweave.net, ar-io.net). */
   arweave?: readonly string[];
+  /** Location schemes that may be fetched (default https, ipfs, ar, data). Others return POLICY_BLOCKED. */
   allowSchemes?: readonly string[];
+  /** Allow plain http:// locations (default false). */
+  allowInsecureHttp?: boolean;
+  /** Allow locations naming private, loopback, link-local or metadata hosts (default false). */
+  allowPrivateHosts?: boolean;
+  /** Largest file or range fetched (default 50 MiB). */
   maxBytes?: bigint;
+  /** Per-attempt timeout in milliseconds (default 10 000). */
   timeoutMs?: number;
 }
 
