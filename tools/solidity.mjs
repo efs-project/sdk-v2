@@ -23,15 +23,31 @@ for (const f of readdirSync(join(IN, "src/interfaces")).sort())
   if (f.endsWith(".sol")) closure[`interfaces/${f}`] = `src/interfaces/${f}`;
 for (const f of ["Keys.sol", "EfsNative.sol", "EfsFiles.sol"]) closure[`lib/${f}`] = `src/lib/${f}`;
 
+// Every closure file must be exactly the bytes lock.json pins (tools/inputs.mjs), whatever ran before: the
+// provenance below records the LOCKED digests, never digests computed from whatever is on disk.
+const locked = (from) => {
+  const want = lock.contracts.files[from];
+  if (typeof want !== "string")
+    throw new Error(`solidity: ${from} is not pinned in protocol-inputs/lock.json`);
+  const bytes = readFileSync(join(IN, from));
+  if (sha(bytes) !== want)
+    throw new Error(`solidity: ${from} differs from lock.json (run node tools/inputs.mjs verify)`);
+  return { bytes, digest: want };
+};
 const out = {};
-for (const [to, from] of Object.entries(closure)) out[`src/${to}`] = readFileSync(join(IN, from));
+const digests = {};
+for (const [to, from] of Object.entries(closure)) {
+  const { bytes, digest } = locked(from);
+  out[`src/${to}`] = bytes;
+  digests[to] = digest;
+}
 out["src/PROVENANCE.json"] = Buffer.from(
   `${JSON.stringify(
     {
       schema: "efs-solidity-provenance/1",
       note: "Copied byte for byte from efs-project/contracts-v2 at `commit` by tools/solidity.mjs. Do not edit.",
       contracts: { repo: lock.contracts.repo, commit: lock.contracts.commit },
-      files: Object.fromEntries(Object.keys(closure).map((p) => [p, sha(out[`src/${p}`])])),
+      files: digests,
     },
     null,
     2,
@@ -40,10 +56,25 @@ out["src/PROVENANCE.json"] = Buffer.from(
 
 // Golden vectors for test/Keys.t.sol, as constants (no file-system cheatcodes needed).
 {
-  const v = JSON.parse(readFileSync(join(IN, "test/vectors/ids.json"), "utf8"));
+  const v = JSON.parse(locked("test/vectors/ids.json").bytes.toString("utf8"));
+  // Only strict shapes are ever interpolated into Solidity source.
+  const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+  for (const k of [...Object.keys(v.inputs), ...Object.keys(v.outputs)])
+    if (!IDENT.test(k))
+      throw new Error(`solidity: vector key ${JSON.stringify(k)} is not an identifier`);
+  if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(v.inputs.body))
+    throw new Error("solidity: vector body is not hex bytes");
+  if (
+    !Array.isArray(v.inputs.refTypes) ||
+    v.inputs.refTypes.length !== 2 ||
+    v.inputs.refTypes.some((r) => !/^0x[0-9a-fA-F]{64}$/.test(r))
+  )
+    throw new Error("solidity: vector refTypes must be two 32-byte words");
   const lit = (x) =>
     typeof x === "number"
-      ? String(x)
+      ? Number.isSafeInteger(x) && x >= 0
+        ? String(x)
+        : null
       : /^0x[0-9a-fA-F]{40}$/.test(x)
         ? getAddress(x)
         : /^0x[0-9a-fA-F]{64}$/.test(x)
@@ -78,10 +109,22 @@ library KeyVectors {
   out["test/generated/KeyVectors.sol"] = Buffer.from(src);
 }
 
+/** Everything under packages/solidity/src, recursively, relative to the package. */
+const walkSrc = (dir = join(PKG, "src"), rel = "src") =>
+  existsSync(dir)
+    ? readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walkSrc(join(dir, e.name), `${rel}/${e.name}`) : [`${rel}/${e.name}`],
+      )
+    : [];
+/** The only hand-written files src/ may hold besides the closure (everything in src/ is packed). */
+const HAND_WRITTEN = new Set(["src/package.json", "src/README.md", "src/LICENSE"]);
+
 let drift = 0;
 if (!check) {
-  for (const d of ["src/interfaces", "src/lib", "test/generated"])
-    rmSync(join(PKG, d), { recursive: true, force: true });
+  // Clean exhaustively: anything in src/ that is neither generated here nor allow-listed goes.
+  for (const f of walkSrc())
+    if (!(f in out) && !HAND_WRITTEN.has(f)) rmSync(join(PKG, f), { force: true });
+  rmSync(join(PKG, "test/generated"), { recursive: true, force: true });
 }
 for (const [rel, bytes] of Object.entries(out)) {
   const path = join(PKG, rel);
@@ -96,14 +139,14 @@ for (const [rel, bytes] of Object.entries(out)) {
   }
 }
 if (check) {
-  // Nothing extra in the generated directories either.
-  for (const d of ["src/interfaces", "src/lib"]) {
-    for (const f of existsSync(join(PKG, d)) ? readdirSync(join(PKG, d)) : [])
-      if (!(`${d}/${f}` in out)) {
-        fail(`packages/solidity/${d}/${f} is not part of the closure`);
-        drift++;
-      }
-  }
+  // Exhaustive: no file anywhere in src/ (all of which is packed) may be outside the closure and the allowlist.
+  for (const f of walkSrc())
+    if (!(f in out) && !HAND_WRITTEN.has(f)) {
+      fail(
+        `packages/solidity/${f} is neither part of the closure nor an allowed hand-written file`,
+      );
+      drift++;
+    }
 }
 if (!drift)
   ok(
