@@ -422,7 +422,7 @@ export interface ChangeResult {
 
 ### Gateway policy and publisher locations (0.1)
 
-The default `gateways.allowSchemes` is `["ipfs", "ar", "data"]`: a publisher's `https://` location is fetched only
+The default `gateways.allowSchemes` is `["ipfs", "ar", "data", "web3"]`: a publisher's `https://` location is fetched only
 when the app allows it. The reason is that the author chose that server, and it sees the reader's IP address.
 - `gateways.allowSchemes` including `"https"` allows such locations for the whole client.
 - `allowOrigins: ["https://host[:port]"]` on `readBytes`, `readRange`, `fileChunks`, `streamFile`,
@@ -434,6 +434,24 @@ when the app allows it. The reason is that the author chose that server, and it 
   blocked location with the option that would allow it (`allowOrigins`, `gateways.allowSchemes`,
   `gateways.allowInsecureHttp`, `gateways.allowPrivateHosts`; credentials never). Stream failures carry the same
   `blockedOrigins`.
+
+### web3:// locations (0.1)
+
+`web3://0x<address>[:<chainId>]/<path>[?query]` locations (ERC-6860) are read through the client's own RPC endpoints,
+so no new party sees the reader, and `web3` is in the default `allowSchemes`.
+- The contract must answer `resolveMode()` with "5219" (ERC-6944). The SDK calls the standard ERC-5219
+  `request(resource, params)` and decodes the body slot as bytes, so binary content survives. It follows ERC-7617
+  `web3-next-chunk` until the header is absent. Header names are matched case-insensitively.
+- One read runs on one endpoint at one block. It stops early when `Content-Length` (the whole file's length on every
+  chunk) disagrees with the file, when the body runs past the file or `maxBytes`, or when a chunk makes no
+  progress. A 307's `Location` is tried next, planned through the same gateway policy (at most 5 hops). Any status
+  other than 200 or 307 is a failure of that location, and a reverting call is a fault of the call, never "not
+  found".
+- The whole body is verified against the file's sha256 before any byte is emitted, as for every external location.
+- Unsupported in 0.1, reported as UNSUPPORTED_LOCATOR with a reason: names (ENS), a userinfo "from" address,
+  contracts in manual mode, and other chains (the client has endpoints for its own chain only).
+- Fixtures: `bytes-web3-verified`, `bytes-web3-no-contract` (the seed's locator names the zero address), and
+  `bytes-external-unsupported` (web3:// on another chain).
 
 ## 6. Caches (passed in by the caller; async, so IndexedDB can back them later)
 

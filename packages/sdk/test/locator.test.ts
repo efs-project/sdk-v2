@@ -7,6 +7,7 @@ import {
   isPrivateHost,
   planLocator,
 } from "../src/content/locator.ts";
+import { header, parsePathQuery } from "../src/content/web3.ts";
 import { withinGateway } from "../src/files/bytes.ts";
 
 const P = DEFAULT_GATEWAYS;
@@ -34,7 +35,7 @@ describe("locator planning", () => {
       expect(planLocator(bad, P).ok, bad).toBe(false);
     }
   });
-  it("enforces the scheme allowlist and https-only by default", () => {
+  it("enforces the scheme allowlist; publisher http(s) is off by default", () => {
     expect(planLocator("http://example.com/x", P)).toMatchObject({
       ok: false,
       why: "POLICY_BLOCKED",
@@ -44,9 +45,67 @@ describe("locator planning", () => {
       ok: false,
       why: "POLICY_BLOCKED",
     });
+    expect(planLocator("https://example.com/x", P)).toMatchObject({
+      ok: false,
+      why: "POLICY_BLOCKED",
+      rule: "scheme",
+    });
+  });
+  it("plans web3:// locations on the client's own chain only, by address", () => {
+    const W = { ...P, web3ChainId: 31337 };
+    const addr = "0xd658eacb6520528bbc06fda32eb847a3c2ceea81";
     expect(
-      planLocator("web3://0x0000000000000000000000000000000000000000:31337/x", P),
-    ).toMatchObject({ ok: false });
+      planLocator(
+        `web3://${addr.toUpperCase().replace("0X", "0x")}:31337/0xab/docs/a%20b.txt?lens=0x1,0x2`,
+        W,
+      ),
+    ).toEqual({
+      ok: true,
+      scheme: "web3",
+      web3: {
+        address: addr,
+        chainId: 31337,
+        resource: ["0xab", "docs", "a b.txt"],
+        params: [{ key: "lens", value: "0x1,0x2" }],
+      },
+    });
+    expect(planLocator(`web3://${addr}/x`, W)).toMatchObject({
+      ok: false,
+      why: "UNSUPPORTED_LOCATOR",
+    }); // chain 1
+    expect(planLocator("web3://efs.eth:31337/x", W)).toMatchObject({
+      ok: false,
+      why: "UNSUPPORTED_LOCATOR",
+    });
+    expect(planLocator(`web3://me@${addr}:31337/x`, W)).toMatchObject({
+      ok: false,
+      why: "UNSUPPORTED_LOCATOR",
+    });
+    expect(planLocator(`web3://${addr}:031337/x`, W)).toMatchObject({
+      ok: false,
+      why: "MALFORMED",
+    });
+    expect(planLocator(`web3://${addr}:31337/%zz`, W)).toMatchObject({
+      ok: false,
+      why: "MALFORMED",
+    });
+    expect(planLocator(`web3://${addr}:31337/x`, { ...W, allowSchemes: ["ipfs"] })).toMatchObject({
+      ok: false,
+      why: "POLICY_BLOCKED",
+    });
+  });
+  it("parses a gateway's web3-next-chunk exactly as the gateway writes it", () => {
+    expect(parsePathQuery("/0x00ab/docs/deep%20tree.bin?offset=8160&lens=0xabc,0xdef")).toEqual({
+      resource: ["0x00ab", "docs", "deep tree.bin"],
+      params: [
+        { key: "offset", value: "8160" },
+        { key: "lens", value: "0xabc,0xdef" },
+      ],
+    });
+    expect(parsePathQuery("/")).toEqual({ resource: [], params: [] });
+    expect(parsePathQuery("web3://x/y")).toBeNull();
+    expect(parsePathQuery("/a?=1")).toBeNull();
+    expect(header([{ key: "Web3-Next-Chunk", value: "/a" }], "web3-next-chunk")).toBe("/a");
   });
   it("blocks private, loopback, link-local and metadata hosts unless allowed", () => {
     // Every spelling the WHATWG parser (and so fetch) canonicalizes to a private address is refused.

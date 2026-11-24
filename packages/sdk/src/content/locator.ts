@@ -4,6 +4,7 @@
 // input (anyone can publish one), so the URLs are built strictly: only allowed schemes, strict ids, encoded path
 // segments, no credentials, and no private, loopback or link-local hosts unless the caller opts in.
 import { utf8Encode } from "../core/platform.js";
+import { parseWeb3Url, type Web3Url } from "./web3.js";
 
 export interface GatewayPolicy {
   ipfs: readonly string[];
@@ -19,11 +20,13 @@ export interface GatewayPolicy {
   allowPrivateHosts: boolean;
   /** Exact origins allowed for one call even when their scheme is not (normalized; see normalizeOrigin). */
   allowOrigins?: readonly string[];
+  /** The chain the client has RPC endpoints for: web3:// locations on other chains are unsupported. */
+  web3ChainId?: number;
 }
 export const DEFAULT_GATEWAYS: GatewayPolicy = {
   ipfs: ["https://ipfs.io", "https://dweb.link", "https://trustless-gateway.link"],
   arweave: ["https://arweave.net", "https://ar-io.net"],
-  allowSchemes: ["ipfs", "ar", "data"],
+  allowSchemes: ["ipfs", "ar", "data", "web3"],
   allowInsecureHttp: false,
   allowPrivateHosts: false,
 };
@@ -32,6 +35,8 @@ export type LocatorPlan =
   /** `originGrant`: allowed only through `allowOrigins`, so redirects must keep this exact origin. */
   | { ok: true; scheme: string; urls: readonly string[]; originGrant?: true }
   | { ok: true; scheme: "data"; inline: Uint8Array }
+  /** Read through the client's own RPC endpoints (files/web3read.ts). */
+  | { ok: true; scheme: "web3"; web3: Web3Url }
   | {
       ok: false;
       scheme: string;
@@ -40,6 +45,8 @@ export type LocatorPlan =
       origin?: string;
       /** Why the policy blocked it, which decides the option that would allow it (see blockAdvice). */
       rule?: BlockRule;
+      /** Why a location is unsupported or malformed, in words. */
+      detail?: string;
     };
 
 /**
@@ -257,6 +264,26 @@ export function planLocator(locator: string, policy: GatewayPolicy): LocatorPlan
     return granted && !schemeAllowed
       ? { ok: true, scheme, urls: [locator], originGrant: true }
       : { ok: true, scheme, urls: [locator] };
+  }
+  if (scheme === "web3") {
+    if (!policy.allowSchemes.includes("web3"))
+      return { ok: false, scheme, why: "POLICY_BLOCKED", rule: "scheme" };
+    const p = parseWeb3Url(locator);
+    if (!p.ok)
+      return {
+        ok: false,
+        scheme,
+        why: p.why === "MALFORMED" ? "MALFORMED" : "UNSUPPORTED_LOCATOR",
+        detail: p.detail,
+      };
+    if (policy.web3ChainId !== undefined && p.url.chainId !== policy.web3ChainId)
+      return {
+        ok: false,
+        scheme,
+        why: "UNSUPPORTED_LOCATOR",
+        detail: `web3:// on chain ${p.url.chainId}; this client has RPC endpoints for chain ${policy.web3ChainId} only`,
+      };
+    return { ok: true, scheme: "web3", web3: p.url };
   }
   if (!policy.allowSchemes.includes(scheme)) {
     const known = ["ipfs", "ar", "data"].includes(scheme);

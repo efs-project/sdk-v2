@@ -26,6 +26,7 @@ import {
   planLocator,
 } from "../content/locator.js";
 import { type LedgerRecord, readRecords } from "../content/records.js";
+import type { Web3Url } from "../content/web3.js";
 import {
   type AbortSignalLike,
   type CallOpts,
@@ -46,6 +47,7 @@ import { clearTimer, setTimer } from "../core/platform.js";
 import { lensReaderAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { chainStatus } from "../protocol/status.js";
+import { readWeb3 } from "./web3read.js";
 
 export interface FileRef {
   kind: "file";
@@ -101,7 +103,8 @@ export type ByteGrade =
 
 export interface LocationAttempt {
   location: string;
-  outcome: "VERIFIED" | "MISMATCH" | "FAILED" | "TOO_LARGE";
+  /** REDIRECTED: a web3:// location answered 307; its target is tried next, through the same policy. */
+  outcome: "VERIFIED" | "MISMATCH" | "FAILED" | "TOO_LARGE" | "REDIRECTED";
   detail?: string;
 }
 
@@ -584,6 +587,7 @@ export function gatewayPolicyOf(efs: Efs, allowOrigins?: readonly string[]): Gat
     allowSchemes: efs.gateways.allowSchemes ?? DEFAULT_GATEWAYS.allowSchemes,
     allowInsecureHttp: efs.gateways.allowInsecureHttp ?? false,
     allowPrivateHosts: efs.gateways.allowPrivateHosts ?? false,
+    web3ChainId: efs.deployment.chainId,
   };
   if (!allowOrigins?.length) return base;
   const origins = allowOrigins.map((entry) => {
@@ -670,6 +674,51 @@ export async function getChecked(
 export const originLabel = (url: string, fallback: string): string =>
   /^[a-z]+:\/\/[^/?#]+/i.exec(url)?.[0] ?? fallback;
 
+/** @internal A location to try, with how many redirects led to it. */
+export interface QueuedLocation {
+  loc: Location;
+  uri: string;
+  hops: number;
+}
+/** @internal The file's locations in order; redirects are inserted right after the location that sent them. */
+export const locationQueue = (file: OpenedFile): QueuedLocation[] =>
+  file.locations.flatMap((loc) => (loc.uri ? [{ loc, uri: loc.uri, hops: 0 }] : []));
+
+/** @internal How a web3:// location appears in attempts: its contract and chain, never its path. */
+export const web3Label = (u: Web3Url): string => `web3://${u.address}:${u.chainId}`;
+
+const MAX_REDIRECTS = 5;
+/**
+ * @internal Queue a 307's target right after the location that sent it. A relative target stays on the same
+ * contract; any target is planned through the gateway policy like a location of its own.
+ */
+export function follow(
+  queue: QueuedLocation[],
+  at: number,
+  location: string,
+  from: Web3Url,
+  loc: Location,
+  hops: number,
+  attempts: LocationAttempt[],
+  label: string,
+): void {
+  if (hops >= MAX_REDIRECTS) {
+    attempts.push({
+      location: label,
+      outcome: "FAILED",
+      detail: `more than ${MAX_REDIRECTS} redirects`,
+    });
+    return;
+  }
+  const target = location.startsWith("/") ? `${web3Label(from)}${location}` : location;
+  attempts.push({
+    location: label,
+    outcome: "REDIRECTED",
+    detail: target.split(/[?#]/)[0] ?? target,
+  });
+  queue.splice(at + 1, 0, { loc, uri: target, hops: hops + 1 });
+}
+
 /** @internal */
 export async function fetchExternal(
   efs: Efs,
@@ -696,11 +745,16 @@ export async function fetchExternal(
   const fetchImpl = efs._internal.fetch ?? (globalThis as { fetch?: FetchLike }).fetch;
   let sawSupported = false;
   let lastBlocked: ByteGrade = "UNSUPPORTED_LOCATOR";
-  for (const loc of file.locations) {
-    if (!loc.uri) continue;
-    const plan = planLocator(loc.uri, policy);
+  const queue = locationQueue(file);
+  for (let qi = 0; qi < queue.length; qi++) {
+    const { loc, uri, hops } = queue[qi] as QueuedLocation;
+    const plan = planLocator(uri, policy);
     if (!plan.ok) {
-      attempts.push({ location: plan.origin ?? loc.scheme, outcome: "FAILED", detail: plan.why });
+      attempts.push({
+        location: plan.origin ?? loc.scheme,
+        outcome: "FAILED",
+        detail: plan.detail ? `${plan.why}: ${plan.detail}` : plan.why,
+      });
       if (plan.why === "POLICY_BLOCKED") {
         lastBlocked = "POLICY_BLOCKED";
         blocked.note(plan);
@@ -714,6 +768,25 @@ export async function fetchExternal(
         return { grade: "VERIFIED", bytes: plan.inline, location: loc, attempts };
       }
       attempts.push({ location: "data", outcome: "MISMATCH" });
+      continue;
+    }
+    if ("web3" in plan) {
+      throwIfAborted(o.signal);
+      const label = web3Label(plan.web3);
+      const out = await readWeb3(efs, plan.web3, { size: file.size, max }, o);
+      if (out.kind === "REDIRECT") {
+        follow(queue, qi, out.location, plan.web3, loc, hops, attempts, label);
+        continue;
+      }
+      if (out.kind === "FAILED") {
+        attempts.push({ location: label, outcome: out.outcome, detail: out.detail });
+        continue;
+      }
+      if (BigInt(out.bytes.length) === file.size && sha256(out.bytes) === file.sha256) {
+        attempts.push({ location: label, outcome: "VERIFIED" });
+        return { grade: "VERIFIED", bytes: out.bytes, location: loc, attempts };
+      }
+      attempts.push({ location: label, outcome: "MISMATCH" });
       continue;
     }
     for (const url of plan.urls) {

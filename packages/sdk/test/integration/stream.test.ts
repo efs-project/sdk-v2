@@ -142,6 +142,6 @@ describe("fileChunks (fixture)", () => {
     expect(bad.parts).toEqual([]);
     expect(bad.failure).toMatchObject({ grade: "MISMATCH", emitted: 0n });
     const web3 = await failure(fileChunks(efs, await opened("remote.txt")));
-    expect(web3.failure.grade).toBe("UNSUPPORTED_LOCATOR");
+    expect(web3.failure.grade).toBe("UNAVAILABLE"); // the seed's locator names the zero address
   });
 });

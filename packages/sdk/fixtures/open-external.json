@@ -28,7 +28,7 @@
       "blockNumber": {
         "$efs:bigint": "62"
       },
-      "blockHash": "0x0bee1bcbfdcc19b033ce045267df06b2217d817b11576f089dc99578c5fbb343",
+      "blockHash": "0x57fed99195f940fe2e580b663a6bf5925b460df58852af3754be788c53ab21c0",
       "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
       "endpoint": "local fixture"
     },
@@ -42,7 +42,7 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 1
+          "ms": 2
         }
       ],
       "requests": 5

@@ -2,7 +2,7 @@
   "schema": "efs-sdk-fixture/1",
   "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
   "case": "bytes-external-unsupported",
-  "note": "readBytes on the web3:// file (no gateway yet)",
+  "note": "readBytes on a web3:// location on another chain (the client has RPC endpoints for its own chain only)",
   "result": {
     "kind": "efs.bytes.range",
     "offset": {
@@ -16,7 +16,7 @@
       {
         "location": "web3",
         "outcome": "FAILED",
-        "detail": "UNSUPPORTED_LOCATOR"
+        "detail": "UNSUPPORTED_LOCATOR: web3:// on chain 1; this client has RPC endpoints for chain 31337 only"
       }
     ],
     "evidence": {
