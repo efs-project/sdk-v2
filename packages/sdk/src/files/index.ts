@@ -19,3 +19,5 @@ export type {
 export { openFile, readBytes, readRange } from "./bytes.js";
 export type { FileChunks, StreamFailure, StreamOpts } from "./stream.js";
 export { fileChunks } from "./stream.js";
+export type { UnverifiedChunks, UnverifiedOpts, UnverifiedResult } from "./unverified.js";
+export { unverifiedChunks } from "./unverified.js";

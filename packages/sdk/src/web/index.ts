@@ -4,4 +4,4 @@
  * journal is a write capability, so it lives at `@efs/sdk/web/journal`.
  */
 
-export { streamFile } from "./stream.js";
+export { streamFile, streamUnverified } from "./stream.js";

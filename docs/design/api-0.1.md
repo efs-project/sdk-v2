@@ -267,6 +267,13 @@ chunks), `maxBytes` (the buffering cap for external files) and `signal`.
 - A stream that cannot continue throws or errors with `EfsFault("STREAM_FAILED")`, with details
   `{ grade, reason, emitted }`. Resume with `offset + emitted`. Cancel (`return()`, `cancel()` or the signal) aborts
   the requests in flight.
+- **Opt-in unverified playback**: `streamUnverified(efs, opened, o)` in `@efs/sdk/web` returns `{ stream, result }`,
+  and `unverifiedChunks` in `@efs/sdk/files` is the iterator form. External bytes are emitted as they arrive, before
+  they can be verified, and `result` (which never rejects) settles to VERIFIED or MISMATCH once the whole body has
+  been read. A MISMATCH also errors the stream. Fail-over to the next location happens only before the first byte.
+  Whole files only. Nothing is buffered, so `maxBytes` does not apply. `gateways.timeoutMs` bounds the time to the
+  headers and the idle time between chunks. Ledger layouts are verified per chunk and settle VERIFIED. Verified
+  seeking into IPFS content will come from per-block CID verification, never from unverified ranges.
 
 /** A name as text (encoded to UTF-8 as given; the SDK never re-normalizes it) or as exact bytes. */
 export type NameInput = string | Uint8Array;

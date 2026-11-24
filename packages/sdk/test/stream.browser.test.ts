@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import deployment from "../fixtures/rpc/deployment.json" with { type: "json" };
 import span from "../fixtures/rpc/open-span.json" with { type: "json" };
 import { createEfs } from "../src/client.ts";
-import type { SubjectId } from "../src/core/hex.ts";
+import type { RecordId, SubjectId } from "../src/core/hex.ts";
 import { openFile } from "../src/files/bytes.ts";
 import { type RpcTranscript, replayFetch } from "../src/testing/index.ts";
-import { streamFile } from "../src/web/stream.ts";
+import { streamFile, streamUnverified } from "../src/web/stream.ts";
 
 const transcript = span as unknown as RpcTranscript;
 
@@ -44,5 +44,32 @@ describe("streamFile (browser, replayed chain)", () => {
     expect((await reader.read()).value?.length).toBe(8160);
     await reader.cancel();
     expect((await reader.read()).done).toBe(true);
+  });
+});
+
+describe("streamUnverified (browser)", () => {
+  it("plays an external file through a ReadableStream and settles its grade", async () => {
+    const text = new TextEncoder().encode("frame-1 frame-2\n");
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", text)))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    const efs = createEfs({
+      rpcs: ["https://rpc.example.net/"],
+      deployment,
+      fetch: (async () =>
+        new Response(text, { headers: { "content-length": String(text.length) } })) as never,
+    });
+    const { stream, result } = streamUnverified(efs, {
+      file: `0x${"01".repeat(32)}` as SubjectId,
+      revision: `0x${"02".repeat(32)}` as RecordId,
+      author: null,
+      size: BigInt(text.length),
+      sha256: `0x${digest}`,
+      layout: "external",
+      locations: [{ scheme: "https", uri: "https://files.example/movie.bin" }],
+    });
+    const got = new Uint8Array(await new Response(stream).arrayBuffer());
+    expect(got).toEqual(text);
+    expect((await result).grade).toBe("VERIFIED");
   });
 });
