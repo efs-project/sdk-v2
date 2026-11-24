@@ -125,6 +125,7 @@ describe("fileChunks (fixture)", () => {
       createEfs({
         rpcs: [fixture.rpcUrl],
         deployment,
+        gateways: { allowSchemes: ["https", "ipfs", "ar", "data"] },
         fetch: (async () => ({
           ok: true,
           status: 200,

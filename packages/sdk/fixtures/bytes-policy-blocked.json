@@ -2,7 +2,7 @@
   "schema": "efs-sdk-fixture/1",
   "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
   "case": "bytes-policy-blocked",
-  "note": "readBytes on a plain http:// location (blocked by default)",
+  "note": "readBytes on a plain http:// location (blocked even with https allowed)",
   "result": {
     "kind": "efs.bytes.range",
     "offset": {
@@ -14,11 +14,16 @@
     "grade": "POLICY_BLOCKED",
     "attempts": [
       {
-        "location": "http",
+        "location": "http://files.example",
         "outcome": "FAILED",
         "detail": "POLICY_BLOCKED"
       }
     ],
+    "reason": {
+      "code": "POLICY_BLOCKED",
+      "retry": "never",
+      "detail": "blocked by the gateway policy: http://files.example: plain http needs gateways.allowInsecureHttp"
+    },
     "evidence": {
       "attempts": [],
       "requests": 0

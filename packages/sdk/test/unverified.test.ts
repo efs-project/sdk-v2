@@ -68,12 +68,14 @@ function gateway(routes: Record<string, Serve>) {
   };
   return { fetch, log };
 }
+// Publisher https:// locations are off by default (privacy); these tests opt in as an app's "always" setting would.
+const HTTPS = ["https", "ipfs", "ar", "data"];
 const client = (fetch: FetchLike, timeoutMs?: number) =>
   createEfs({
     rpcs: ["http://127.0.0.1:1"],
     deployment,
     fetch,
-    ...(timeoutMs ? { gateways: { timeoutMs } } : {}),
+    gateways: { allowSchemes: HTTPS, ...(timeoutMs ? { timeoutMs } : {}) },
   });
 
 async function drain(it: UnverifiedChunks): Promise<{ parts: Uint8Array[]; error?: EfsFault }> {

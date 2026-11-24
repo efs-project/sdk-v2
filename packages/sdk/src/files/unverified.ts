@@ -27,6 +27,7 @@ import {
 import type { Hex } from "../core/hex.js";
 import { clearTimer, setTimer } from "../core/platform.js";
 import {
+  Blocked,
   type ByteGrade,
   type FetchResponse,
   gatewayPolicyOf,
@@ -41,6 +42,8 @@ import { fileChunks, type StreamFailure } from "./stream.js";
 export interface UnverifiedOpts extends CallOpts {
   /** Ledger layouts only: bytes fetched per pull (see StreamOpts.windowBytes). */
   windowBytes?: number;
+  /** Exact origins to allow for this call only (see BytesOpts.allowOrigins). */
+  allowOrigins?: readonly string[];
 }
 
 export interface UnverifiedResult {
@@ -51,6 +54,8 @@ export interface UnverifiedResult {
   emitted: bigint;
   location?: Location;
   attempts: readonly LocationAttempt[];
+  /** Locations the gateway policy blocked (see ByteRangeResult.blockedOrigins). */
+  blockedOrigins?: readonly string[];
 }
 
 /** Chunks emitted before they are verified. `result` never rejects. */
@@ -142,19 +147,24 @@ export function unverifiedChunks(
   const timeoutMs = efs.gateways.timeoutMs ?? 10_000;
   const fetchImpl = efs._internal.fetch ?? (globalThis as { fetch?: FetchLike }).fetch;
   const attempts: LocationAttempt[] = [];
+  const blocked = new Blocked();
+  // Validated now, so a bad allowOrigins entry is MISUSE at the call, not at the first pull.
+  const policy = gatewayPolicyOf(efs, o.allowOrigins);
   let emitted = 0n;
   let done = false;
 
   const stop = (grade: ByteGrade, why: Reason | undefined, location?: Location): never => {
+    const b = blocked.origins.length ? { blockedOrigins: [...blocked.origins] } : {};
     finish({
       grade,
       ...(why ? { reason: why } : {}),
       emitted,
       ...(location ? { location } : {}),
       attempts,
+      ...b,
     });
     throw new EfsFault("STREAM_FAILED", `stream stopped after ${emitted} bytes: ${grade}`, {
-      details: { grade, ...(why ? { reason: why } : {}), emitted } satisfies StreamFailure,
+      details: { grade, ...(why ? { reason: why } : {}), emitted, ...b } satisfies StreamFailure,
     });
   };
 
@@ -239,15 +249,17 @@ export function unverifiedChunks(
   }
 
   async function* source(): AsyncGenerator<Uint8Array> {
-    const policy = gatewayPolicyOf(efs);
     let sawSupported = false;
     let lastBlocked: ByteGrade = "UNSUPPORTED_LOCATOR";
     for (const loc of file.locations) {
       if (!loc.uri) continue;
       const plan = planLocator(loc.uri, policy);
       if (!plan.ok) {
-        attempts.push({ location: loc.scheme, outcome: "FAILED", detail: plan.why });
-        if (plan.why === "POLICY_BLOCKED") lastBlocked = "POLICY_BLOCKED";
+        attempts.push({ location: plan.origin ?? loc.scheme, outcome: "FAILED", detail: plan.why });
+        if (plan.why === "POLICY_BLOCKED") {
+          lastBlocked = "POLICY_BLOCKED";
+          blocked.note(plan);
+        }
         continue;
       }
       sawSupported = true;
@@ -275,7 +287,15 @@ export function unverifiedChunks(
           const headers = new Promise<never>((_, reject) => {
             timer = setTimer(() => reject(new Error("timeout")), timeoutMs);
           });
-          res = await getChecked(fetchImpl, url, plan.scheme, policy, signal, headers);
+          res = await getChecked(
+            fetchImpl,
+            url,
+            plan.scheme,
+            policy,
+            signal,
+            headers,
+            plan.originGrant === true,
+          );
         } catch (e) {
           if (o.signal?.aborted)
             throw new EfsFault("ABORTED", "aborted by the caller", { cause: o.signal.reason });
@@ -306,7 +326,8 @@ export function unverifiedChunks(
         return;
       }
     }
-    if (!sawSupported) return stop(lastBlocked, undefined);
+    if (!sawSupported)
+      return stop(lastBlocked, lastBlocked === "POLICY_BLOCKED" ? blocked.reason() : undefined);
     const anyMismatch = attempts.some((a) => a.outcome === "MISMATCH");
     return stop(
       anyMismatch ? "MISMATCH" : "UNAVAILABLE",

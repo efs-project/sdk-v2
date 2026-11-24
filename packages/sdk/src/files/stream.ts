@@ -23,7 +23,14 @@ import {
   throwIfAborted,
 } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
-import { type ByteGrade, type Ctx, fetchExternal, type OpenedFile, spanRange } from "./bytes.js";
+import {
+  type ByteGrade,
+  type Ctx,
+  fetchExternal,
+  gatewayPolicyOf,
+  type OpenedFile,
+  spanRange,
+} from "./bytes.js";
 
 export interface StreamOpts extends CallOpts {
   /** First byte to emit (default 0). */
@@ -34,6 +41,8 @@ export interface StreamOpts extends CallOpts {
   windowBytes?: number;
   /** External files are buffered to be verified: refuse ones larger than this (default 50 MiB, or the client's). */
   maxBytes?: bigint;
+  /** Exact origins to allow for this call only (see BytesOpts.allowOrigins). */
+  allowOrigins?: readonly string[];
 }
 
 export interface StreamFailure {
@@ -41,6 +50,8 @@ export interface StreamFailure {
   reason?: Reason;
   /** Bytes already emitted before the failure. */
   emitted: bigint;
+  /** Locations the gateway policy blocked (see ByteRangeResult.blockedOrigins). */
+  blockedOrigins?: readonly string[];
 }
 
 /** Verified chunks of a file. `return()` cancels and aborts any request in flight. */
@@ -78,6 +89,8 @@ export function fileChunks(efs: Efs, file: OpenedFile, o: StreamOpts = {}): File
   const total = end > offset ? end - offset : 0n;
   const windowBytes = BigInt(Math.max(1, Math.ceil((o.windowBytes ?? 16 * CHUNK) / CHUNK)) * CHUNK);
   const whole = offset === 0n && total === file.size;
+  // Validated now, so a bad allowOrigins entry is MISUSE at the call, not at the first pull.
+  if (file.layout === "external") gatewayPolicyOf(efs, o.allowOrigins);
 
   // Our own controller: cancelling aborts in-flight requests; the caller's signal aborts it too.
   const ctl = newController();
@@ -88,9 +101,14 @@ export function fileChunks(efs: Efs, file: OpenedFile, o: StreamOpts = {}): File
   let emitted = 0n;
   let done = false;
 
-  const fail = (grade: ByteGrade, why?: Reason): never => {
+  const fail = (grade: ByteGrade, why?: Reason, blockedOrigins?: readonly string[]): never => {
     throw new EfsFault("STREAM_FAILED", `stream stopped after ${emitted} bytes: ${grade}`, {
-      details: { grade, ...(why ? { reason: why } : {}), emitted } satisfies StreamFailure,
+      details: {
+        grade,
+        ...(why ? { reason: why } : {}),
+        emitted,
+        ...(blockedOrigins?.length ? { blockedOrigins } : {}),
+      } satisfies StreamFailure,
     });
   };
 
@@ -157,8 +175,10 @@ export function fileChunks(efs: Efs, file: OpenedFile, o: StreamOpts = {}): File
       const got = await fetchExternal(efs, file, {
         ...call,
         ...(o.maxBytes !== undefined ? { maxBytes: o.maxBytes } : {}),
+        ...(o.allowOrigins ? { allowOrigins: o.allowOrigins } : {}),
       });
-      if (got.grade !== "VERIFIED" || !got.bytes) return fail(got.grade, got.reason);
+      if (got.grade !== "VERIFIED" || !got.bytes)
+        return fail(got.grade, got.reason, got.blockedOrigins);
       yield* buffered(got.bytes);
       return;
     }
