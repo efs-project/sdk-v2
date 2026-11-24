@@ -2,7 +2,7 @@
   "schema": "efs-sdk-protocol-inputs/1",
   "contracts": {
     "repo": "https://github.com/efs-project/contracts-v2",
-    "commit": "e79cd4e4d018952b732318e0063f395cf0ca74d5",
+    "commit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
     "releaseDigest": null,
     "files": {
       "LICENSE": "82f25cdadb39662a85a5e7d7cdc51b19eceb52407155f1f771e3061525b7b52f",
