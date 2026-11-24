@@ -2,7 +2,7 @@
   "name": "@efs/sdk",
   "version": "0.0.0",
   "private": true,
-  "description": "EFS v2 SDK (pre-alpha: repository scaffold only; no SDK functionality yet)",
+  "description": "EFS SDK: verified reads, writes and recovery for the Ethereum File System",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -51,5 +51,8 @@
     "playwright": "1.63.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
+  },
+  "dependencies": {
+    "viem": "^2.58.4"
   }
 }

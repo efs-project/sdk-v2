@@ -1,6 +1,10 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "files": {
     "includes": [
       "**",
@@ -8,11 +12,22 @@
       "!**/.packs",
       "!packages/solidity/dependencies",
       "!packages/solidity/out",
-      "!packages/solidity/cache"
+      "!packages/solidity/cache",
+      "!protocol-inputs",
+      "!packages/sdk/src/generated",
+      "!conformance/vectors"
     ]
   },
-  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
-  "linter": { "rules": { "preset": "recommended" } },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "rules": {
+      "preset": "recommended"
+    }
+  },
   "overrides": [
     {
       "includes": ["packages/sdk/src/**", "!packages/sdk/src/node/**", "!packages/sdk/src/web/**"],
