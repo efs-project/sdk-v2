@@ -278,10 +278,13 @@ describe("write lifecycle (fixture)", () => {
     });
     if (p.status !== "PLANNED") throw new Error(p.status);
     const r = await w.send(p.plan);
-    expect(r.status).toBe("STALE");
-    expect(r.status === "STALE" && r.reasons.join(" ")).toMatch(
-      /over the per-transaction cap of 16777216/,
-    );
+    // NOT_SENT with a stable code: "too big for one transaction, split it", never "your plan is stale".
+    expect(r.status).toBe("NOT_SENT");
+    if (r.status !== "NOT_SENT") return;
+    expect(r.reason).toMatchObject({ code: "OVER_TX_GAS_CAP", retry: "after-replan" });
+    expect(r.gas?.cap).toBe(16_777_216n);
+    expect(r.gas && r.gas.estimate > r.gas.cap).toBe(true);
+    expect(r.gas?.suggestedParts).toBeGreaterThanOrEqual(2);
     expect(w0.sent).toBe(0);
   });
 });

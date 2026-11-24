@@ -20,6 +20,7 @@ export type ReasonCode =
   | "INVALID_RESUME_TOKEN"
   | "TOO_LARGE"
   | "JOURNAL_UNAVAILABLE"
+  | "OVER_TX_GAS_CAP"
   | (string & Record<never, never>);
 
 export function reason(code: ReasonCode, retry: Reason["retry"], detail?: string): Reason {

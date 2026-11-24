@@ -63,7 +63,17 @@ export interface Review {
 
 export type SendResult =
   | { kind: "efs.send"; status: "SUBMITTED"; planId: Hex; txHash: Hex }
-  | { kind: "efs.send"; status: "NOT_SENT"; planId: Hex; reason: Reason }
+  | {
+      kind: "efs.send";
+      status: "NOT_SENT";
+      planId: Hex;
+      reason: Reason;
+      /**
+       * Set when reason.code is OVER_TX_GAS_CAP: the publication is too big for one transaction (not out of date).
+       * Split it into about `suggestedParts` publications and send each.
+       */
+      gas?: { estimate: bigint; cap: bigint; suggestedParts: number };
+    }
   | { kind: "efs.send"; status: "AMBIGUOUS"; planId: Hex; reason: Reason }
   | { kind: "efs.send"; status: "STALE"; planId: Hex; reasons: readonly string[] }
   | { kind: "efs.send"; status: "BUSY"; planId: Hex };

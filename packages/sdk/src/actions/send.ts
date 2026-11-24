@@ -91,6 +91,8 @@ export async function estimate(
  * (efs-deployment.chain.txGasCap); until then this default applies.
  */
 export const TX_GAS_CAP = 16_777_216n;
+/** Gas to aim for per publication when splitting (contracts' guidance: about 14M, headroom under the cap). */
+const SPLIT_TARGET = 14_000_000n;
 const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
 
 export async function sendPlan(
@@ -134,15 +136,21 @@ export async function sendPlan(
       // 25% headroom over the estimate, but never a limit above the per-transaction cap (EIP-7825): a node refuses
       // a transaction by its gas LIMIT, not by the gas it would use.
       const cap = TX_GAS_CAP;
-      if ("gas" in est && est.gas > cap)
+      if ("gas" in est && est.gas > cap) {
+        // Too big for one atomic transaction: not a stale plan. Nothing is sent; split, then send each part.
+        const suggestedParts = Number((est.gas + SPLIT_TARGET - 1n) / SPLIT_TARGET);
         return {
           kind: "efs.send",
-          status: "STALE",
+          status: "NOT_SENT",
           planId: plan.id,
-          reasons: [
-            `the publication needs ${est.gas} gas, over the per-transaction cap of ${cap}: split it`,
-          ],
+          reason: reason(
+            "OVER_TX_GAS_CAP",
+            "after-replan",
+            `the publication needs ~${est.gas} gas, over the per-transaction cap of ${cap}: split it into about ${suggestedParts} publications`,
+          ),
+          gas: { estimate: est.gas, cap, suggestedParts },
         };
+      }
       const gas = "gas" in est ? min((est.gas * 5n) / 4n, cap) : undefined;
       let record: AttemptRecord = {
         schema: "efs-sdk-attempt/1",
