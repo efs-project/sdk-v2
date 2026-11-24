@@ -32,11 +32,13 @@ export type FaultCode =
   | "LIMIT"
   | "INVARIANT"
   | "JOURNAL_UNAVAILABLE"
+  | "STREAM_FAILED"
   | (string & Record<never, never>);
 
 /**
  * The only thing the SDK throws: caller misuse, the caller's own abort, a bad caller-supplied limit, an attempt
- * journal that cannot be read or written, or an internal invariant failure. Expected uncertainty (UNKNOWN, PARTIAL, unavailable bytes, wallet refusals) is
+ * journal that cannot be read or written, a byte stream that cannot continue (STREAM_FAILED: a stream has no other
+ * way to report), or an internal invariant failure. Expected uncertainty (UNKNOWN, PARTIAL, unavailable bytes, wallet refusals) is
  * always returned as data instead.
  */
 export class EfsFault extends Error {

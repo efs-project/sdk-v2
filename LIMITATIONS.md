@@ -4,7 +4,7 @@
 trees, external locations), names and path segments, protocol ids, the write lifecycle (plan, review, send,
 reconcile) with durable attempt journals (IndexedDB + Web Locks in browsers and workers, files in Node). **Not
 yet:** folder listings and paths (waiting on the tags-vs-directories decision), the files write planner, web3://
-reads, streaming, the Solidity package contents. Both packages are
+reads, the Solidity package contents. Streaming external files is buffered (verified before any byte is emitted). Both packages are
 `private` and have never been published. Do not depend on anything in this repository yet.
 
 ## Placeholders

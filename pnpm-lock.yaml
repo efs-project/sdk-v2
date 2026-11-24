@@ -196,6 +196,9 @@ importers:
 
   packages/sdk:
     dependencies:
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
       viem:
         specifier: ^2.58.4
         version: 2.58.4(typescript@7.0.2)
