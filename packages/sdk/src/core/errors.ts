@@ -19,6 +19,7 @@ export type ReasonCode =
   | "POLICY_BLOCKED"
   | "INVALID_RESUME_TOKEN"
   | "TOO_LARGE"
+  | "JOURNAL_UNAVAILABLE"
   | (string & Record<never, never>);
 
 export function reason(code: ReasonCode, retry: Reason["retry"], detail?: string): Reason {
@@ -30,11 +31,12 @@ export type FaultCode =
   | "ABORTED"
   | "LIMIT"
   | "INVARIANT"
+  | "JOURNAL_UNAVAILABLE"
   | (string & Record<never, never>);
 
 /**
- * The only thing the SDK throws: caller misuse, the caller's own abort, a bad caller-supplied limit, or an
- * internal invariant failure. Expected uncertainty (UNKNOWN, PARTIAL, unavailable bytes, wallet refusals) is
+ * The only thing the SDK throws: caller misuse, the caller's own abort, a bad caller-supplied limit, an attempt
+ * journal that cannot be read or written, or an internal invariant failure. Expected uncertainty (UNKNOWN, PARTIAL, unavailable bytes, wallet refusals) is
  * always returned as data instead.
  */
 export class EfsFault extends Error {

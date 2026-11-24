@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: MIT
+/** `@efs/sdk/web`: browser and worker adapters. Window and Worker code alike; nothing here touches the DOM tree. */
 
-/**
- * @internal S0 placeholder. Not EFS SDK API.
- *
- * Proves that `src/web` typechecks under both the DOM and the Worker projects,
- * and that the `./web` export resolves. Deleted by the first feature PR that
- * adds browser code. See LIMITATIONS.md.
- */
-export const smoke: "efs-sdk/web smoke placeholder" = "efs-sdk/web smoke placeholder";
+export type { IndexedDbJournalOptions, WebJournal } from "./journal.js";
+export { indexedDbJournal } from "./journal.js";
