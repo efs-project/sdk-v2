@@ -24,9 +24,19 @@ export type {
   LinkRule,
   LinkTarget,
   ObjectLink,
+  RealmRef,
+  RealmRule,
+  RealmSplit,
   RevisionLink,
 } from "./names/links.js";
-export { LINK_PREFIX, link, MAX_LINK_LENS, parseLink } from "./names/links.js";
+export {
+  formatRealm,
+  LINK_PREFIX,
+  link,
+  MAX_LINK_LENS,
+  parseLink,
+  splitRealm,
+} from "./names/links.js";
 export type { NameCheck, NameInput, NameRule } from "./names/name.js";
 export { checkName, MAX_NAME_BYTES, NAME_PROFILE, normalizeName } from "./names/name.js";
 export type { SegmentParse } from "./names/segment.js";

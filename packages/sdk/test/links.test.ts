@@ -2,7 +2,7 @@
 // Object and revision links: canonical, fragment-safe, never mistaken for a path.
 import { describe, expect, it } from "vitest";
 import type { PrincipalId, RecordId, SubjectId } from "../src/core/hex.ts";
-import { link, parseLink } from "../src/names/links.ts";
+import { formatRealm, link, parseLink, splitRealm } from "../src/names/links.ts";
 import { checkName } from "../src/names/name.ts";
 
 const S = `0x${"ab".repeat(32)}` as SubjectId;
@@ -96,5 +96,55 @@ describe("links", () => {
     expect(rule(`~efs/o/${S}?lens=`)).toBe("bad-lens");
     expect(rule(`~efs/o/${S}?lens=${A},${A}`)).toBe("bad-lens");
     expect(rule(`~efs/o/${S}?lens=alice.eth,${A}`)).toBe("lens-name-unsupported");
+  });
+});
+
+describe("the realm part of a route", () => {
+  const LEDGER = "0x984bf266ea4f907afe58b5c25e31d3e0ba503373";
+  const l = link({ kind: "object", subject: S });
+  it("formats the full form, and splits it off a route, leaving the link", () => {
+    expect(
+      formatRealm({
+        chainId: 11155111,
+        ledger: LEDGER.toUpperCase().replace("0X", "0x") as `0x${string}`,
+      }),
+    ).toBe(`eip155:11155111/${LEDGER}`);
+    const r = splitRealm(`eip155:11155111/${LEDGER}/${l}`);
+    expect(r).toEqual({
+      status: "FULL",
+      realm: { chainId: 11155111, ledger: LEDGER },
+      canonical: `eip155:11155111/${LEDGER}`,
+      rest: l,
+    });
+    expect(r.status === "FULL" && parseLink(r.rest).status).toBe("OK");
+    expect(splitRealm(`/eip155:1/${LEDGER}`)).toMatchObject({ status: "FULL", rest: "" });
+    expect(splitRealm(`eip155%3A1/${LEDGER}/x`)).toMatchObject({ status: "FULL", rest: "x" });
+  });
+  it("passes aliases through for the app to resolve", () => {
+    expect(splitRealm(`sepolia/${l}`)).toEqual({ status: "ALIAS", alias: "sepolia", rest: l });
+    expect(splitRealm("local-1")).toEqual({ status: "ALIAS", alias: "local-1", rest: "" });
+  });
+  it("survives a URL fragment", () => {
+    const url = new URL(
+      `https://app.example/#/r/${formatRealm({ chainId: 1, ledger: LEDGER })}/${l}`,
+    );
+    const r = splitRealm(url.hash.slice("#/r/".length));
+    expect(r.status === "FULL" && r.rest).toBe(l);
+  });
+  it("refuses malformed realms with a rule", () => {
+    const rule = (s: string) => {
+      const r = splitRealm(s);
+      return r.status === "INVALID" ? r.rule : r.status;
+    };
+    expect(rule("")).toBe("empty");
+    expect(rule("solana:abc/x")).toBe("unsupported-namespace");
+    expect(rule(`eip155:01/${LEDGER}`)).toBe("bad-chain-id");
+    expect(rule(`eip155:0x1/${LEDGER}`)).toBe("bad-chain-id");
+    expect(rule(`eip155:99999999999999999/${LEDGER}`)).toBe("bad-chain-id");
+    expect(rule("eip155:1")).toBe("bad-ledger");
+    expect(rule("eip155:1/0x1234")).toBe("bad-ledger");
+    expect(rule("Sepolia/x")).toBe("bad-alias");
+    expect(rule("%zz/x")).toBe("bad-escape");
+    expect(() => formatRealm({ chainId: 0, ledger: LEDGER })).toThrow(/positive/);
   });
 });

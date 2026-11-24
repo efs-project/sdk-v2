@@ -232,8 +232,14 @@ string that an app places in its route, for example after `#/files/`:
   20-byte address and any other principal as its 32-byte id. `target.lens` is a `Lens` to pass to reads. Names such
   as `alice.eth` are INVALID with rule `lens-name-unsupported` in 0.1. A revision link with a query, or any other
   parameter, is INVALID with rule `unsupported-parameter`.
-- **Routes**: the app owns the realm prefix (`#/r/<realm>/`, a client-side alias for chain, core and realm) and
-  places the link after it, so `#/r/sepolia/~efs/o/0x…?lens=0x…`.
+- **Routes** are `#/r/<realm>/<link>`. `<realm>` is either an app-configured alias (`sepolia`, `local-1`: lowercase
+  letters, digits and hyphens, resolved by the app) or the full form `eip155:<chainId>/0x<ledger>`, which apps
+  always accept. In the full form `<ledger>` is the deployment's ledger proxy, the "core" in
+  `realmOrigin(genesisChainId, core, realmSalt)`. One ledger is one Realm, so links carry no realm id.
+  `formatRealm({ chainId, ledger })` writes the full form, and `splitRealm(path)` takes the realm off the front of
+  a route. It returns `{ status: "FULL", realm, canonical, rest }`, `{ status: "ALIAS", alias, rest }` or
+  `{ status: "INVALID", rule }`, and `rest` is passed to `parseLink`. A colon always means a chain namespace, and
+  only `eip155` is supported. Apps cross-check a full-form realm against the deployment document they fetch.
 
 ## 5. Files reader (`@efs/sdk/files`)
 
