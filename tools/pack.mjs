@@ -21,7 +21,7 @@ const PACKAGES = {
   },
   solidity: {
     dir: "packages/solidity/src",
-    allowed: (p) => /^(package\.json|README\.md|LICENSE|.+\.sol)$/.test(p),
+    allowed: (p) => /^(package\.json|README\.md|LICENSE|PROVENANCE\.json|.+\.sol)$/.test(p),
   },
 };
 

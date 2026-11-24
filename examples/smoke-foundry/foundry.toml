@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# S0 placeholder example: a consumer project compiling against the Solidity release archive.
+# A consumer project compiling against the @efs/solidity release archive (tools/consumers.mjs).
 [profile.default]
 src = "src"
 out = "out"
