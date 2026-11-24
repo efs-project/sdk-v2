@@ -38,12 +38,14 @@
       }
     },
     "./protocol-inputs.json": "./protocol-inputs.json",
+    "./fixtures/*": "./fixtures/*",
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "src",
     "!src/**/*.test.ts",
+    "fixtures",
     "protocol-inputs.json",
     "LICENSE",
     "README.md"
@@ -54,7 +56,8 @@
     "test": "vitest run --project unit --project browser",
     "test:unit": "vitest run --project unit",
     "test:browser": "vitest run --project browser",
-    "test:integration": "vitest run --project integration"
+    "test:integration": "vitest run --project integration",
+    "record:fixtures": "EFS_RECORD=1 vitest run --project integration test/integration/record.test.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.0",

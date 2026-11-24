@@ -1,0 +1,52 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "open-inline",
+  "note": "openFile on an inline file (docs/readme.txt)",
+  "result": {
+    "kind": "efs.open",
+    "status": "PRESENT",
+    "file": {
+      "file": "0x3883f0d8f59245c25a9d04671bc0ed29ab022c51270b224e3921ee5dfb4b40d1",
+      "revision": "0x1957ae776d97986d5d25efb0f5c530df4d85c1b89086dcfd41f484babce8ccd7",
+      "author": "0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "size": {
+        "$efs:bigint": "18"
+      },
+      "sha256": "0x0e7b6c96dd4c55acd72317a3dddbab9ba81d61f49e784ce2f08076f002cc6df6",
+      "layout": "inline",
+      "inline": {
+        "$efs:bytes": "4d656574696e672061742031303a30302e0a"
+      },
+      "locations": [
+        {
+          "scheme": "ledger"
+        }
+      ]
+    },
+    "basis": {
+      "chainId": 31337,
+      "blockNumber": {
+        "$efs:bigint": "61"
+      },
+      "blockHash": "0xf9b264dc2de5c7002da9924f4aa227ca5970202311d3ead44c248abfa48fb374",
+      "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
+      "endpoint": "local fixture"
+    },
+    "evidence": {
+      "attempts": [
+        {
+          "endpoint": "local fixture",
+          "outcome": "OK",
+          "ms": 5
+        },
+        {
+          "endpoint": "local fixture",
+          "outcome": "OK",
+          "ms": 3
+        }
+      ],
+      "requests": 4
+    }
+  }
+}

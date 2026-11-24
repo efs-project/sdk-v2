@@ -1,0 +1,27 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "bytes-external-unsupported",
+  "note": "readBytes on the web3:// file (no gateway yet)",
+  "result": {
+    "kind": "efs.bytes.range",
+    "offset": {
+      "$efs:bigint": "0"
+    },
+    "length": {
+      "$efs:bigint": "51"
+    },
+    "grade": "UNSUPPORTED_LOCATOR",
+    "attempts": [
+      {
+        "location": "web3",
+        "outcome": "FAILED",
+        "detail": "UNSUPPORTED_LOCATOR"
+      }
+    ],
+    "evidence": {
+      "attempts": [],
+      "requests": 0
+    }
+  }
+}

@@ -70,6 +70,13 @@ describe("byte reads (fixture)", () => {
     expect(r.grade).toBe("UNSUPPORTED_LOCATOR");
     expect(r.bytes).toBeUndefined();
   });
+  it("a file nobody created is ABSENT_PROVEN (the lens reader proved it), never UNKNOWN", async () => {
+    const r = await openFile(efs, {
+      kind: "file",
+      subject: keccak256(stringToHex("no such file")) as SubjectId,
+    });
+    expect(r.status).toBe("ABSENT_PROVEN");
+  });
   it("detects a lying endpoint (a forged record body) and fails over to an honest one", async () => {
     // A provider that flips one byte inside every eth_call result: record bodies no longer hash to their ids.
     const liar: Eip1193Like = {

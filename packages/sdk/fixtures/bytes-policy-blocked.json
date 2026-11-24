@@ -1,0 +1,27 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "bytes-policy-blocked",
+  "note": "readBytes on a plain http:// location (blocked by default)",
+  "result": {
+    "kind": "efs.bytes.range",
+    "offset": {
+      "$efs:bigint": "0"
+    },
+    "length": {
+      "$efs:bigint": "21"
+    },
+    "grade": "POLICY_BLOCKED",
+    "attempts": [
+      {
+        "location": "http",
+        "outcome": "FAILED",
+        "detail": "POLICY_BLOCKED"
+      }
+    ],
+    "evidence": {
+      "attempts": [],
+      "requests": 0
+    }
+  }
+}

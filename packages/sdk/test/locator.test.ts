@@ -7,6 +7,7 @@ import {
   isPrivateHost,
   planLocator,
 } from "../src/content/locator.ts";
+import { withinGateway } from "../src/files/bytes.ts";
 
 const P = DEFAULT_GATEWAYS;
 const CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy";
@@ -84,5 +85,33 @@ describe("locator planning", () => {
   it("decodes data: locators", () => {
     const r = planLocator("data:text/plain,hello%20world", P);
     expect(r.ok && "inline" in r && new TextDecoder().decode(r.inline)).toBe("hello world");
+  });
+});
+
+describe("redirects within a configured gateway", () => {
+  const o = (url: string) => {
+    const u = new URL(url);
+    const port = u.port || (u.protocol === "https:" ? "443" : "80");
+    return { protocol: u.protocol, hostname: u.hostname, port };
+  };
+  const local = o("http://localhost:8080/ipfs/x");
+  const remote = o("https://gw.example/ipfs/x");
+  it("trusts the same origin and its subdomain gateway", () => {
+    expect(withinGateway(local, o(`http://${CID}.ipfs.localhost:8080/`))).toBe(true);
+    expect(withinGateway(remote, o("https://gw.example:443/ipfs/y"))).toBe(true);
+    expect(withinGateway(remote, o(`https://${CID}.ipfs.gw.example/`))).toBe(true);
+  });
+  it("never trusts another port, a scheme change or a lookalike host", () => {
+    expect(withinGateway(local, o("http://localhost:2375/containers/json"))).toBe(false); // port
+    expect(withinGateway(remote, o("http://gw.example/ipfs/y"))).toBe(false); // downgrade
+    expect(withinGateway(remote, o("https://evilgw.example/"))).toBe(false); // suffix without a dot
+    expect(withinGateway(remote, o("https://gw.example.evil.test/"))).toBe(false);
+    expect(withinGateway(null, o("https://gw.example/"))).toBe(false);
+  });
+  it("a trusted hop is still checked for credentials and whitespace", () => {
+    const trust = { ...P, allowInsecureHttp: true, allowPrivateHosts: true };
+    expect(checkHttpUrl("http://user:pw@localhost:8080/x", trust)).toBe("POLICY_BLOCKED");
+    expect(checkHttpUrl("http://localhost:8080/a\\b", trust)).toBe("MALFORMED");
+    expect(checkHttpUrl("http://localhost:2375/", P)).toBe("POLICY_BLOCKED"); // untrusted hop: http + private
   });
 });

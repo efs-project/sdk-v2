@@ -1,0 +1,30 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "pin-unknown",
+  "note": "efs.pin() with every endpoint down",
+  "result": {
+    "kind": "efs.pin",
+    "status": "UNKNOWN",
+    "reason": {
+      "code": "RPC_UNAVAILABLE",
+      "retry": "transient",
+      "detail": "fetch failed"
+    },
+    "evidence": {
+      "attempts": [
+        {
+          "endpoint": "offline node",
+          "outcome": "FAILED",
+          "reason": {
+            "code": "RPC_UNAVAILABLE",
+            "retry": "transient",
+            "detail": "fetch failed"
+          },
+          "ms": 1
+        }
+      ],
+      "requests": 0
+    }
+  }
+}

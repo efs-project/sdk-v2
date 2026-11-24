@@ -190,27 +190,43 @@ export async function openFile(
           { status: number },
           { status: number; target: Hex; principalId: Hex; revision: bigint },
         ];
+        // LensReader.resolve: q.status equals the selection's status (PRESENT, MASKED, ABSENT_PROVEN, UNKNOWN),
+        // or is a refusal (INVALID, LIMIT_EXCEEDED, BASIS_STALE, UNSUPPORTED). Anything else is not guessed at.
         const qs = chainStatus(q.status);
-        if (qs !== "PRESENT")
+        if (qs === "ABSENT_PROVEN" || qs === "MASKED" || qs === "UNKNOWN")
+          return { ok: true, value: { status: qs } };
+        if (qs === "BASIS_STALE")
           return {
-            ok: true,
-            value: {
-              status: "UNKNOWN",
-              reason: reason("RPC_ERROR", "transient", `lens query ${qs}`),
-            },
+            ok: false,
+            retryElsewhere: true,
+            reason: reason("BASIS_STALE", "transient", "the lens reader saw a different basis"),
           };
-        const ss = chainStatus(sel.status);
-        if (ss === "ABSENT_PROVEN" || ss === "MASKED" || ss === "CONFLICT" || ss === "UNKNOWN")
-          return { ok: true, value: { status: ss } };
-        if (ss === "RELEASED") return { ok: true, value: { status: "ABSENT_PROVEN" } };
-        if (ss !== "PRESENT")
+        if (qs === "INVALID" || qs === "LIMIT_EXCEEDED" || qs === "UNSUPPORTED") {
           return {
             ok: true,
             value: {
               status: "INVALID",
-              reason: reason("UNSUPPORTED_PROFILE", "never", `head status ${ss}`),
+              reason: reason(
+                qs === "LIMIT_EXCEEDED" ? "LIMIT_EXCEEDED" : "UNSUPPORTED_PROFILE",
+                "never",
+                `lens reader refused the query: ${qs}`,
+              ),
             },
           };
+        }
+        if (qs !== "PRESENT" || chainStatus(sel.status) !== "PRESENT") {
+          return {
+            ok: true,
+            value: {
+              status: "UNKNOWN",
+              reason: reason(
+                "RPC_ERROR",
+                "never",
+                `unexpected lens status ${qs}/${chainStatus(sel.status)}`,
+              ),
+            },
+          };
+        }
         revisionId = lower(sel.target);
         author = lower(sel.principalId) as PrincipalId;
       } else {
@@ -502,15 +518,34 @@ const resolveUrl = (target: string, base: string): string | null => {
   }
 };
 
-/** Hostname of an absolute URL via the WHATWG parser, or null. */
-const hostOf = (url: string): string | null => {
-  const U = (globalThis as unknown as { URL?: new (u: string) => { hostname: string } }).URL;
+interface Origin {
+  protocol: string;
+  hostname: string;
+  port: string;
+}
+/** Scheme, hostname and effective port of an absolute URL via the WHATWG parser, or null. */
+const originOf = (url: string): Origin | null => {
+  const U = (globalThis as unknown as { URL?: new (u: string) => Origin }).URL;
   try {
-    return U ? new U(url).hostname.toLowerCase() : null;
+    if (!U) return null;
+    const u = new U(url);
+    const port = u.port || (u.protocol === "https:" ? "443" : u.protocol === "http:" ? "80" : "");
+    return { protocol: u.protocol, hostname: u.hostname.toLowerCase(), port };
   } catch {
     return null;
   }
 };
+
+/**
+ * A redirect hop stays within a configured gateway iff it keeps the gateway's exact scheme and port and lands on
+ * the gateway's host or a subdomain of it (a subdomain gateway such as `<cid>.ipfs.localhost:8080`).
+ */
+export const withinGateway = (gateway: Origin | null, target: Origin | null): boolean =>
+  gateway !== null &&
+  target !== null &&
+  target.protocol === gateway.protocol &&
+  target.port === gateway.port &&
+  (target.hostname === gateway.hostname || target.hostname.endsWith(`.${gateway.hostname}`));
 
 /** In browsers the page's own network policy applies and redirects are followed; elsewhere each hop is re-checked. */
 const inBrowser = (): boolean =>
@@ -586,20 +621,21 @@ async function fetchExternal(
             timeout,
           ]);
         let res = await get(url);
-        // Outside browsers, follow at most 5 redirects, re-checking every target against the policy.
-        // A gateway the user configured (even a local one) may redirect within its own host, e.g. to a
-        // subdomain gateway; any other target is re-checked as untrusted.
-        const gatewayHost = plan.scheme === "ipfs" || plan.scheme === "ar" ? hostOf(url) : null;
+        // Outside browsers, follow at most 5 redirects, checking every target against the policy. A gateway the
+        // user configured (even a local, plain-http one) keeps that trust for hops on its own scheme and port and
+        // its host or a subdomain (a subdomain gateway); every other target is checked as untrusted.
+        const gateway = plan.scheme === "ipfs" || plan.scheme === "ar" ? originOf(url) : null;
+        const gatewayPolicy: GatewayPolicy = {
+          ...policy,
+          allowInsecureHttp: true,
+          allowPrivateHosts: true,
+        };
         for (let hop = 0; !follow && res.status >= 300 && res.status < 400 && hop < 5; hop++) {
           const next = res.headers.get("location");
           const target = next ? resolveUrl(next, url) : null;
           if (!target) break;
-          const host = hostOf(target);
-          const withinGateway =
-            gatewayHost !== null &&
-            host !== null &&
-            (host === gatewayHost || host.endsWith(`.${gatewayHost}`));
-          if (!withinGateway && checkHttpUrl(target, policy) !== "ok") break;
+          const trusted = withinGateway(gateway, originOf(target));
+          if (checkHttpUrl(target, trusted ? gatewayPolicy : policy) !== "ok") break;
           res = await get(target);
         }
         if (!res.ok) {

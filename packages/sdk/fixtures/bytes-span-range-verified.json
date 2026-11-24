@@ -1,0 +1,43 @@
+{
+  "schema": "efs-sdk-fixture/1",
+  "contractsCommit": "b8b4e3e31f1bda6dcf40b0799bba52da8aa8d111",
+  "case": "bytes-span-range-verified",
+  "note": "readRange 8150..8170 across a chunk boundary",
+  "result": {
+    "kind": "efs.bytes.range",
+    "offset": {
+      "$efs:bigint": "8150"
+    },
+    "length": {
+      "$efs:bigint": "20"
+    },
+    "grade": "VERIFIED",
+    "bytes": {
+      "$efs:bytes": "958da36fcb4ae9643fb9a3588c4d9302d1c8c4c2"
+    },
+    "location": {
+      "scheme": "ledger"
+    },
+    "attempts": [
+      {
+        "location": "ledger",
+        "outcome": "VERIFIED"
+      }
+    ],
+    "evidence": {
+      "attempts": [
+        {
+          "endpoint": "local fixture",
+          "outcome": "OK",
+          "ms": 3
+        },
+        {
+          "endpoint": "local fixture",
+          "outcome": "OK",
+          "ms": 6
+        }
+      ],
+      "requests": 6
+    }
+  }
+}
