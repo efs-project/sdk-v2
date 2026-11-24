@@ -57,18 +57,23 @@ pragma solidity ^0.8.27;
 
 library KeyVectors {
 `;
+  // forge fmt's layout (line_length 100): a declaration that does not fit breaks after `=`, value indented.
+  const constant = (decl, value) => {
+    const one = `    ${decl} = ${value};`;
+    return one.length <= 100 ? `${one}\n` : `    ${decl} =\n        ${value};\n`;
+  };
   const emit = (prefix, obj) => {
     for (const [k, x] of Object.entries(obj)) {
       const l = typeof x === "number" || typeof x === "string" ? lit(x) : null;
       if (l === null) continue; // arrays and byte strings are written out by hand in the test
-      src += `    ${kind(x)} internal constant ${prefix}_${k} = ${l};\n`;
+      src += constant(`${kind(x)} internal constant ${prefix}_${k}`, l);
     }
   };
   emit("IN", v.inputs);
   emit("OUT", v.outputs);
-  src += `    bytes internal constant IN_body = hex"${v.inputs.body.slice(2)}";\n`;
-  src += `    bytes32 internal constant IN_refType0 = ${v.inputs.refTypes[0].toLowerCase()};\n`;
-  src += `    bytes32 internal constant IN_refType1 = ${v.inputs.refTypes[1].toLowerCase()};\n`;
+  src += constant("bytes internal constant IN_body", `hex"${v.inputs.body.slice(2)}"`);
+  src += constant("bytes32 internal constant IN_refType0", v.inputs.refTypes[0].toLowerCase());
+  src += constant("bytes32 internal constant IN_refType1", v.inputs.refTypes[1].toLowerCase());
   src += "}\n";
   out["test/generated/KeyVectors.sol"] = Buffer.from(src);
 }

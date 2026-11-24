@@ -14,7 +14,9 @@ contract KeysTest is Test {
 
     function test_principals() public pure {
         assertEq(Keys.principal(V.IN_eoa), V.OUT_eoaPrincipal);
-        assertEq(Keys.contractPrincipal(V.IN_realmOrigin, V.IN_contractAddress), V.OUT_contractPrincipal);
+        assertEq(
+            Keys.contractPrincipal(V.IN_realmOrigin, V.IN_contractAddress), V.OUT_contractPrincipal
+        );
     }
 
     function test_typesAndRecords() public pure {
@@ -39,7 +41,9 @@ contract KeysTest is Test {
         bytes32 origin = Keys.realmOrigin(11155111, V.IN_contractAddress, V.IN_salt);
         assertEq(origin, V.OUT_realmOrigin);
         assertEq(Keys.realmId(origin, 1), V.OUT_realmId);
-        assertEq(Keys.contractPrincipal(origin, V.IN_contractAddress), V.OUT_contractPrincipalOfOrigin);
+        assertEq(
+            Keys.contractPrincipal(origin, V.IN_contractAddress), V.OUT_contractPrincipalOfOrigin
+        );
         assertEq(Keys.publicationId(V.OUT_eoaPrincipal, V.IN_bodyHash), V.OUT_publicationId);
         assertEq(Keys.roleKey(V.IN_purpose, V.IN_role), V.OUT_roleKey);
         assertEq(this.shapeOf(V.IN_body), V.OUT_shape);
@@ -51,11 +55,15 @@ contract KeysTest is Test {
         assertEq(Keys.backlinkList(V.OUT_recordId), V.OUT_backlinkList);
         assertEq(Keys.historyList(V.OUT_bindingKey), V.OUT_historyList);
         assertEq(Keys.scopeList(V.OUT_scopeKey), V.OUT_scopeList);
-        assertEq(Keys.referenceList(V.OUT_typeId, uint8(V.IN_ordinal), V.OUT_recordId), V.OUT_referenceList);
+        assertEq(
+            Keys.referenceList(V.OUT_typeId, uint8(V.IN_ordinal), V.OUT_recordId),
+            V.OUT_referenceList
+        );
         assertEq(Keys.byRecordList(V.OUT_recordId), V.OUT_byRecordList);
         assertEq(Keys.uniqueByTypeList(V.OUT_typeId), V.OUT_uniqueByTypeList);
         assertEq(
-            Keys.scalarList(V.OUT_typeId, uint8(V.IN_spec), uint8(V.IN_scalarKind), V.IN_value), V.OUT_scalarList
+            Keys.scalarList(V.OUT_typeId, uint8(V.IN_spec), uint8(V.IN_scalarKind), V.IN_value),
+            V.OUT_scalarList
         );
         assertEq(Keys.digestList(V.IN_algorithm, V.IN_value), V.OUT_digestList);
     }
