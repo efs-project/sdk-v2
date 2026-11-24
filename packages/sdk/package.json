@@ -23,6 +23,10 @@
       "types": "./dist/files/index.d.ts",
       "default": "./dist/files/index.js"
     },
+    "./actions": {
+      "types": "./dist/actions/index.d.ts",
+      "default": "./dist/actions/index.js"
+    },
     "./web": {
       "types": "./dist/web/index.d.ts",
       "default": "./dist/web/index.js"

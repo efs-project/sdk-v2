@@ -48,22 +48,33 @@ describe("locator planning", () => {
     ).toMatchObject({ ok: false });
   });
   it("blocks private, loopback, link-local and metadata hosts unless allowed", () => {
-    for (const host of [
+    // Every spelling the WHATWG parser (and so fetch) canonicalizes to a private address is refused.
+    const spellings = [
       "localhost",
+      "localhost.",
       "127.0.0.1",
+      "127.1",
+      "0177.0.0.1",
+      "0x7f.0.0.1",
+      "2130706433",
+      "0x7f000001",
       "10.1.2.3",
       "192.168.0.1",
       "172.20.0.1",
       "169.254.169.254",
       "[::1]",
-      "2130706433",
-      "0x7f000001",
-      "fd00::1",
+      "[0:0:0:0:0:0:0:1]",
+      "[::ffff:127.0.0.1]",
+      "[::ffff:7f00:1]",
+      "[fd00::1]",
+      "[fe80::1]",
+      "[64:ff9b::a9fe:a9fe]",
       "db.internal",
-    ]) {
-      expect(isPrivateHost(host), host).toBe(true);
+    ];
+    for (const host of spellings)
       expect(checkHttpUrl(`https://${host}/x`, P), host).toBe("POLICY_BLOCKED");
-    }
+    expect(isPrivateHost("[2606:4700::1111]")).toBe(false);
+    expect(checkHttpUrl("https://example.com\\@127.0.0.1/x", P)).toBe("MALFORMED");
     expect(checkHttpUrl("https://169.254.169.254/latest", { ...P, allowPrivateHosts: true })).toBe(
       "ok",
     );

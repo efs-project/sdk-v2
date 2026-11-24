@@ -58,56 +58,107 @@ function encodePath(rest: string): string | null {
   return `/${out.join("/")}`;
 }
 
-/** True for hosts a locator must not reach unless allowPrivateHosts: loopback, private, link-local, metadata. */
-export function isPrivateHost(host: string): boolean {
-  const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+type ParsedUrl = {
+  protocol: string;
+  username: string;
+  password: string;
+  hostname: string;
+  href: string;
+};
+/** The platform's WHATWG URL parser: the same parser fetch() uses, so validation and fetching never disagree. */
+function parseUrl(url: string): ParsedUrl | null {
+  const U = (globalThis as unknown as { URL?: new (u: string) => ParsedUrl }).URL;
+  if (!U) return null;
+  try {
+    return new U(url);
+  } catch {
+    return null;
+  }
+}
+
+function privateV4(a: number, b: number): boolean {
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
+  );
+}
+
+/** Expand a canonical (WHATWG-serialized) IPv6 address to eight 16-bit groups. */
+function v6Groups(h: string): number[] | null {
+  const halves = h.split("::");
+  if (halves.length > 2) return null;
+  const part = (x: string): number[] =>
+    x === "" ? [] : x.split(":").map((g) => Number.parseInt(g, 16));
+  const head = part(halves[0] as string);
+  const tail = halves.length === 2 ? part(halves[1] as string) : [];
+  const fill = 8 - head.length - tail.length;
+  if (fill < 0 || (halves.length === 1 && fill !== 0)) return null;
+  const all = [...head, ...new Array(fill).fill(0), ...tail];
+  return all.some((g) => !Number.isInteger(g) || g < 0 || g > 0xffff) ? null : all;
+}
+
+/**
+ * True for a canonical hostname (as the WHATWG parser serializes it) that a locator must not reach unless
+ * allowPrivateHosts: loopback, private, link-local, CGNAT, benchmarking, multicast/reserved, unique-local IPv6,
+ * IPv4-mapped/NAT64 forms of those, and local names. DNS rebinding is out of reach here: servers that fetch
+ * untrusted locations should also restrict egress at the network layer.
+ */
+export function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/\.$/, "");
   if (
+    h === "" ||
     h === "localhost" ||
     h.endsWith(".localhost") ||
     h.endsWith(".local") ||
-    h.endsWith(".internal")
+    h.endsWith(".internal") ||
+    h.endsWith(".home.arpa")
   )
     return true;
-  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
-  if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])];
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      a >= 224
-    );
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
+  if (v4) return privateV4(Number(v4[1]), Number(v4[2]));
+  if (h.startsWith("[") && h.endsWith("]")) {
+    const g = v6Groups(h.slice(1, -1));
+    if (!g) return true; // unparseable: refuse
+    const [g0, , , , , g5, g6, g7] = g as [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ];
+    if (g.every((x) => x === 0) || (g.slice(0, 7).every((x) => x === 0) && g7 === 1)) return true; // :: and ::1
+    if ((g0 & 0xfe00) === 0xfc00 || (g0 & 0xffc0) === 0xfe80 || (g0 & 0xff00) === 0xff00)
+      return true; // ULA, link-local, multicast
+    const embedded =
+      (g0 === 0 && g.slice(1, 5).every((x) => x === 0) && (g5 === 0xffff || g5 === 0)) ||
+      (g0 === 0x64 && g[1] === 0xff9b);
+    if (embedded) return privateV4(g6 >> 8, g6 & 0xff); // IPv4-mapped, IPv4-compatible, NAT64
+    return false;
   }
-  if (h.includes(":"))
-    return (
-      h === "::1" ||
-      h === "::" ||
-      h.startsWith("fc") ||
-      h.startsWith("fd") ||
-      h.startsWith("fe80") ||
-      h.startsWith("::ffff:")
-    );
-  return /^\d+$/.test(h) || /^0x[0-9a-f]+$/i.test(h); // integer-form IPv4 tricks
+  return false;
 }
 
-/** Validate an absolute http(s) URL (a locator or a redirect target) against the policy. */
+/** Validate an absolute http(s) URL (a locator or a redirect target) against the policy, as fetch() will parse it. */
 export function checkHttpUrl(
   url: string,
   policy: GatewayPolicy,
 ): "ok" | "POLICY_BLOCKED" | "MALFORMED" {
-  const m = /^(https?):\/\/([^/?#]*)([^#]*)$/i.exec(url);
-  if (!m) return "MALFORMED";
-  const scheme = (m[1] as string).toLowerCase();
-  const authority = m[2] as string;
-  if (scheme === "http" && !policy.allowInsecureHttp) return "POLICY_BLOCKED";
-  if (authority.includes("@")) return "POLICY_BLOCKED"; // credentials in a URL
-  const host = authority.replace(/:\d+$/, "");
-  if (!host || /[\s%]/.test(host)) return "MALFORMED";
-  if (!policy.allowPrivateHosts && isPrivateHost(host)) return "POLICY_BLOCKED";
+  if (/[\\\s]/.test(url)) return "MALFORMED"; // backslashes and whitespace parse differently across tools
+  const u = parseUrl(url);
+  if (!u || (u.protocol !== "https:" && u.protocol !== "http:")) return "MALFORMED";
+  if (u.protocol === "http:" && !policy.allowInsecureHttp) return "POLICY_BLOCKED";
+  if (u.username !== "" || u.password !== "") return "POLICY_BLOCKED"; // credentials in a URL
+  if (!policy.allowPrivateHosts && isPrivateHost(u.hostname)) return "POLICY_BLOCKED";
   return "ok";
 }
 
