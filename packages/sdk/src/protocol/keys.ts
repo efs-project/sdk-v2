@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Id derivations, a TypeScript twin of contracts src/lib/Keys.sol. Domains are generated from the contracts'
 // golden vectors (never hand-typed); tests check every function against those vectors.
-import { encodeAbiParameters, keccak256 } from "viem";
+import { encodeAbiParameters, getAddress, keccak256 } from "viem";
+import { misuse } from "../core/errors.js";
 import type { Address, Hex, PrincipalId, RecordId, SubjectId, TypeId } from "../core/hex.js";
 import { DOMAINS } from "../generated/domains.js";
 
@@ -22,6 +23,33 @@ export function contractPrincipal(realmOrigin: Hex, account: Address): Principal
     [W, U, W, { type: "address" }],
     [DOMAINS.principal, 2n, realmOrigin, account],
   ) as PrincipalId;
+}
+/**
+ * What a person should see for a principal (an author in a Lens, a row's `author`):
+ * - address: a key principal is its account's address, EIP-55 checksummed (the padded `0x0000…` id is never shown);
+ * - contract: a contract principal of this Realm, matched to an address you name (`contracts`, such as the Safe whose
+ *   home you are showing) by recomputing it here: a contract principal is a hash, so it is never read back or guessed;
+ * - principal: anything else, as its id (lowercase): a contract principal you didn't name, another kind, the zero word.
+ * Pure: no reads. A match is true forever (the id is a hash of the Realm origin and the address), so it can be cached.
+ */
+export type PrincipalDisplay =
+  | { kind: "address"; address: Address }
+  | { kind: "contract"; address: Address }
+  | { kind: "principal"; id: PrincipalId };
+export function principalDisplay(
+  principal: PrincipalId,
+  realmOrigin: Hex,
+  contracts: readonly Address[] = [],
+): PrincipalDisplay {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(principal ?? ""))
+    throw misuse("a principal is a 32-byte word (0x and 64 hex digits)");
+  const p = principal.toLowerCase() as PrincipalId;
+  if (/^0x0{24}/.test(p) && !/^0x0{64}$/.test(p))
+    return { kind: "address", address: getAddress(`0x${p.slice(26)}`) as Address };
+  for (const a of contracts)
+    if (contractPrincipal(realmOrigin, a).toLowerCase() === p)
+      return { kind: "contract", address: getAddress(a) as Address };
+  return { kind: "principal", id: p };
 }
 export function realmOrigin(genesisChainId: bigint, core: Address, realmSalt: Hex): Hex {
   return k(

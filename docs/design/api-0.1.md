@@ -123,6 +123,12 @@ export interface LensTools {
   mineFirst(me: Address | PrincipalId, base?: Lens): Lens;    // [me, ...default without me]
   principalOf(account: Address): PrincipalId;                 // EOA/7702 rule; contract principals need code (async variant below)
   principalOfAccount(account: Address, o?: CallOpts): Promise<PrincipalId>;
+  // What a person should see for a principal (pure, no reads): a key principal is { kind: "address", address }
+  // (EIP-55: "0xf39F…2266", never the padded "0x0000…2266"); a contract principal is { kind: "contract", address }
+  // only for an address in `contracts` (recomputed in this Realm: a hash is never read back or guessed); anything
+  // else { kind: "principal", id }. A match holds forever, so it can be cached. principalDisplay(p, realmOrigin, ...)
+  // in @efs/sdk is the same without a client.
+  displayOf(principal: PrincipalId, o?: { contracts?: readonly Address[] }): PrincipalDisplay;
 }
 export function checksumAddress(address: Hex): Address;      // EIP-55
 

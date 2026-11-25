@@ -6,14 +6,14 @@ import { type ByteStore, memoryByteStore } from "./cache/stores.js";
 import { type Basis, type BasisPolicy, createPool, type Pool } from "./chain/pool.js";
 import { type FetchLike, type RequestEvent, type RpcEndpoint, toPort } from "./chain/rpc.js";
 import { type CallOpts, EfsFault } from "./core/errors.js";
-import { type Address, isAddress, isWord, lower, type PrincipalId } from "./core/hex.js";
+import { type Address, type Hex, isAddress, isWord, lower, type PrincipalId } from "./core/hex.js";
 import {
   type DeploymentInfo,
   type ProtocolLimits,
   validateDeploymentManifest,
 } from "./deployment/manifest.js";
 import { PinMemory, type PinResult, pinDeployment } from "./deployment/pin.js";
-import { keyPrincipal } from "./protocol/keys.js";
+import { keyPrincipal, type PrincipalDisplay, principalDisplay } from "./protocol/keys.js";
 
 export interface GatewayConfig {
   /** Ordered IPFS gateway origins (default ipfs.io, dweb.link, trustless-gateway.link). */
@@ -79,6 +79,11 @@ export interface LensTools {
     base?: Lens;
   }): Lens;
   principalOf(account: Address): PrincipalId;
+  /**
+   * What a person should see for a principal: a key principal's checksummed address, a contract principal's address
+   * when it is one of `contracts` (recomputed in this deployment's Realm), else the id. Pure; see principalDisplay.
+   */
+  displayOf(principal: PrincipalId, o?: { contracts?: readonly Address[] }): PrincipalDisplay;
 }
 
 export interface Efs {
@@ -106,7 +111,7 @@ const toPrincipal = (x: PrincipalId | Address): PrincipalId => {
   throw new EfsFault("MISUSE", `not an address or principal id: ${String(x).slice(0, 20)}`);
 };
 
-function lensTools(defaultLens: readonly PrincipalId[], max: number): LensTools {
+function lensTools(defaultLens: readonly PrincipalId[], max: number, realmOrigin: Hex): LensTools {
   const make = (ps: readonly PrincipalId[]): Lens => {
     const seen = new Set<string>();
     const out: PrincipalId[] = [];
@@ -131,6 +136,7 @@ function lensTools(defaultLens: readonly PrincipalId[], max: number): LensTools 
         ...b.principals,
       ]),
     principalOf: keyPrincipal,
+    displayOf: (principal, o = {}) => principalDisplay(principal, realmOrigin, o.contracts ?? []),
   };
 }
 
@@ -174,7 +180,11 @@ export function createEfs(config: EfsConfig): Efs {
       homes: false,
       web3Gateway: false,
     },
-    lens: lensTools(deployment.defaultLens, deployment.limits.maxLensPrincipals),
+    lens: lensTools(
+      deployment.defaultLens,
+      deployment.limits.maxLensPrincipals,
+      deployment.realmOrigin,
+    ),
     gateways: config.gateways ?? {},
     pin,
     // Every logical read takes a pin at its own basis. A VERIFIED pin is remembered for that endpoint and block

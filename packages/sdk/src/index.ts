@@ -62,6 +62,8 @@ export type { NameCheck, NameInput, NameRule } from "./names/name.js";
 export { checkName, MAX_NAME_BYTES, NAME_PROFILE, normalizeName } from "./names/name.js";
 export type { SegmentParse } from "./names/segment.js";
 export { displaySegment, parseSegment, wireSegment } from "./names/segment.js";
+export type { PrincipalDisplay } from "./protocol/keys.js";
+export { principalDisplay } from "./protocol/keys.js";
 
 /** EIP-55 checksum form of an address (for display). */
 export function checksumAddress(address: Hex): Address {
