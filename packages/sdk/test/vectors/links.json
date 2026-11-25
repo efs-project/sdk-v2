@@ -1,0 +1,330 @@
+{
+  "schema": "efs-sdk/vectors/links/1",
+  "note": "The link grammar (tag model spec §5). `fold` names the fold step used: `none` (no fold given) or `ascii-test` (a stand-in for the tests only: lowercase A-Z and turn a run of spaces into one underscore; the real rule is efs/fold/1, still to be chosen). `expect` is the parse: status, then target and canonical, or rule, segment and detail.",
+  "cases": [
+    {
+      "label": "object link",
+      "input": "~efs/o/0xabababababababababababababababababababababababababababababababab",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "object",
+          "subject": "0xabababababababababababababababababababababababababababababababab"
+        },
+        "canonical": "~efs/o/0xabababababababababababababababababababababababababababababababab"
+      }
+    },
+    {
+      "label": "revision link",
+      "input": "/~efs/v/0xCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "revision",
+          "recordId": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        "canonical": "~efs/v/0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      }
+    },
+    {
+      "label": "other ~ segment is reserved",
+      "input": "~tags/cars",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "reserved-name"
+      }
+    },
+    {
+      "label": "bare ~",
+      "input": "~",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "reserved-name"
+      }
+    },
+    {
+      "label": "home root",
+      "input": "0xAbCdEf0123456789aBcDeF0123456789AbCdEf01",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "home",
+          "address": "0xabcdef0123456789abcdef0123456789abcdef01",
+          "names": []
+        },
+        "canonical": "0xabcdef0123456789abcdef0123456789abcdef01"
+      }
+    },
+    {
+      "label": "home path keeps case",
+      "input": "0xabcdef0123456789abcdef0123456789abcdef01/Photos/Cat.JPG",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "home",
+          "address": "0xabcdef0123456789abcdef0123456789abcdef01",
+          "names": ["Photos", "Cat.JPG"]
+        },
+        "canonical": "0xabcdef0123456789abcdef0123456789abcdef01/Photos/Cat.JPG"
+      }
+    },
+    {
+      "label": "home name with space, encoded",
+      "input": "0xabcdef0123456789abcdef0123456789abcdef01/my%20photos",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "home",
+          "address": "0xabcdef0123456789abcdef0123456789abcdef01",
+          "names": ["my photos"]
+        },
+        "canonical": "0xabcdef0123456789abcdef0123456789abcdef01/my%20photos"
+      }
+    },
+    {
+      "label": "home name, unicode",
+      "input": "0xabcdef0123456789abcdef0123456789abcdef01/日本",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "home",
+          "address": "0xabcdef0123456789abcdef0123456789abcdef01",
+          "names": ["日本"]
+        },
+        "canonical": "0xabcdef0123456789abcdef0123456789abcdef01/%E6%97%A5%E6%9C%AC"
+      }
+    },
+    {
+      "label": "home name .. refused",
+      "input": "0xabcdef0123456789abcdef0123456789abcdef01/..",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-name",
+        "segment": 1,
+        "detail": "dot-or-dotdot"
+      }
+    },
+    {
+      "label": "home name with escaped slash refused",
+      "input": "0xabcdef0123456789abcdef0123456789abcdef01/a%2Fb",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-name",
+        "segment": 1,
+        "detail": "excluded-character"
+      }
+    },
+    {
+      "label": "home takes no Lens parameter",
+      "input": "0xabcdef0123456789abcdef0123456789abcdef01/x?lens=0x01",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "unsupported-parameter"
+      }
+    },
+    {
+      "label": "topic, unfolded",
+      "input": "Cars/Tesla",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["Cars", "Tesla"]
+        },
+        "canonical": "Cars/Tesla"
+      }
+    },
+    {
+      "label": "topic, folded",
+      "input": "Cars/Tesla",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["Cars", "Tesla"],
+          "words": ["cars", "tesla"]
+        },
+        "canonical": "cars/tesla"
+      }
+    },
+    {
+      "label": "word page",
+      "input": "/tesla/",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["tesla"],
+          "words": ["tesla"]
+        },
+        "canonical": "tesla"
+      }
+    },
+    {
+      "label": "percent-decoded before folding",
+      "input": "model%20Y",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["model Y"],
+          "words": ["model_y"]
+        },
+        "canonical": "model_y"
+      }
+    },
+    {
+      "label": "qualifier",
+      "input": "space/mercury_(planet)",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["space", "mercury_(planet)"],
+          "words": ["space", "mercury_(planet)"]
+        },
+        "canonical": "space/mercury_%28planet%29"
+      }
+    },
+    {
+      "label": "escaped slash is not a separator, and a word can't hold one",
+      "input": "cars%2Ftesla",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "slash"
+      }
+    },
+    {
+      "label": "empty segment",
+      "input": "cars//tesla",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "empty-segment"
+      }
+    },
+    {
+      "label": "dot word",
+      "input": "cars/..",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "dot"
+      }
+    },
+    {
+      "label": "later ~ word",
+      "input": "cars/~x",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "reserved-tilde"
+      }
+    },
+    {
+      "label": "address-shaped later word",
+      "input": "people/0xabcdef0123456789abcdef0123456789abcdef01",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "address-shaped"
+      }
+    },
+    {
+      "label": "uppercase 0X is not a home and not a word",
+      "input": "0XABCDEF0123456789ABCDEF0123456789ABCDEF01",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "address-shaped"
+      }
+    },
+    {
+      "label": "malformed escape",
+      "input": "cars/%zz",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-escape",
+        "segment": 1
+      }
+    },
+    {
+      "label": "escape that is not UTF-8",
+      "input": "cars/%FF",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-escape",
+        "segment": 1
+      }
+    },
+    {
+      "label": "word too long",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "length"
+      }
+    },
+    {
+      "label": "topic takes no Lens parameter",
+      "input": "cars?lens=0x01",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "unsupported-parameter"
+      }
+    },
+    {
+      "label": "the fold's own refusal",
+      "input": "cars/te\u0000sla",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "control"
+      }
+    },
+    {
+      "label": "fragment",
+      "input": "cars#x",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "fragment"
+      }
+    }
+  ]
+}
