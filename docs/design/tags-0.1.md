@@ -81,8 +81,11 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
   another positive is a rebind, and a negative to another negative is another UNBIND. A first statement may be
   negative (a denial on its own).
 - **Targets.** Any existing record or subject, of any Type, other apps' Types included. In particular: a file, or one
-  revision of it (for claims about content that an edit could change), a folder, a topic, or an address. An address needs no record, including one that has never transacted. Address targets are for TAG
-  only; anywhere else the chain refuses them with a named error, and the planners refuse them first (MISUSE).
+  revision of it (for claims about content that an edit could change), a folder, a topic, or an address. An address
+  needs no record, including one that has never transacted. An address target is refused only for a file's current
+  version (HEAD) and for a folder entry (FOLDER), where the Files readers can't serve it: the chain refuses it there
+  with a named error, and the planners refuse it first (MISUSE). TAG allows it, and other apps' purposes are not
+  judged by Files (the coming `property` purpose may hold an address value).
 - **Registration is planned automatically.** The planner reads which word pages and path records already exist (one
   batched read). It publishes the missing ones parent first, in the same save as the first tag, with no extra prompt.
   A topic must be registered strictly before its tag: the index walks the path at the tag's own position in the
@@ -231,7 +234,8 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   - the default view for topics, and what a newcomer's Lens contains.
 - **The SDK's re-vendor checklist for that release** (each on a branch, then PM review):
   - tag planners and reads as this document describes; the number is 16-bit (−65,536..65,535, MISUSE outside);
-    registration strictly before the tag; address targets for TAG only;
+    registration strictly before the tag; address targets refused only for HEAD and FOLDER, at plan time as on chain
+    (allowed for TAG, other purposes not judged);
   - restore's `alsoPlaced` switched to the FOLDER-keyed backlink family, with a test that tags don't change it;
   - the index codehash in the index pin, if the deployment file carries it;
   - **removed entries (listRemoved, planRestoreEntries).** Today's walk (`lastBoundTarget`) relies on UNBIND needing
@@ -244,7 +248,14 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
     - make the walk paged or bounded, with an honest UNKNOWN per row instead of page-wide, because release and mask
       can alternate and an honest history can run deeper than 8;
     - restore answers NEVER_BOUND rows with a named refusal, not ENTRY_ABSENT, and Unhide is a RELEASE of the mask;
-    - tests on the new contracts: a lone hide, and an alternating history deeper than 8.
+    - tests on the new contracts: a lone hide, and an alternating history deeper than 8 (built in-test with the
+      `EfsFiles` builders `hide`/`loneNegative` and their JS twins);
+    - what the contracts dev confirmed for that release: a lone mask's head is MASKED, target kind 0 (NONE), revision
+      1, no previous admission, and `historyAt` answers target kind 0 for a version with no earlier BIND. To fill in
+      the kept target kind, `historyAt` itself walks back past masks and releases to the last BIND on the same
+      `maxHops`, so on an alternating history it can answer UNKNOWN for a version the SDK reached within its own
+      bound: that is a per-row UNKNOWN, not an endpoint fault. Each head (and history reply) gains the recorded
+      strength as its last word, so the head ABI and its decoders change.
 - **Built first, once confirmed:** `fold` and the link grammar with vectors, then the planners, then the reads.
 - **Statement planners** (label, definition, "same as", "moved to", parent) join section 4 once the contracts dev
   names their purposes.
