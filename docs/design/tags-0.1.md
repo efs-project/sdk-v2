@@ -29,6 +29,11 @@
   owner confirms before any lasting deployment (it refines D-B).
 - **Vectors are shared with the contracts**, including words that must be refused. Two SDKs with two fold tables would
   give two ids for one typed word.
+- **Whitespace** is part of the rule: trimmed at both ends, and a run of whitespace inside a word becomes one
+  underscore. Zero-width and bidi control characters are refused, never stripped (the evaluation says which scripts
+  would need one, if any).
+- **Its own export.** `fold` and its tables ship as their own entry point, so an app that never touches tags does
+  not pay for them under the size gate.
 - **The chain's word rules**, checked again by the SDK before planning so a bad word is never a revert:
   - 1 to 255 bytes of well-formed UTF-8;
   - no `/`, no ASCII control characters, no ASCII space, no ASCII `A–Z`;
@@ -52,7 +57,7 @@
 ```ts
 fold(text: string): { ok: true; word: string } | { ok: false; rule: FoldRule };
 topicId(words: readonly string[]): TopicId; // folds each word, then the word page and path record ids
-homeId(address: Address): Hex;              // the address as a word, no hash: the same as its key principal
+homeId(address: Address): Hex;              // the address as a word, no hash
 ```
 
 Resolving a topic path is folding and hashing, never a Lens walk. Folder and home paths keep the Lens walk
@@ -67,8 +72,8 @@ planDeny(efs, w, { topic; targets; number?: number }, opts) // a negative number
 type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address"; address: Address };
 ```
 
-- **The number on the wire** *(pending contracts)*. BIND carries the number `n` in the action's `salt` word (0..255).
-  UNBIND carries `-1 - n` (for `n` from -1 to -256). RELEASE carries 0.
+- **The number on the wire** *(pending contracts)*. The number is 16 bits: -65,536 to 65,535. BIND carries `n` in
+  the action's `salt` word (0..65,535). UNBIND carries `-1 - n` (for `n` from -1 to -65,536). RELEASE carries 0.
   - Today's actions keep their meaning: a bind is 0 and a mask is -1.
   - A number outside what the release defines is refused with MISUSE at plan time, never a revert. The range comes
     from the release constants, not from this SDK.
@@ -76,9 +81,12 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
   another positive is a rebind, and a negative to another negative is another UNBIND. A first statement may be
   negative (a denial on its own).
 - **Targets.** A file, or one revision of it (for claims about content that an edit could change), a folder, a topic,
-  or an address. An address needs no record, including one that has never transacted.
+  or an address. An address needs no record, including one that has never transacted. Address targets are for TAG
+  only; anywhere else the chain refuses them with a named error, and the planners refuse them first (MISUSE).
 - **Registration is planned automatically.** The planner reads which word pages and path records already exist (one
   batched read). It publishes the missing ones parent first, in the same save as the first tag, with no extra prompt.
+  A topic must be registered strictly before its tag: the index walks the path at the tag's own position in the
+  order, so registrations always come ahead of the tag in a publication, or in earlier parts.
   - A deep new path may not fit one transaction. The planner then splits registration into earlier parts, and the tag
     goes in the last part.
   - Registration parts are idempotent and harmless if the save is abandoned: a registered topic is just a topic.
@@ -113,7 +121,7 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
 
 ```ts
 topicItems(efs, topic, { view, lens?, rollup?, synonyms?, cursor?, limit? }) // a page of things in a topic
-tagsOf(efs, thing, { lens? })              // every topic the Lens tags this thing with, with each stance
+tagsOf(efs, thing, { view, lens? })        // the topics a thing is tagged with, and each author's stance
 topicChildren(efs, topic, { lens?, showAll?, cursor?, limit? })
 wordPage(efs, word, { lens? })             // every place the word is used, grouped by place
 ```
@@ -123,9 +131,23 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
 - **Coverage** follows listFolder's rule: COMPLETE only for a list scanned from its start to its end. A page from a
   cursor is at most PARTIAL, and an empty PARTIAL page means "keep reading".
 - **Duplicates.** Roll-up lists a thing filed under `/cars/tesla` and under `/cars/ford` twice in `/cars`. The SDK
-  removes duplicates by thing within a page and across pages: the cursor carries the things already returned, up to
-  a stated bound, and past it the page says duplicates may remain.
+  removes duplicates by thing, and every result says how far: `dedup: "COMPLETE" | "BOUNDED"` (with the bound), so a
+  page never claims a uniqueness it cannot guarantee.
+  - An in-memory iterator, for a client scrolling one view, keeps the seen set for the session, so it is always
+    COMPLETE.
+  - A serializable cursor, for resuming, carries the things already returned up to the stated bound; past it the
+    result is BOUNDED.
+  - A dropped duplicate's place stays on the surviving row ("filed under tesla, ford"). Clients still dedupe what they
+    render, since they merge synonym lists anyway.
+- **Calls stay under the endpoint's gas limit.** A roll-up read under a big Lens is expensive (the contracts
+  measured about 283k gas for a page of 10 at a Lens of 1, and 15M for a page of 50 at a Lens of 64). The SDK splits
+  each read by Lens and by page so every eth_call stays under a conservative per-call cap. It starts small and backs
+  off when an endpoint runs out of gas. A call that ran out of gas is UNKNOWN or PARTIAL, never an empty page, and a
+  big Lens never turns into UNKNOWN just because one call was too large.
 - **Skipped rows are counted, never dropped silently:** denied, duplicate, and below the junk rule.
+- **`tagsOf` has the three views too.** Mine reads the Lens authors' statements. Everyone and Raw read the contracts'
+  all-authors list per target, which includes lone negatives for every kind of target, so it shows who says a tag
+  applies and who says it doesn't. Hiding still uses only the Lens authors' denials, read directly.
 
 ### 5.3 Synonyms and moves
 
@@ -170,6 +192,9 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
 ### 5.6 Homes
 
 - Viewing a home uses `efs.lens.place({ reader, owner: address })`, then "public" once the all-authors lists exist.
+- **Contract addresses.** A home's id is the padded address, but a contract's principal is not: it is the contract
+  principal of the Realm (origin-qualified). `place` inserts the principal that the address actually publishes as,
+  and both when an address could act as either. A Safe's home is in the design and in the tests.
 - Every row says whose entry it is when it isn't the home owner's, because a reader's own `pet.jpg` at someone else's
   address would otherwise look like the owner's.
 
@@ -199,3 +224,5 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   - the fold rule (NFKC_Casefold or NFC plus lowercase);
   - the default view for topics, and what a newcomer's Lens contains.
 - **Built first, once confirmed:** `fold` and the link grammar with vectors, then the planners, then the reads.
+- **Statement planners** (label, definition, "same as", "moved to", parent) join section 4 once the contracts dev
+  names their purposes.
