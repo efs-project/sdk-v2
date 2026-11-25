@@ -18,6 +18,7 @@ import {
 import type { FolderRef } from "../../src/files/folders.ts";
 import { listRemoved, type RemovedRow } from "../../src/files/removed.ts";
 import { ledgerViewsAbi } from "../../src/generated/abis.ts";
+import { releaseEntry } from "./recipes.ts";
 import { type Edit, sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -55,11 +56,6 @@ const historyEdited = (f: (found: number, head: Record<string, unknown>) => [num
     deployment,
     fetch: tampered({ [sel(ledgerViewsAbi, "historyAt")]: edit }),
   });
-};
-const rowOf = async (e: ReturnType<typeof createEfs>, name: string) => {
-  const page = await listRemoved(e, { folder, author: me });
-  if (page.status !== "PRESENT") throw new Error(page.status);
-  return page.rows.find((r) => r.name === name);
 };
 
 const run = async (planned: Promise<{ status: string } & Record<string, unknown>>) => {
@@ -167,30 +163,47 @@ describe("listRemoved (fixture)", () => {
     expect((await listRemoved(efs, { folder: revision, author: me })).status).toBe("INVALID");
   });
 
-  // A row whose last target the history can't give (target null) must never become a restore of a guessed target.
-  it("history that can't be read back: the row stays, target null, and restore is UNKNOWN", async () => {
+  // A removed entry's target is never guessed. On an honest endpoint it is always known (the ledger only hides or
+  // releases a bound entry), so a history that can't name it is the endpoint's fault: the read is UNKNOWN, never a row.
+  it("history that can't be read back: the page and the restore are UNKNOWN, never a guessed target", async () => {
     const lost = historyEdited((_found, head) => [2, head]); // History.NONE
-    expect(await rowOf(lost, "p1.txt")).toMatchObject({ state: "RELEASED", target: null });
-    const planned = await planRestoreEntries(lost, w, { entries: [{ folder, name: "p1.txt" }] });
-    expect(planned).toMatchObject({
+    expect(await listRemoved(lost, { folder, author: me })).toMatchObject({
       status: "UNKNOWN",
       reason: { code: "NOT_YET_DECIDABLE", retry: "transient" },
     });
+    expect(
+      await planRestoreEntries(lost, w, { entries: [{ folder, name: "p1.txt" }] }),
+    ).toMatchObject({ status: "UNKNOWN", reason: { code: "NOT_YET_DECIDABLE" } });
     // The same entry on an honest endpoint restores to its real target.
     const honest = await planRestoreEntries(efs, w, { entries: [{ folder, name: "p1.txt" }] });
-    expect(honest.status).toBe("PLANNED");
+    if (honest.status !== "PLANNED") throw new Error(honest.status);
+    expect(honest.review.entries[0]?.target).toEqual(files["p1.txt"]);
   });
 
-  it("history deeper than the walk: the row stays, target null, and restore is UNKNOWN (LIMIT_EXCEEDED)", async () => {
-    // Every version reads as released, each pointing at one more before it: no bound version within the hop limit.
-    const deep = historyEdited((_found, head) => [3, { ...head, state: 3, prevAdmission: 1n }]);
-    expect(await rowOf(deep, "p1.txt")).toMatchObject({ state: "RELEASED", target: null });
-    const planned = await planRestoreEntries(deep, w, { entries: [{ folder, name: "p1.txt" }] });
-    expect(planned).toMatchObject({
-      status: "UNKNOWN",
-      reason: { code: "LIMIT_EXCEEDED", retry: "never" },
-    });
-  });
+  const lies: { what: string; lie: Record<string, unknown>; name?: string }[] = [
+    { what: "a released version before a released one", lie: { state: 3 } },
+    { what: "a hidden version before a hidden one", lie: { state: 2 }, name: "hidden.txt" },
+    { what: "a version at another admission than asked", lie: { state: 1, admission: 1n } },
+    {
+      what: "a bound version with a target kind no FOLDER bind carries",
+      lie: { state: 1, targetKind: 7 },
+    },
+    { what: "a removed version with no earlier one", lie: { state: 2, prevAdmission: 0n } },
+  ];
+  it.each(lies)(
+    "history that breaks the ledger's rules ($what): UNKNOWN",
+    async ({ lie, name = "p1.txt" }) => {
+      const lying = historyEdited((found, head) => [found, { ...head, ...lie }]);
+      expect(await listRemoved(lying, { folder, author: me })).toMatchObject({
+        status: "UNKNOWN",
+        reason: { code: "RPC_ERROR", retry: "transient" },
+      });
+      expect(await planRestoreEntries(lying, w, { entries: [{ folder, name }] })).toMatchObject({
+        status: "UNKNOWN",
+        reason: { code: "RPC_ERROR" },
+      });
+    },
+  );
 
   it("restores straight from the list", async () => {
     await run(planRestoreEntries(efs, w, { entries: [{ folder, name: "gone.txt" }] }) as never);
@@ -201,5 +214,29 @@ describe("listRemoved (fixture)", () => {
       "p2.txt",
       "p3.txt",
     ]);
+  });
+  it("a hidden entry later released: two versions back, still its real target, and restorable", async () => {
+    // The SDK's remove only takes a bound entry, so the RELEASE of a hidden one is a raw action.
+    const before = await listRemoved(efs, { folder, author: me });
+    if (before.status !== "PRESENT") throw new Error(before.status);
+    const hidden = before.rows.find((r) => r.name === "hidden.txt") as RemovedRow;
+    expect(hidden.state).toBe("MASKED");
+    const planned = await w.planActions(
+      releaseEntry(folder.directory, "hidden.txt", hidden.revision),
+    );
+    if (planned.status !== "PLANNED") throw new Error(planned.status);
+    expect((await w.run(planned.plan)).reconcile?.outcome).toBe("COMMITTED");
+    const after = await listRemoved(efs, { folder, author: me });
+    if (after.status !== "PRESENT") throw new Error(after.status);
+    expect(after.rows.find((r) => r.name === "hidden.txt")).toMatchObject({
+      state: "RELEASED",
+      target: files["hidden.txt"],
+      revision: hidden.revision + 1n,
+    });
+    const restore = await planRestoreEntries(efs, w, {
+      entries: [{ folder, name: "hidden.txt" }],
+    });
+    if (restore.status !== "PLANNED") throw new Error(restore.status);
+    expect(restore.review.entries[0]?.target).toEqual(files["hidden.txt"]);
   });
 });

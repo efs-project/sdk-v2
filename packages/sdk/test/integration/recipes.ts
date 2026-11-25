@@ -117,3 +117,22 @@ export function putExternal(
     effects: [{ code: "files.put", args: { name } }],
   };
 }
+
+/**
+ * RELEASE my FOLDER entry `name` in `dir` at its revision. The SDK's remove takes only a bound entry, so this is how a
+ * test reaches the RELEASE of a hidden (MASKED) one, which the ledger admits.
+ */
+export function releaseEntry(dir: Hex, name: string, expectedRevision: bigint) {
+  const step = plain({
+    kind: ACTION.RELEASE,
+    purpose: PURPOSES.folder,
+    subject: dir,
+    role: keccak256(new TextEncoder().encode(name)),
+    expectedRevision,
+  });
+  return {
+    actions: [step.action],
+    bodies: [step.body],
+    effects: [{ code: "files.release", args: { name } }],
+  };
+}

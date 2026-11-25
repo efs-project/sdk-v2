@@ -877,16 +877,19 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   law's, the page and Lens readers must agree on every row, and COMPLETE must hold locally.
 
 - `listRemoved(efs, { folder, author }, { limit?, cursor? })` ("Show removed"): one author's removed entries in a
-  folder, RELEASED or MASKED, each with `name`, `position`, `state`, the `target` it had before (from its history;
-  null when the history can't say), its binding `revision` and `removedAt`. Lens-independent: it reads only that
-  author's own scope list (the index's kind-10 list of the positions they ever bound there, in first-bind order), a
-  page of up to 64 entries at a time. The live index and its bitmap store must be the ones the deployment names, or
-  the page is UNKNOWN. COMPLETE only for the whole list read from its start; an empty page that is not COMPLETE is
-  UNKNOWN, never "nothing removed". Restore any row with `planRestoreEntries`.
-  A row whose `target` is null is still a removed entry: show it, marked "can't restore this one right now", never
-  hide it. The SDK never restores a guessed target, so restoring that row answers UNKNOWN (the history could not be
-  read back: `NOT_YET_DECIDABLE`, try again; or it is deeper than the walk: `LIMIT_EXCEEDED`), or REFUSED
-  `ENTRY_ABSENT` when the author never had anything bound there (a hide of another author's entry).
+  folder, RELEASED or MASKED, each with `name`, `position`, `state`, the `target` it had before (what Restore binds
+  again), its binding `revision` and `removedAt`. Lens-independent: it reads only that author's own scope list (the
+  index's kind-10 list of the positions they ever bound there, in first-bind order), a page of up to 64 entries at a
+  time. The live index and its bitmap store must be the ones the deployment names, or the page is UNKNOWN. COMPLETE
+  only for the whole list read from its start; an empty page that is not COMPLETE is UNKNOWN, never "nothing
+  removed". Restore any row with `planRestoreEntries`.
+  `target` is always known, never null or guessed. The ledger hides (UNBIND) only a bound entry and releases only a
+  bound or hidden one, so every removed entry had a target, at most two versions back (released, hidden, bound).
+  The SDK walks that history with those rules. A history that can't be read back (`NOT_YET_DECIDABLE`) or that breaks
+  them (`RPC_ERROR`: a version that can't precede the next, another admission than asked, a target kind no folder
+  entry carries) is the endpoint's fault: the read moves to the next endpoint, and if none answers, the page is
+  UNKNOWN. A page never holds a row whose target is unknown, so an app never has to tell "can't say" apart from
+  "nothing to restore"; on UNKNOWN it shows the list as unavailable right now.
 
 **Writes** (each `PLANNED { parts, review }` for `runSequence` | `REFUSED { refused }` | `TOO_LARGE` | `UNKNOWN`):
 - `planCreateFile(efs, w, { folder, name, content, mediaType?, lens?, salt? })`: CREATE, the root revision (inline,
@@ -908,11 +911,12 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   entry's author). The chain lets anyone mask their own position; offering hide only to a place's owner is an app rule.
   Nothing is destroyed: the file stays reachable by its link.
 - `planRestoreEntries(efs, w, { entries, lens? })`: BIND a released or hidden entry back to the target it had before,
-  read from the binding's history (walking back through hides and releases, at most 8 versions). When that history
-  can't name the target, the plan is UNKNOWN; it never binds a guessed one. Restoring a folder needs `via` (the
-  path to its folder), with the same cycle checks as a move. Each review item carries `alsoPlaced`: how many live
-  placements point at the target now, by anyone (the index's backlink count, from the generation the ledger names).
-  Above 0, restoring puts it in one more place, for example after it was moved. Null when the index can't vouch.
+  read from the binding's history by the same walk listRemoved uses, so a row's `target` is exactly what Restore
+  binds. When that history can't name the target, the plan is UNKNOWN; it never binds a guessed one. Restoring a
+  folder needs `via` (the path to its folder), with the same cycle checks as a move. Each review item carries
+  `alsoPlaced`: how many live placements point at the target now, by anyone (the index's backlink count, from the
+  generation the ledger names). Above 0, restoring puts it in one more place, for example after it was moved. Null
+  when the index can't vouch.
 - Every planner writes only the writer's own entries, each with a compare-and-swap on its revision. Refusal codes:
   `NAME_TAKEN_MINE` (your own entry holds the name), `NOT_YOURS` (with `author` and `admission`), `FOLDER_ABSENT`,
   `ENTRY_ABSENT`, `NOT_REMOVED`, `PATH_CHANGED`. A batch refuses as a whole and lists every refusal by `index`
