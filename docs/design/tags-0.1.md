@@ -63,7 +63,6 @@
 >   word against the chain's grammar);
 > - the junk rule for children (two distinct authors), which needs a per-child author figure the readers don't
 >   give;
-> - synonym merging across "same as" lists;
 > - Lens-applied `tagsOf` (it reads no Lens today, and gives each place's exact yes-count);
 > - merged item reads across synonym lists (a multi-list cursor merged by statement sequence changes `topicItems`'
 >   paging, so it is its own reviewed step); `topicSynonyms` gives the lists to merge.
@@ -501,5 +500,6 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
     come from one pinned version through one generator. Coordinate the generator with the contracts dev once James
     rules on the fold, and add a CI check that the SDK's table and the chain's agree byte for byte.
 - **Built first, once confirmed:** `fold` and the link grammar with vectors, then the planners, then the reads.
-- **Statement planners** (label, definition, "same as", "moved to", parent) join section 4 once the contracts dev
-  names their purposes.
+- **Statement planners:** label, "same as" and "broader" are built (`planLabel`, `planSame`, `planBroader`).
+  "Definition" and "moved to" are property keys (`propertyKey("definition")`, `propertyKey("moved-to")`) with no
+  planner or read yet.
