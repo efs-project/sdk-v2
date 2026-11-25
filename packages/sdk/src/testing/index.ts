@@ -165,7 +165,10 @@ export function recordingFetch(inner: FetchLike): { fetch: FetchLike; calls: Rpc
   return { fetch: f, calls };
 }
 
-/** Wrap an EIP-1193 provider so every request and its result or error is recorded as a WalletCall. */
+/**
+ * Wrap an EIP-1193 provider so every request is recorded as a WalletCall, in the order the requests were made, with
+ * the result or error filled in when it settles.
+ */
 export function recordingProvider(inner: Eip1193Like): {
   provider: Eip1193Like;
   calls: WalletCall[];
@@ -176,21 +179,18 @@ export function recordingProvider(inner: Eip1193Like): {
       method: string;
       params?: object | readonly unknown[];
     }): Promise<unknown> {
-      const params = args.params ?? [];
+      const call: WalletCall = { method: args.method, params: args.params ?? [] };
+      calls.push(call);
       try {
-        const result = await inner.request(args);
-        calls.push({ method: args.method, params, result });
-        return result;
+        call.result = await inner.request(args);
+        return call.result;
       } catch (e) {
         const code = (e as { code?: unknown })?.code;
-        calls.push({
-          method: args.method,
-          params,
-          error: {
-            ...(typeof code === "number" ? { code } : {}),
-            message: e instanceof Error ? e.message : String(e),
-          },
-        });
+        const message = (e as { message?: unknown })?.message;
+        call.error = {
+          ...(typeof code === "number" ? { code } : {}),
+          message: typeof message === "string" ? message : String(e),
+        };
         throw e;
       }
     },
@@ -200,11 +200,18 @@ export function recordingProvider(inner: Eip1193Like): {
 
 /**
  * A fake wallet answering from the transcripts' wallet halves: each request is matched on `[method, params]`, answers
- * are served in recorded order and the last repeats, and a recorded error is thrown (with its `code`). An unmatched
- * request throws and is listed in `misses`.
+ * are served in recorded order and the last repeats (`strict`: never repeats), and a recorded error is thrown (with
+ * its `code`). An unmatched request throws and is listed in `misses`.
  */
 export function replayProvider(
   transcripts: RpcTranscript | readonly RpcTranscript[],
+  o: {
+    /**
+     * Serve each recorded answer at most once: a request made more often than it was recorded (a second
+     * eth_sendTransaction, say) is a miss instead of a repeat of the last answer.
+     */
+    strict?: boolean;
+  } = {},
 ): Eip1193Like & { readonly misses: readonly string[] } {
   const answers = new Map<string, WalletCall[]>();
   const served = new Map<string, number>();
@@ -229,6 +236,15 @@ export function replayProvider(
         });
       }
       const n = served.get(k) ?? 0;
+      if (o.strict && n >= list.length) {
+        misses.push(
+          `${args.method} ${JSON.stringify(args.params ?? [])} (more often than recorded)`,
+        );
+        throw Object.assign(
+          new Error(`replay: ${args.method} was recorded ${list.length} time(s)`),
+          { code: 4200 },
+        );
+      }
       served.set(k, n + 1);
       const c = list[Math.min(n, list.length - 1)] as WalletCall;
       if (c.error)

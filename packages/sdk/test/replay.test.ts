@@ -151,7 +151,7 @@ describe("edit-flow transcript replay (RPC and wallet halves)", () => {
   it("edit-one-approval: one approval, COMPLETE (confirming), and the new HEAD reads back", async () => {
     const t = load("edit-one-approval");
     const fetch = replayFetch(t);
-    const wallet = replayProvider(t);
+    const wallet = replayProvider(t, { strict: true }); // each wallet answer at most once
     const efs = session(fetch);
     const writer = await createWriter(efs, {
       authorizer: { kind: "eip1193", profile: "direct", provider: wallet },
@@ -170,7 +170,7 @@ describe("edit-flow transcript replay (RPC and wallet halves)", () => {
   it("edit-reload-resume: a lost response and a reload settle from the ledger, never sent twice", async () => {
     const t = load("edit-reload-resume");
     const fetch = replayFetch(t);
-    const wallet = replayProvider(t);
+    const wallet = replayProvider(t, { strict: true }); // each wallet answer at most once
     const journal = memoryJournal(); // survives the reload, like the client's IndexedDB journal
     const efs1 = session(fetch); // page load 1
     const w1 = await createWriter(efs1, {
@@ -191,15 +191,15 @@ describe("edit-flow transcript replay (RPC and wallet halves)", () => {
     expect(open).toMatchObject({ state: "IN_FLIGHT", committed: 0, total: 1 });
     if (!open) return;
     expect(await w2.resume(open.sequenceId)).toMatchObject({ state: "COMPLETE", final: false });
-    const sends = t.wallet?.filter((c) => c.method === "eth_sendTransaction") ?? [];
-    expect(sends).toHaveLength(1);
+    // The replay itself made exactly one send (strict: a second one would be a miss), and the recording has one.
+    expect(t.wallet?.filter((c) => c.method === "eth_sendTransaction")).toHaveLength(1);
     expect([fetch.replay.misses, wallet.misses]).toEqual([[], []]);
   });
 
   it("edit-confirming-final: COMPLETE turns final once its block is finalized", async () => {
     const t = load("edit-confirming-final");
     const fetch = replayFetch(t);
-    const wallet = replayProvider(t);
+    const wallet = replayProvider(t, { strict: true }); // each wallet answer at most once
     const efs = session(fetch);
     const writer = await createWriter(efs, {
       authorizer: { kind: "eip1193", profile: "direct", provider: wallet },
@@ -214,5 +214,20 @@ describe("edit-flow transcript replay (RPC and wallet halves)", () => {
     });
     expect(await writer.pendingSequences()).toEqual([]);
     expect([fetch.replay.misses, wallet.misses]).toEqual([[], []]);
+  });
+
+  it("a strict wallet replay refuses a request made more often than recorded (a second send is a miss)", async () => {
+    const t = load("edit-one-approval");
+    const send = t.wallet?.find((c) => c.method === "eth_sendTransaction");
+    if (!send) throw new Error("no recorded send");
+    const strict = replayProvider(t, { strict: true });
+    const args = { method: send.method, params: send.params as readonly unknown[] };
+    expect(await strict.request(args)).toBe(send.result);
+    await expect(strict.request(args)).rejects.toMatchObject({ code: 4200 });
+    expect(strict.misses).toHaveLength(1);
+    const lenient = replayProvider(t);
+    await lenient.request(args);
+    expect(await lenient.request(args)).toBe(send.result); // the default repeats the last answer
+    expect(lenient.misses).toEqual([]);
   });
 });

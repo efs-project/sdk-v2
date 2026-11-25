@@ -477,12 +477,11 @@ describe.runIf(RECORD)("record edit-flow transcripts", () => {
       wallet: (o) => {
         const r = recordingProvider(anvilWallet(o));
         return {
-          request: async (args) => {
-            try {
-              return await r.provider.request(args);
-            } finally {
-              walletCalls.push(...r.calls.splice(0));
-            }
+          // every page load's wallet appends to one list, in request order (entries are filled as they settle)
+          request: (args) => {
+            const p = r.provider.request(args);
+            walletCalls.push(...r.calls.splice(0));
+            return p;
           },
         };
       },

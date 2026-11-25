@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 type Hex = `0x${string}`;
@@ -67,7 +67,10 @@ export interface FixtureChain {
   seed: FixtureSeed;
   /** The contracts commit the snapshot is from. */
   contracts: { repo: string; commit: string };
-  /** Stop anvil and remove the state this call created. Safe to call twice. */
+  /**
+   * Stop anvil, then remove the state this call created. Concurrent calls share one stop; after a failed stop the
+   * state is kept (anvil may still be running) and stop() can be called again.
+   */
   stop(): Promise<void>;
 }
 
@@ -114,10 +117,14 @@ function parseResult(command: string, r: Ran): Record<string, unknown> {
 export async function startFixtureChain(o: StartFixtureOptions = {}): Promise<FixtureChain> {
   const env = { ...process.env };
   if (o.anvilPath) {
-    const file = basename(o.anvilPath);
+    // Resolved against the caller's directory (the CLI runs with cwd contracts/, where a relative path means nothing).
+    const bin = resolve(o.anvilPath);
+    const file = basename(bin);
     if (file !== "anvil" && file !== "anvil.exe")
       throw new Error(`anvilPath must name an anvil binary (got ${file})`);
-    env["PATH"] = `${dirname(o.anvilPath)}${delimiter}${env["PATH"] ?? ""}`;
+    if (dirname(bin).includes(delimiter))
+      throw new Error(`anvilPath's directory must not contain "${delimiter}"`);
+    env["PATH"] = `${dirname(bin)}${delimiter}${env["PATH"] ?? ""}`;
   }
   const ownHome = o.home === undefined;
   const home = o.home ?? mkdtempSync(join(tmpdir(), "efs-fixture-"));
@@ -135,47 +142,67 @@ export async function startFixtureChain(o: StartFixtureOptions = {}): Promise<Fi
     "--json",
   ];
   if (o.port !== undefined) args.push("--port", String(o.port));
+
+  /** `down`, then (only once anvil is known to be stopped) the temporary home with its lease registry. */
+  const down = async (): Promise<void> => {
+    parseResult(
+      "down",
+      await runCli(["down", "--name", name, "--home", home, "--purge", "--json"], env),
+    );
+    if (ownHome) rmSync(home, { recursive: true, force: true });
+  };
+
   let ready: Record<string, unknown>;
   try {
     ready = parseResult("up", await runCli(args, env));
   } catch (e) {
+    // A failed `up` stops the anvil it started and frees its lease itself.
     if (ownHome) rmSync(home, { recursive: true, force: true });
     throw e;
   }
-  const { DEFAULT_ACCOUNTS } = (await import(pathToFileURL(CLI).href)) as {
-    DEFAULT_ACCOUNTS: readonly Hex[];
-  };
-  const { FIXTURE_KEY } = (await import(
-    pathToFileURL(join(CONTRACTS, "tools", "deploy-plan.mjs")).href
-  )) as { FIXTURE_KEY: Hex };
-  const provenance = JSON.parse(readFileSync(join(CONTRACTS, "PROVENANCE.json"), "utf8")) as {
-    contracts: { repo: string; commit: string };
-  };
-  const deploymentPath = String(ready["deployment"]);
-  const deployment = JSON.parse(readFileSync(deploymentPath, "utf8")) as Record<string, unknown>;
-  let stopped = false;
-  return {
-    rpcUrl: String(ready["rpcUrl"]),
-    chainId: Number(ready["chainId"]),
-    deployment,
-    deploymentPath,
-    accounts: {
-      fixture: { address: DEFAULT_ACCOUNTS[0] as Hex, privateKey: FIXTURE_KEY },
-      unlocked: [...DEFAULT_ACCOUNTS],
-    },
-    seed: deployment["seed"] as FixtureSeed,
-    contracts: { repo: provenance.contracts.repo, commit: provenance.contracts.commit },
-    async stop(): Promise<void> {
-      if (stopped) return;
-      stopped = true;
-      try {
-        parseResult(
-          "down",
-          await runCli(["down", "--name", name, "--home", home, "--purge", "--json"], env),
+  try {
+    const { DEFAULT_ACCOUNTS } = (await import(pathToFileURL(CLI).href)) as {
+      DEFAULT_ACCOUNTS: readonly Hex[];
+    };
+    const { FIXTURE_KEY } = (await import(
+      pathToFileURL(join(CONTRACTS, "tools", "deploy-plan.mjs")).href
+    )) as { FIXTURE_KEY: Hex };
+    const provenance = JSON.parse(readFileSync(join(CONTRACTS, "PROVENANCE.json"), "utf8")) as {
+      contracts: { repo: string; commit: string };
+    };
+    const deploymentPath = String(ready["deployment"]);
+    const deployment = JSON.parse(readFileSync(deploymentPath, "utf8")) as Record<string, unknown>;
+    // One stop at a time; a failed stop can be retried, and keeps the home (anvil may still be running).
+    let stopping: Promise<void> | undefined;
+    let stopped = false;
+    return {
+      rpcUrl: String(ready["rpcUrl"]),
+      chainId: Number(ready["chainId"]),
+      deployment,
+      deploymentPath,
+      accounts: {
+        fixture: { address: DEFAULT_ACCOUNTS[0] as Hex, privateKey: FIXTURE_KEY },
+        unlocked: [...DEFAULT_ACCOUNTS],
+      },
+      seed: deployment["seed"] as FixtureSeed,
+      contracts: { repo: provenance.contracts.repo, commit: provenance.contracts.commit },
+      stop(): Promise<void> {
+        if (stopped) return Promise.resolve();
+        stopping ??= down().then(
+          () => {
+            stopped = true;
+          },
+          (e: unknown) => {
+            stopping = undefined;
+            throw e;
+          },
         );
-      } finally {
-        if (ownHome) rmSync(home, { recursive: true, force: true });
-      }
-    },
-  };
+        return stopping;
+      },
+    };
+  } catch (e) {
+    // Anvil is up but the chain cannot be handed back: stop it rather than leak it.
+    await down().catch(() => {});
+    throw e;
+  }
 }
