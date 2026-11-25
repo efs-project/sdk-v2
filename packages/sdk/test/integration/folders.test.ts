@@ -148,15 +148,16 @@ describe("folder reads (fixture)", () => {
     const p = await resolvePath(efs, { from: root, segments: ["docs", "readme.txt"] });
     if (p.status !== "PRESENT") throw new Error(p.status);
     expect(p.target).toEqual({ kind: "file", subject: readme.subjectId });
+    // Every folder on the way carries its creator, read with the record that proves it is a folder.
     expect(p.chain).toEqual([
       {
-        folder: root,
+        folder: { ...root, owner: seeder },
         name: "docs",
         author: seeder,
-        target: { kind: "folder", directory: docs.directory },
+        target: { kind: "folder", directory: docs.directory, owner: seeder },
       },
       {
-        folder: { kind: "folder", directory: docs.directory },
+        folder: { kind: "folder", directory: docs.directory, owner: seeder },
         name: "readme.txt",
         author: seeder,
         target: { kind: "file", subject: readme.subjectId },
@@ -232,6 +233,8 @@ describe("folder reads (fixture)", () => {
       status: "PRESENT",
       target: { kind: "file", subject: readme.subjectId },
     });
+    // The Lens it resolved under: no reader here, so the folder's creator, then the default.
+    expect(opened.status === "PRESENT" && opened.lens).toEqual(efs.lens.place({ owner: seeder }));
     // The shared root is a folder like any other: reached by its id, with names after it.
     expect(
       await openPath(efs, { kind: "path", folder: root.directory, names: ["docs", "readme.txt"] }),
@@ -240,13 +243,15 @@ describe("folder reads (fixture)", () => {
     // creator's. Under the same Lens without the creator, nothing is there.
     const stranger = `0x${"0".repeat(24)}${"12".repeat(20)}` as PrincipalId;
     const nobody = { principals: [stranger] };
-    expect(
-      await openPath(
-        efs,
-        { kind: "path", folder: docs.directory, names: ["readme.txt"] },
-        { reader: stranger, base: nobody },
-      ),
-    ).toMatchObject({ status: "PRESENT" });
+    const viaCreator = await openPath(
+      efs,
+      { kind: "path", folder: docs.directory, names: ["readme.txt"] },
+      { reader: stranger, base: nobody },
+    );
+    expect(viaCreator).toMatchObject({ status: "PRESENT" });
+    expect(viaCreator.status === "PRESENT" && viaCreator.lens).toEqual({
+      principals: [stranger, seeder],
+    });
     expect(
       await resolvePath(efs, { from: docs, segments: ["readme.txt"] }, { lens: nobody }),
     ).toMatchObject({ status: "ABSENT_PROVEN", segment: 0 });
@@ -258,7 +263,7 @@ describe("folder reads (fixture)", () => {
         names: ["readme.txt"],
         lens: nobody,
       }),
-    ).toMatchObject({ status: "ABSENT_PROVEN", segment: 0 });
+    ).toMatchObject({ status: "ABSENT_PROVEN", segment: 0, lens: nobody });
   });
 
   it("openPath refuses names below a file id, and says when nothing has the id", async () => {

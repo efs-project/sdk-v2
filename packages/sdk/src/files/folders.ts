@@ -1048,6 +1048,8 @@ export async function lookupAt(
   nameBytes: Uint8Array,
   full: boolean,
   verifyFolder = false,
+  /** With `verifyFolder`: set to the folder's creator, from the record that proves it is a folder. */
+  folderSeen?: { owner?: PrincipalId },
 ): Promise<Step<Looked>> {
   const d = ctx.efs.deployment;
   const position = entryPosition(folder, nameBytes);
@@ -1085,6 +1087,7 @@ export async function lookupAt(
     const x = fr.value[0] as FolderRecord;
     if (x.status !== "PRESENT" || !x.directory)
       return { ok: true, value: { status: "NOT_A_FOLDER" } };
+    if (folderSeen) folderSeen.owner = x.owner;
   }
   let status: number;
   let selectedIndex: number;
@@ -1341,6 +1344,7 @@ export async function resolvePath(
       let folder: FolderRef = { kind: "folder", directory: lower(path.from.directory) as RecordId };
       for (let i = 0; i < names.length; i++) {
         const last = i === names.length - 1;
+        const seen: { owner?: PrincipalId } = {};
         const step = await lookupAt(
           ctx,
           s,
@@ -1350,8 +1354,17 @@ export async function resolvePath(
           names[i] as Uint8Array,
           last,
           true,
+          seen,
         );
         if (!step.ok) return step;
+        // The folder's creator came with the record that proves it is a folder: put it on this step's folder and
+        // on the step that pointed here, so every folder on the way carries its owner.
+        if (seen.owner !== undefined) {
+          folder = { ...folder, owner: seen.owner };
+          const prev = chain[i - 1];
+          if (prev?.target.kind === "folder")
+            chain[i - 1] = { ...prev, target: { ...prev.target, owner: seen.owner } };
+        }
         const v = step.value;
         // The folder segment i-1 pointed at is not a files-directory/1 record: the path cannot continue there.
         // `from` itself is not a folder: the path never started.
@@ -1654,7 +1667,16 @@ export interface OpenPathOpts extends Omit<ResolvePathOpts, "lens"> {
 }
 
 export type PathOpen =
-  | PathResolution
+  /** resolvePath's answer for the names, with the Lens they were resolved under. */
+  | (PathResolution & { lens: Lens })
+  /** The id could not be read, or is not a folder (a file included): no name was resolved, so no Lens. */
+  | {
+      kind: "efs.path";
+      status: "INVALID" | "UNKNOWN";
+      reason: Reason;
+      basis?: Basis;
+      evidence: Evidence;
+    }
   /** Nothing has the link's id, neither a folder nor a file: openObject's own answer, at its basis. */
   | Extract<ObjectOpen, { status: "ABSENT_PROVEN" }>;
 
@@ -1663,7 +1685,8 @@ export type PathOpen =
  * for a folder, its names (resolvePath). The Lens is the link's own when it carries one, used as it is; else the
  * reader, then the folder's creator, then `base` (efs.lens.place). Any id that is not a folder, a file included, is
  * INVALID: a file has no names below it, so the file itself is never what the link opens. An id nothing has is
- * openObject's ABSENT_PROVEN (`kind: "efs.object"`), never a missing name. `evidence` covers both reads.
+ * openObject's ABSENT_PROVEN (`kind: "efs.object"`), never a missing name. `evidence` covers both reads. Every
+ * answer for the names carries `lens`, the Lens they were resolved under, so the entry opens the same way.
  */
 export async function openPath(efs: Efs, link: PathLink, o: OpenPathOpts = {}): Promise<PathOpen> {
   if (link.names.length === 0)
@@ -1709,5 +1732,5 @@ export async function openPath(efs: Efs, link: PathLink, o: OpenPathOpts = {}): 
     attempts: [...obj.evidence.attempts, ...r.evidence.attempts],
     requests: obj.evidence.requests + r.evidence.requests,
   };
-  return { ...r, evidence };
+  return { ...r, lens, evidence };
 }
