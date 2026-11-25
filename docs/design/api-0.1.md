@@ -932,9 +932,9 @@ zero; zero or a malformed address is MISUSE), so it is never ABSENT_PROVEN or IN
 COMPLETE page. Its `owner` is the address's author identity at the read's block, the gateway's `Keys.principalFor`:
 the key principal (the padded address) of a key account, an EIP-7702 account with exactly the `ef0100 ‖ address`
 designator included, and the Realm's contract principal of a contract, so a Safe's home shows the Safe's own entries.
-It is true only as of that basis and can change (a counterfactual Safe's address is a key home until code lands; a
-7702 delegation set or cleared): never cache it across bases. The SDK reads it with one deployless probe in the same
-batch. `openHome(efs, address, { reader?, base? })` → `PRESENT { home (with owner), lens }` | `UNKNOWN`: the Lens to
+It is true only as of that basis and can change: a counterfactual Safe's address is a key home until code lands
+there, and a key home again if the code is removed (the standard 7702 designator keeps the key owner). Never cache it
+across bases. The SDK reads it with one deployless probe in the same batch. `openHome(efs, address, { reader?, base? })` → `PRESENT { home (with owner), lens }` | `UNKNOWN`: the Lens to
 show a home under is the reader, then its owner, then `base`. `openPath` takes a `HomeLink` with names
 (`/0x<address>/photos/cat.jpg`) the same way, under the link's own `?lens=` (then it reads no owner first) or that
 default. An address-shaped word (12 leading zero bytes) given as a folder's `directory` is MISUSE: it names a home. Every write planner
