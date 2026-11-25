@@ -153,7 +153,12 @@ const WORD = /^0x[0-9a-fA-F]{64}$/;
  * once). Else undefined: no Files effect, a malformed one, or effects of different kinds (nothing single to name).
  */
 export function sequenceEffect(parts: readonly SequencePartInput[]): SequenceEffect | undefined {
-  const effects = parts.flatMap((p) => p.effects).filter((e) => e.code.startsWith("files."));
+  const all = parts
+    .flatMap((p) => p.effects)
+    .filter((e) => e.code.startsWith("files.") || e.code.startsWith("tags."));
+  // A tag save's registration-only parts (tags.register) fold into its statements' kind.
+  const statements = all.filter((e) => e.code !== "tags.register");
+  const effects = statements.length ? statements : all;
   if (effects.length === 0) return undefined;
   const code = (effects[0] as EffectView).code;
   if (effects.some((e) => e.code !== code)) return undefined;
@@ -190,6 +195,22 @@ export function sequenceEffect(parts: readonly SequencePartInput[]): SequenceEff
       out.set(key, v);
     }
     return [...out.values()];
+  };
+  const int = (e: EffectView, k: string): number | undefined => {
+    const v = e.args[k];
+    return v !== undefined && /^-?[0-9]{1,6}$/.test(v) ? Number(v) : undefined;
+  };
+  const flag = (e: EffectView, k: string): boolean | undefined =>
+    e.args[k] === "true" ? true : e.args[k] === "false" ? false : undefined;
+  /** One word per effect, each listed once in order. */
+  const things = (pick: (e: EffectView) => Hex | undefined): Hex[] | undefined => {
+    const out: Hex[] = [];
+    for (const e of effects) {
+      const v = pick(e);
+      if (v === undefined) return undefined;
+      if (!out.includes(v)) out.push(v);
+    }
+    return out;
   };
   const place = (e: EffectView) => {
     const folder = word(e, "folder");
@@ -261,6 +282,39 @@ export function sequenceEffect(parts: readonly SequencePartInput[]): SequenceEff
         return author ? { ...p, author } : undefined; // a malformed author is a malformed effect
       });
       return entries ? { kind: "files.hide", entries } : undefined;
+    }
+    case "tags.tag":
+    case "tags.deny":
+    case "tags.untag": {
+      const topic = same((e) => word(e, "topic"));
+      const targets = things((e) => word(e, "thing"));
+      if (!topic || !targets) return undefined;
+      if (code === "tags.untag") return { kind: "tags.untag", topic, targets };
+      const number = same((e) => int(e, "number"));
+      return number === undefined ? undefined : { kind: code, topic, number, targets };
+    }
+    case "tags.register": {
+      const topics = things((e) => word(e, "topic"));
+      return topics ? { kind: "tags.register", topics } : undefined;
+    }
+    case "tags.label": {
+      const v = same((e) => {
+        const subject = word(e, "subject");
+        const lang = text(e, "lang");
+        const remove = flag(e, "remove");
+        return subject && lang && remove !== undefined ? { subject, lang, remove } : undefined;
+      });
+      return v ? { kind: "tags.label", ...v } : undefined;
+    }
+    case "tags.same":
+    case "tags.broader": {
+      const v = same((e) => {
+        const subject = word(e, "subject");
+        const other = word(e, "other");
+        const remove = flag(e, "remove");
+        return subject && other && remove !== undefined ? { subject, other, remove } : undefined;
+      });
+      return v ? { kind: code, ...v } : undefined;
     }
     default:
       return undefined;
