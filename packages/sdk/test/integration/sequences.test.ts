@@ -53,6 +53,8 @@ function wallet(
     loseFirst?: boolean;
     atomic5792?: boolean;
     refuseBatch?: boolean;
+    /** wallet_sendCalls fails with this EIP-1193 code. */
+    batchFailWith?: number;
     dead?: boolean;
     switchAfterFirstSend?: Hex;
     holdFirst?: boolean;
@@ -91,6 +93,8 @@ function wallet(
       if (method === "wallet_sendCalls") {
         w.batches++;
         if (k.refuseBatch) throw Object.assign(new Error("User rejected"), { code: 4001 });
+        if (k.batchFailWith !== undefined)
+          throw Object.assign(new Error("wallet error"), { code: k.batchFailWith });
         const req = (params as [{ from: string; calls: { to: string; data: string }[] }])[0];
         // A real wallet sequences its own transaction nonces; on anvil, wait for each call to be mined before the
         // next, or back-to-back sends share one pending nonce and only one of them is ever mined.
@@ -506,6 +510,103 @@ describe("runSequence (fixture)", () => {
     // Whether or not it reached the node, the save is never listed as unsent: it is settled from the ledger.
     const settled = await w.reconcileSequence(f.sequenceId as Hex);
     expect(["IN_FLIGHT", "COMPLETE"]).toContain(settled.state);
+  });
+
+  it("a batch the wallet refused before signing (4100) is NOT_SENT: NOT_STARTED, and it resumes", async () => {
+    const journal = memoryJournal();
+    const locked = wallet(ERIN, { atomic5792: true, batchFailWith: 4100 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: locked, account: ERIN },
+      journal,
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-locked"));
+    expect(r).toMatchObject({
+      state: "NOT_STARTED",
+      committed: 0,
+      mode: "batch",
+      reason: { code: "WALLET_UNAUTHORIZED", retry: "transient" },
+    });
+    expect(locked.sends).toBe(0);
+    const back = await createWriter(efs, {
+      authorizer: {
+        kind: "eip1193",
+        profile: "direct",
+        provider: wallet(ERIN, { atomic5792: true }),
+        account: ERIN,
+      },
+      journal,
+    });
+    expect(await back.resume(r.sequenceId, { pollMs: 50 })).toMatchObject({ state: "COMPLETE" });
+  });
+
+  it("a batch whose wallet lost its connection (4900) stays in flight: it may have gone out", async () => {
+    const offline = wallet(ERIN, { atomic5792: true, batchFailWith: 4900 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: offline, account: ERIN },
+      journal: memoryJournal(),
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-offline"), {
+      settleMs: 200,
+      pollMs: 50,
+    });
+    expect(r).toMatchObject({
+      state: "IN_FLIGHT",
+      committed: 0,
+      reason: { code: "WALLET_DISCONNECTED", retry: "after-reconcile" },
+    });
+    expect((await w.pending()).map((a) => a.stage)).toEqual([
+      "SUBMISSION_POSSIBLE",
+      "SUBMISSION_POSSIBLE",
+      "SUBMISSION_POSSIBLE",
+    ]);
+  });
+
+  it("a part sent and never committed, proven so past its deadline, says EXPIRED; it is never re-sent by itself", async () => {
+    const journal = memoryJournal();
+    const slow = wallet(ERIN, { holdFirst: true }); // signed, its hash returned, never broadcast
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: slow, account: ERIN },
+      journal,
+    });
+    const [recipe] = parts(w.principal, "seq-expired", 1);
+    if (!recipe) throw new Error("no part");
+    const r = await w.runSequence([{ ...recipe, deadlineSeconds: 5 }], {
+      settleMs: 200,
+      pollMs: 50,
+    });
+    expect(r).toMatchObject({ state: "IN_FLIGHT", committed: 0 });
+    await rpc("evm_increaseTime", [60]);
+    await rpc("anvil_mine", ["0x50"]); // anvil finalizes 64 blocks behind: a finalized block past the deadline
+    const expired = {
+      state: "NOT_STARTED",
+      committed: 0,
+      reason: { code: "EXPIRED", retry: "transient" },
+    };
+    expect(await w.reconcileSequence(r.sequenceId)).toMatchObject(expired); // not "not sent"
+    expect(await w.pendingSequences()).toMatchObject([expired]);
+    expect(slow.sends).toBe(1);
+    // A declined Send again is about the new attempt (never sent): no stale EXPIRED afterwards.
+    const declining = await createWriter(efs, {
+      authorizer: {
+        kind: "eip1193",
+        profile: "direct",
+        provider: wallet(ERIN, { refuseSend: 1 }),
+        account: ERIN,
+      },
+      journal,
+    });
+    expect(await declining.resume(r.sequenceId)).toMatchObject({
+      state: "NOT_STARTED",
+      reason: { code: "USER_REJECTED" },
+    });
+    const [listed] = await w.pendingSequences();
+    expect(listed).toMatchObject({ state: "NOT_STARTED", committed: 0 });
+    expect(listed?.reason).toBeUndefined();
+    // Send again is the person's click: a new plan, and the reason clears.
+    const again = await w.resume(r.sequenceId, { pollMs: 50 });
+    expect(again).toMatchObject({ state: "COMPLETE", committed: 1 });
+    expect(again.reason).toBeUndefined();
+    expect(slow.sends).toBe(2);
   });
 
   it("settling and listing never touch the wallet", async () => {

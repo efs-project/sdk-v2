@@ -7,6 +7,7 @@ export type {
   AttemptRecord,
   AttemptStage,
   Journal,
+  SequenceEffect,
   SequencePart,
   SequenceRecord,
   SequenceState,

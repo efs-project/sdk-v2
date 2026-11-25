@@ -47,7 +47,7 @@ async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
 /** A wallet backed by anvil's unlocked account, with knobs to drop responses or refuse. */
 function wallet(
   account: Hex,
-  knobs: { loseResponse?: boolean; refuse?: boolean; chainId?: string } = {},
+  knobs: { loseResponse?: boolean; refuse?: boolean; chainId?: string; failWith?: number } = {},
 ): Eip1193Like & { sent: number } {
   const w = {
     sent: 0,
@@ -57,6 +57,10 @@ function wallet(
       if (method === "eth_sendTransaction") {
         if (knobs.refuse)
           throw Object.assign(new Error("User rejected the request."), { code: 4001 });
+        if (knobs.failWith !== undefined)
+          throw Object.assign(new Error(`wallet error ${knobs.failWith}`), {
+            code: knobs.failWith,
+          });
         w.sent++;
         const hash = await rpc(method, params as unknown[]);
         if (knobs.loseResponse) throw new Error("network connection lost");
@@ -221,6 +225,49 @@ describe("write lifecycle (fixture)", () => {
       },
     });
     expect([onMainnet.sent, otherAccount.sent]).toEqual([0, 0]);
+  });
+
+  it("NOT_SENT only for a refusal before signing; a disconnect or any other code stays AMBIGUOUS", async () => {
+    const planner = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: wallet(BOB) },
+      journal: memoryJournal(),
+    });
+    const r1 = putInline(
+      efs,
+      planner.principal,
+      docs,
+      "codes.txt",
+      new Uint8Array([7]),
+      salt("codes"),
+    );
+    const p1 = await planner.planActions(r1);
+    if (p1.status !== "PLANNED") throw new Error(p1.status);
+    // [code, status, reason, retry, the attempt's stage after]
+    const cases: [number, string, string, string, string][] = [
+      [4100, "NOT_SENT", "WALLET_UNAUTHORIZED", "transient", "NOT_SENT"],
+      [4200, "NOT_SENT", "WALLET_UNSUPPORTED", "never", "NOT_SENT"],
+      [-32602, "NOT_SENT", "WALLET_INVALID_PARAMS", "never", "NOT_SENT"],
+      // A wallet can lose its connection after relaying: "checking whether the save went out", reconcile decides.
+      [4900, "AMBIGUOUS", "WALLET_DISCONNECTED", "after-reconcile", "SUBMISSION_POSSIBLE"],
+      [4901, "AMBIGUOUS", "WALLET_CHAIN_DISCONNECTED", "after-reconcile", "SUBMISSION_POSSIBLE"],
+      [-32000, "AMBIGUOUS", "RESPONSE_LOST", "after-reconcile", "SUBMISSION_POSSIBLE"],
+    ];
+    for (const [code, status, name, retry, stage] of cases) {
+      const journal = memoryJournal();
+      const w = await createWriter(efs, {
+        authorizer: {
+          kind: "eip1193",
+          profile: "direct",
+          provider: wallet(BOB, { failWith: code }),
+        },
+        journal,
+      });
+      expect(await w.send(p1.plan), String(code)).toMatchObject({
+        status,
+        reason: { code: name, retry },
+      });
+      expect((await journal.get(p1.plan.id))?.stage, String(code)).toBe(stage);
+    }
   });
 
   it("two concurrent sends for one account: the second is BUSY", async () => {

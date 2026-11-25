@@ -66,6 +66,15 @@ export type ReasonCode =
   /** A part undone by a reorg is now proven not committed. Sending it again (resume) is the person's choice. */
   | "REORGED_DROPPED"
   | "USER_REJECTED"
+  /** NOT_SENT: the wallet refused before signing (EIP-1193 4100, 4200; JSON-RPC -32602). */
+  | "WALLET_UNAUTHORIZED"
+  | "WALLET_UNSUPPORTED"
+  | "WALLET_INVALID_PARAMS"
+  /** AMBIGUOUS: the wallet lost its connection (4900, 4901), possibly after relaying. Reconcile decides. */
+  | "WALLET_DISCONNECTED"
+  | "WALLET_CHAIN_DISCONNECTED"
+  /** A part that was sent was never committed and is proven so past its deadline. Sending again is the person's call. */
+  | "EXPIRED"
   | "BUSY"
   | "NOT_YET_DECIDABLE"
   | (string & Record<never, never>);
