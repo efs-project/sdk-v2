@@ -634,8 +634,23 @@ export interface ReconcileResult {
 
 `writer.planSequence(parts)` plans the parts as consecutive native nonces: part 0 takes the next nonce, and part i
 takes that nonce + i. Each part is its own plan, journal record and exactly-once identity, so the parts are sent in
-order and a failure is reconciled part by part. Sending several parts under one approval (EIP-5792
-`wallet_sendCalls`) comes next.
+order and a failure is reconciled part by part. `writer.runSequence(parts)` carries a split save, resumably:
+- **One approval where possible:** an atomic EIP-5792 wallet (`wallet_getCapabilities` reports atomic) gets every
+  remaining part in one `wallet_sendCalls` request. Only there are parts pre-planned with consecutive native
+  nonces.
+- **Part by part otherwise:** each part is planned just before it is sent and sent only after the previous one
+  committed. The EFS native nonce is inside the intent, and the wallet assigns only the transaction nonce, so a
+  native-nonce gap cannot happen.
+- **The record:** the sequence record (`efs-sdk-sequence/1`, journal storage v2) holds every part. The result,
+  `SequenceProgress`, gives `state`, `total`, `committed`, `current` (index, plan, attempt stage), `mode` and a
+  `reason`.
+- **The states:** COMPLETE is the only success. PARTIAL means some parts committed and the save stopped. For an
+  upload, the file appears only when its last part, the finish, commits. IN_FLIGHT means a part was sent and is not
+  decided yet.
+- **The other calls:** `pendingSequences()` lists open saves (the "2 of 5 saved — Continue" state).
+  `reconcileSequence(id)` settles from the ledger and never prompts, so it is safe on every app start.
+  `resume(id)` continues, and is the only sequence call that may prompt. `abandon(id)` stops offering to continue:
+  committed parts stay on chain, and abandoning is not undoing.
 
 ## 8. Errors that do throw
 

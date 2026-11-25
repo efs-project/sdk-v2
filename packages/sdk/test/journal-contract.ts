@@ -2,7 +2,12 @@
 // One behavioural contract for every Journal: memory (unit), file (unit, Node) and IndexedDB (browser).
 import { describe, expect, it } from "vitest";
 import fixture from "../fixtures/journal-ambiguous-before.json" with { type: "json" };
-import { type AttemptRecord, type Journal, lockKey } from "../src/actions/journal.ts";
+import {
+  type AttemptRecord,
+  type Journal,
+  lockKey,
+  type SequenceRecord,
+} from "../src/actions/journal.ts";
 import { fromJson, toJson } from "../src/core/json.ts";
 
 /** A real attempt recorded from a fixture chain (stage SUBMISSION_POSSIBLE). */
@@ -121,6 +126,49 @@ export function journalContract(
       );
       expect(peak).toBe(1);
       expect(order.sort()).toEqual([0, 1, 2, 3]);
+    });
+
+    it("sequences: round-trip exactly, list only open ones for the lock, survive state changes", async () => {
+      const j = await make();
+      const seq = (n: number, state: SequenceRecord["state"]): SequenceRecord => ({
+        schema: "efs-sdk-sequence/1",
+        sequenceId: `0x${n.toString(16).padStart(64, "0")}` as `0x${string}`,
+        lock: lockKey(SAMPLE.plan),
+        chainId: SAMPLE.plan.chainId,
+        realmId: SAMPLE.plan.realmId,
+        ledger: SAMPLE.plan.ledger,
+        account: SAMPLE.plan.account,
+        parts: [
+          {
+            actions: SAMPLE.plan.actions,
+            bodies: SAMPLE.plan.bodies,
+            effects: SAMPLE.plan.effects,
+            planId: SAMPLE.planId,
+            committed: true,
+            publication: 7n,
+          },
+          {
+            actions: SAMPLE.plan.actions,
+            bodies: SAMPLE.plan.bodies,
+            effects: SAMPLE.plan.effects,
+          },
+        ],
+        state,
+        history: [{ state, at: 1 }],
+      });
+      await j.putSequence(seq(1, "PARTIAL"));
+      await j.putSequence(seq(2, "COMPLETE"));
+      await j.putSequence(seq(3, "ABANDONED"));
+      await j.putSequence({ ...seq(4, "IN_FLIGHT"), lock: "efs:other" });
+      expect(toJson(await j.getSequence(seq(1, "PARTIAL").sequenceId))).toBe(
+        toJson(seq(1, "PARTIAL")),
+      );
+      expect((await j.openSequences(lockKey(SAMPLE.plan))).map((r) => r.state)).toEqual([
+        "PARTIAL",
+      ]);
+      await j.putSequence(seq(1, "COMPLETE"));
+      expect(await j.openSequences(lockKey(SAMPLE.plan))).toEqual([]);
+      expect(await j.getSequence(`0x${"ee".repeat(32)}`)).toBeUndefined();
     });
 
     if (opts.reopen) {

@@ -45,14 +45,36 @@ only reconciled.
 
 The lock key is `efs:<chainId>:<realmId>:<ledger>:<account>`, all lowercase, from `lockKey(plan)`.
 
+## The sequence record (`efs-sdk-sequence/1`)
+
+A save split into several publications (`writer.runSequence`) is one record, replaced whenever a part moves:
+
+```ts
+interface SequenceRecord {
+  schema: "efs-sdk-sequence/1";
+  sequenceId: Hex;
+  lock: string;               // the account's lock key
+  chainId: number; realmId: Hex; ledger: Address; account: Address;
+  parts: { actions, bodies, effects, planId?: Hex, committed?: boolean, publication?: bigint }[];
+  state: "NOT_STARTED" | "IN_FLIGHT" | "PARTIAL" | "COMPLETE" | "ABANDONED";
+  history: { state, at, detail? }[];
+  extensions?: Record<string, unknown>;
+}
+```
+
+A part's `planId` is set only while it is planned or in flight, and each part's attempt record is the exactly-once
+authority. COMPLETE and ABANDONED are closed, so `openSequences` never returns them.
+
 ## Browser and worker storage (`indexedDbJournal`)
 
 | Thing | Value |
 | --- | --- |
-| IndexedDB database | `efs-sdk-journal` by default (`name` option), version **1** |
-| Object store | `attempts`, keyPath `planId` |
-| Index | `lock` on the `lock` field (not unique) |
-| Row | `{ planId: string, lock: string, stage: string, json: string }`; `json` is the `toJson` record |
+| IndexedDB database | `efs-sdk-journal` by default (`name` option), version **2** |
+| Object store | `attempts`, keyPath `planId`, index `lock` (not unique) |
+| Row | `{ planId: string, lock: string, stage: string, json: string }`; `json` is the record's storage form |
+| Object store (v2) | `sequences`, keyPath `sequenceId`, index `lock` (not unique) |
+| Row (v2) | `{ sequenceId: string, lock: string, state: string, json: string }`; `json` is `encodeSequenceRecord` |
+| Upgrade 1 → 2 | adds `sequences`; `attempts` and every record in it are untouched. A v1 database read by v2 code (without a write) is not upgraded, and its sequences read as empty. The first sequence write upgrades it. |
 | Transactions | `durability: "strict"`; `put` resolves only after the transaction completes |
 | Web Lock name | the lock key itself (`efs:…`). Locks are per origin, so they cover every tab and worker |
 
@@ -72,6 +94,7 @@ that changes this layout raises the database version and migrates. A connection 
 ```text
 <dir>/attempts/<planId>.json    one record per plan (encodeJournalRecord), written temp → fsync → rename → dir fsync
 <dir>/attempts/.<planId>.json.<pid>.<random>.tmp   only while a write is in flight (ignored by readers)
+<dir>/sequences/<sequenceId>.json  one record per split save (encodeSequenceRecord), written like attempts
 <dir>/locks/<sha256(lockKey)[0:32]>.lock   {"pid","host","at","token"} while a send holds the lock
 ```
 

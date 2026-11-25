@@ -3,12 +3,18 @@
 import type { Efs } from "../client.js";
 import { type CallOpts, EfsFault } from "../core/errors.js";
 import { type Address, type Hex, lower, type PrincipalId } from "../core/hex.js";
-import { setTimer } from "../core/platform.js";
 import { keyPrincipal } from "../protocol/keys.js";
 import { type AttemptRecord, type Journal, lockKey } from "./journal.js";
 import { type PlanInput, planPublication } from "./plan.js";
+import { waitForReceipt } from "./receipt.js";
 import { type ReconcileOpts, reconcileAttempt } from "./reconcile.js";
 import { type Authorizer, estimate, type SendOpts, sendPlan } from "./send.js";
+import {
+  type SequenceOpts,
+  type SequencePartInput,
+  type SequenceProgress,
+  sequenceOps,
+} from "./sequence.js";
 import type {
   Plan,
   PlanResult,
@@ -49,6 +55,20 @@ export interface EfsWriter {
   /** send, then reconcile once it is SUBMITTED or AMBIGUOUS. Never retries on its own. */
   run(plan: Plan, o?: SendOpts & ReconcileOpts): Promise<RunResult>;
   pending(): Promise<AttemptRecord[]>;
+  /**
+   * A save split into several publications (for example the parts of splitPublications), made resumable. Atomic
+   * EIP-5792 wallets get one request for all parts; otherwise parts go one at a time, each planned just before it
+   * is sent. COMPLETE is the only success; PARTIAL means "k of N saved, continue with resume".
+   */
+  runSequence(parts: readonly SequencePartInput[], o?: SequenceOpts): Promise<SequenceProgress>;
+  /** Continue a sequence. The only sequence call that may prompt. */
+  resume(sequenceId: Hex, o?: SequenceOpts): Promise<SequenceProgress>;
+  /** Settle a sequence from the ledger alone: never prompts (safe on every app start). */
+  reconcileSequence(sequenceId: Hex, o?: SequenceOpts): Promise<SequenceProgress>;
+  /** Open sequences of this account (neither COMPLETE nor ABANDONED). */
+  pendingSequences(): Promise<SequenceProgress[]>;
+  /** Stop offering to continue; committed parts stay on chain. Refused while a part is in flight. */
+  abandon(sequenceId: Hex, o?: SequenceOpts): Promise<SequenceProgress>;
 }
 
 export async function createWriter(
@@ -78,7 +98,7 @@ export async function createWriter(
     ledger: efs.deployment.ledger,
     account,
   });
-  return {
+  const writer: EfsWriter = {
     account,
     principal,
     planActions: (input, opts) => planPublication(efs, { ...input, account }, opts),
@@ -130,27 +150,17 @@ export async function createWriter(
       };
     },
     pending: () => config.journal.unresolved(lock),
+    ...sequenceOps({
+      efs,
+      journal: config.journal,
+      authorizer: a,
+      account,
+      lock,
+      plan: (input, opts) => planPublication(efs, { ...input, account }, opts),
+      planSequence: (parts, opts) => writer.planSequence(parts, opts),
+    }),
   };
+  return writer;
 }
 
-/** Wait (bounded) until a transaction has a receipt. Reconcile decides the outcome; this only avoids racing it. */
-async function waitForReceipt(
-  efs: Efs,
-  txHash: Hex,
-  o: CallOpts = {},
-  timeoutMs = 60_000,
-): Promise<void> {
-  const started = Date.now();
-  const port = efs._internal.pool.ports[0];
-  if (!port) return;
-  while (Date.now() - started < timeoutMs) {
-    const [out] = await port.send([{ method: "eth_getTransactionReceipt", params: [txHash] }], {
-      timeoutMs: 5000,
-      ...(o.signal ? { signal: o.signal } : {}),
-    });
-    if (out?.ok && out.result) return;
-    await new Promise<void>((r) => {
-      setTimer(r, 250);
-    });
-  }
-}
+export { waitForReceipt } from "./receipt.js";

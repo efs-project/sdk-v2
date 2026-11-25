@@ -308,6 +308,32 @@ describe("write lifecycle (fixture)", () => {
     expect(new Set(seq.plans.map((p) => p.id)).size).toBe(3); // three exactly-once identities
     for (const p of seq.plans) expect((await w.run(p)).reconcile?.outcome).toBe("COMMITTED");
   });
+
+  it("reconcile still finds COMMITTED when the finalized-block read fails (an endpoint without 'finalized')", async () => {
+    // Some endpoints do not serve the "finalized" tag, and a finalized block inside the deployment window makes the
+    // reader revert. Neither may block COMMITTED at the latest block; only `final` is then unknown.
+    const noFinal: Eip1193Like = {
+      async request({ method, params }: { method: string; params?: unknown }) {
+        if (method === "eth_getBlockByNumber" && (params as unknown[])[0] === "finalized")
+          throw Object.assign(new Error("finalized not supported"), { code: -32601 });
+        return rpc(method, (params as unknown[]) ?? []);
+      },
+    };
+    const lens = createEfs({
+      rpcs: [{ provider: noFinal, label: "no finalized tag" }],
+      deployment,
+    });
+    const w = await createWriter(lens, {
+      authorizer: { kind: "local", profile: "direct", account: alice },
+      journal: memoryJournal(),
+    });
+    const p = await w.planActions(
+      putInline(lens, w.principal, docs, "nofinal.txt", new Uint8Array([9]), salt("nofinal")),
+    );
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    const run = await w.run(p.plan);
+    expect(run.reconcile).toMatchObject({ outcome: "COMMITTED", final: false });
+  });
 });
 
 /** Wrap a journal so the listed put calls (1-based) fail as an unavailable store would. */
@@ -318,6 +344,9 @@ function failingPuts(inner: Journal, fail: number[]): Journal {
     get: (id) => inner.get(id),
     unresolved: (lock) => inner.unresolved(lock),
     withLock: (lock, wait, fn) => inner.withLock(lock, wait, fn),
+    putSequence: (r) => inner.putSequence(r),
+    getSequence: (id) => inner.getSequence(id),
+    openSequences: (lock) => inner.openSequences(lock),
     async put(record) {
       n++;
       if (fail.includes(n))

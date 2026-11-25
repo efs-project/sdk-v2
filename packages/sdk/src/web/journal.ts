@@ -5,11 +5,15 @@
 import {
   type AttemptRecord,
   decodeJournalRecord,
+  decodeSequenceRecord,
   encodeJournalRecord,
+  encodeSequenceRecord,
+  isOpenSequence,
   isResolved,
   type Journal,
   localLocks,
   lockKey,
+  type SequenceRecord,
 } from "../actions/journal.js";
 import { EfsFault } from "../core/errors.js";
 import { committed, done, lazyDb } from "./idb.js";
@@ -31,6 +35,7 @@ export interface WebJournal extends Journal {
 }
 
 const STORE = "attempts";
+const SEQUENCES = "sequences";
 const BY_LOCK = "lock";
 interface Row {
   planId: string;
@@ -64,13 +69,29 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
   const name = options.name ?? "efs-sdk-journal";
   const db = lazyDb(
     name,
-    1,
-    (conn) => {
-      const store = conn.createObjectStore(STORE, { keyPath: "planId" });
-      store.createIndex(BY_LOCK, "lock", { unique: false });
+    2,
+    (conn, oldVersion) => {
+      if (oldVersion < 1) {
+        const store = conn.createObjectStore(STORE, { keyPath: "planId" });
+        store.createIndex(BY_LOCK, "lock", { unique: false });
+      }
+      if (oldVersion < 2) {
+        const seq = conn.createObjectStore(SEQUENCES, { keyPath: "sequenceId" });
+        seq.createIndex(BY_LOCK, "lock", { unique: false });
+      }
     },
     unavailable,
   );
+  /** A transaction on the sequences store, or null when it does not exist yet (no write has created it). */
+  const seqTx = async (mode: IDBTransactionMode): Promise<IDBTransaction | null> => {
+    const c = await db.connect(mode === "readwrite");
+    if (!c || !c.objectStoreNames.contains(SEQUENCES)) return null; // a version-1 database, read only
+    try {
+      return c.transaction(SEQUENCES, mode, { durability: "strict" });
+    } catch (e) {
+      throw unavailable(e);
+    }
+  };
   const tx = async (mode: IDBTransactionMode): Promise<IDBTransaction | null> => {
     const c = await db.connect(mode === "readwrite");
     if (!c) return null;
@@ -136,6 +157,36 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
       return rows
         .filter((r) => !isResolved(r.stage as AttemptRecord["stage"]))
         .map((r) => decodeJournalRecord(r.json));
+    },
+    async putSequence(record: SequenceRecord) {
+      const t = (await seqTx("readwrite")) as IDBTransaction;
+      t.objectStore(SEQUENCES).put({
+        sequenceId: record.sequenceId.toLowerCase(),
+        lock: record.lock,
+        state: record.state,
+        json: encodeSequenceRecord(record),
+      });
+      try {
+        await committed(t);
+      } catch (e) {
+        throw unavailable(e);
+      }
+    },
+    async getSequence(id) {
+      const t = await seqTx("readonly");
+      if (!t) return undefined;
+      const row = (await done(t.objectStore(SEQUENCES).get(id.toLowerCase()))) as
+        | { json: string }
+        | undefined;
+      return row ? decodeSequenceRecord(row.json) : undefined;
+    },
+    async openSequences(lock) {
+      const t = await seqTx("readonly");
+      if (!t) return [];
+      const rows = (await done(t.objectStore(SEQUENCES).index(BY_LOCK).getAll(lock))) as {
+        json: string;
+      }[];
+      return rows.map((r) => decodeSequenceRecord(r.json)).filter(isOpenSequence);
     },
     withLock: webLock,
     close() {

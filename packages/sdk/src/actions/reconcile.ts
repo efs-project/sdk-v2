@@ -111,10 +111,17 @@ export async function reconcileAttempt(
             "no ledger reader answered at the pinned block",
           ),
         };
+      // The finalized read only decides `final` and the reorg-safe NOT_COMMITTED_PROVEN. When it cannot be made (an
+      // endpoint without the "finalized" tag, or a finalized block inside the deployment window where the reader
+      // reverts), COMMITTED at the latest block is still decidable: the finalized side is then simply unknown.
       const fin = await getBlock(s, "finalized");
-      if (!fin.ok) return fin;
-      const atFinal = await admittedAt(s, d, plan, fin.value.hash);
-      if (!atFinal.ok) return atFinal;
+      const atFinal = fin.ok ? await admittedAt(s, d, plan, fin.value.hash) : undefined;
+      if (!fin.ok || !atFinal?.ok) {
+        return {
+          ok: true,
+          value: { latest: latest.value, final: { present: false }, finalTimestamp: -1n },
+        };
+      }
       // No reader at a finalized block that is already past the deadline is impossible for a real deployment
       // (the deadline was set against a live ledger): surface it, never conclude from it.
       if (!atFinal.value.present && fin.value.timestamp > plan.deadline) {

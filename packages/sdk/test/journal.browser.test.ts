@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The IndexedDB journal in a real browser: real IndexedDB, real Web Locks.
 import { describe, expect, it } from "vitest";
+import { encodeJournalRecord, lockKey } from "../src/actions/journal.ts";
 import { indexedDbJournal } from "../src/web/journal.ts";
 import { journalContract, SAMPLE } from "./journal-contract.ts";
 
@@ -79,5 +80,50 @@ describe("indexedDbByteStore", () => {
     expect((await c.get(k(3)))?.[0]).toBe(3);
     await c.clear();
     expect(await c.get(k(3))).toBeUndefined();
+  });
+});
+
+describe("indexedDB journal v1 → v2", () => {
+  it("keeps every v1 attempt, reads sequences as empty on v1, and upgrades on the first sequence write", async () => {
+    const name = `efs-test-v1-${Date.now()}`;
+    // A database written by the v1 SDK: only the attempts store.
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(name, 1);
+      req.onupgradeneeded = () => {
+        const store = req.result.createObjectStore("attempts", { keyPath: "planId" });
+        store.createIndex("lock", "lock", { unique: false });
+        store.put({
+          planId: SAMPLE.planId,
+          lock: lockKey(SAMPLE.plan),
+          stage: SAMPLE.stage,
+          json: encodeJournalRecord(SAMPLE),
+        });
+      };
+      req.onsuccess = () => {
+        req.result.close();
+        resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+    const j = indexedDbJournal({ name });
+    expect((await j.get(SAMPLE.planId))?.stage).toBe(SAMPLE.stage);
+    expect(await j.openSequences(lockKey(SAMPLE.plan))).toEqual([]); // v1: no sequences store, and none created
+    await j.putSequence({
+      schema: "efs-sdk-sequence/1",
+      sequenceId: `0x${"5e".repeat(32)}`,
+      lock: lockKey(SAMPLE.plan),
+      chainId: SAMPLE.plan.chainId,
+      realmId: SAMPLE.plan.realmId,
+      ledger: SAMPLE.plan.ledger,
+      account: SAMPLE.plan.account,
+      parts: [],
+      state: "NOT_STARTED",
+      history: [],
+    });
+    const fresh = indexedDbJournal({ name });
+    expect((await fresh.get(SAMPLE.planId))?.stage).toBe(SAMPLE.stage); // the v1 attempt survived the upgrade
+    expect((await fresh.openSequences(lockKey(SAMPLE.plan))).length).toBe(1);
+    const dbs = await indexedDB.databases();
+    expect(dbs.find((d) => d.name === name)?.version).toBe(2);
   });
 });
