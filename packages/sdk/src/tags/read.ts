@@ -224,8 +224,8 @@ export function placeId(efs: Efs, p: TopicPlace, fold?: FoldStep): { id: Hex; to
   throw misuse("a place is a list of words, { kind: 'topic', id } or { kind: 'home', address }");
 }
 
-/** Status of a reader reply, as a refusal for anything but PRESENT. */
-function refusal(code: number): { status: "UNKNOWN" | "INVALID"; reason: Reason } | null {
+/** @internal Status of a reader reply, as a refusal for anything but PRESENT. */
+export function refusal(code: number): { status: "UNKNOWN" | "INVALID"; reason: Reason } | null {
   const st = chainStatus(code);
   if (st === "PRESENT") return null;
   if (st === "BASIS_STALE")
