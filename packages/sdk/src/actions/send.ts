@@ -87,43 +87,69 @@ export function decodeRevert(data: unknown): RevertInfo | null {
 const revertName = (r: RevertInfo): string => r.error ?? `unknown error ${r.selector}`;
 
 /**
- * A wallet error that EIP-1193 or JSON-RPC defines as "the request was not processed", as the NOT_SENT reason; null
- * for anything else, which stays AMBIGUOUS (the request may have gone out, and reconcile decides).
+ * How a wallet error leaves a request. NOT_SENT only for errors that mean the request was refused before signing
+ * (EIP-1193 4001 / 4100 / 4200, JSON-RPC -32602): the attempt is stamped NOT_SENT. A disconnect (4900 / 4901) can be
+ * raised after the wallet relayed, so it is AMBIGUOUS with a named reason, as is every other error: the request may
+ * have gone out, and reconcile decides.
  */
-export function walletNotProcessed(e: unknown, method: string): Reason | null {
-  switch ((e as { code?: unknown } | null)?.code) {
+export function classifyWalletError(
+  e: unknown,
+  method: string,
+): { notSent: Reason } | { ambiguous: Reason } {
+  const code = (e as { code?: unknown } | null)?.code;
+  switch (code) {
     case 4001:
-      return reason("USER_REJECTED", "transient", "the wallet refused the request");
+      return { notSent: reason("USER_REJECTED", "transient", "the wallet refused the request") };
     case 4100:
-      return reason(
-        "WALLET_UNAUTHORIZED",
-        "transient",
-        `the wallet has not authorized this account or ${method} (4100): connect it, then try again`,
-      );
+      return {
+        notSent: reason(
+          "WALLET_UNAUTHORIZED",
+          "transient",
+          `the wallet has not authorized this account or ${method} (4100): connect it, then try again`,
+        ),
+      };
     case 4200:
-      return reason(
-        "WALLET_UNSUPPORTED",
-        "never",
-        method === "wallet_sendCalls"
-          ? 'the wallet does not support wallet_sendCalls (4200): send part by part (batch: "never")'
-          : `the wallet does not support ${method} (4200)`,
-      );
-    case 4900:
-      return reason("WALLET_DISCONNECTED", "transient", "the wallet is disconnected (4900)");
-    case 4901:
-      return reason(
-        "WALLET_CHAIN_DISCONNECTED",
-        "transient",
-        "the wallet is not connected to this chain (4901)",
-      );
+      return {
+        notSent: reason(
+          "WALLET_UNSUPPORTED",
+          "never",
+          method === "wallet_sendCalls"
+            ? 'the wallet does not support wallet_sendCalls (4200): send part by part (batch: "never")'
+            : `the wallet does not support ${method} (4200)`,
+        ),
+      };
     case -32602:
-      return reason(
-        "WALLET_INVALID_PARAMS",
-        "never",
-        `the wallet rejected the ${method} parameters (-32602)`,
-      );
+      return {
+        notSent: reason(
+          "WALLET_INVALID_PARAMS",
+          "never",
+          `the wallet rejected the ${method} parameters (-32602)`,
+        ),
+      };
+    case 4900:
+      return {
+        ambiguous: reason(
+          "WALLET_DISCONNECTED",
+          "after-reconcile",
+          "the wallet lost its connection (4900): checking whether the save went out",
+        ),
+      };
+    case 4901:
+      return {
+        ambiguous: reason(
+          "WALLET_CHAIN_DISCONNECTED",
+          "after-reconcile",
+          "the wallet lost its connection to this chain (4901): checking whether the save went out",
+        ),
+      };
     default:
-      return null;
+      return {
+        ambiguous: reason(
+          "RESPONSE_LOST",
+          "after-reconcile",
+          e instanceof Error ? e.message : "no response",
+        ),
+      };
   }
 }
 
@@ -297,24 +323,17 @@ export async function sendPlan(
           await bestEffort(journal.put({ ...stamp(record, "SUBMITTED"), txHash: hash }));
           return { kind: "efs.send", status: "SUBMITTED", planId: plan.id, txHash: hash };
         } catch (e) {
-          const refused = walletNotProcessed(e, "eth_sendTransaction");
-          if (refused) {
+          const how = classifyWalletError(e, "eth_sendTransaction");
+          if ("notSent" in how) {
             const code = (e as { code?: unknown }).code;
             await bestEffort(
-              journal.put(stamp(record, "NOT_SENT", `the wallet did not process it (${code})`)),
+              journal.put(
+                stamp(record, "NOT_SENT", `the wallet refused it before signing (${code})`),
+              ),
             );
-            return { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: refused };
+            return { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: how.notSent };
           }
-          return {
-            kind: "efs.send",
-            status: "AMBIGUOUS",
-            planId: plan.id,
-            reason: reason(
-              "RESPONSE_LOST",
-              "after-reconcile",
-              e instanceof Error ? e.message : "no response",
-            ),
-          };
+          return { kind: "efs.send", status: "AMBIGUOUS", planId: plan.id, reason: how.ambiguous };
         }
       }
 

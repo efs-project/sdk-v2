@@ -10,12 +10,12 @@ import type { Hex } from "../core/hex.js";
 import { setTimer } from "../core/platform.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
 import {
+  classifyWalletError,
   estimate,
   notify,
   type SendOpts,
   txGasCapOf,
   walletMismatch,
-  walletNotProcessed,
 } from "./send.js";
 import type { Plan } from "./types.js";
 
@@ -162,24 +162,16 @@ export async function sendPlansAsBatch(
           batchId = typeof res === "string" ? res : String(res?.id ?? "");
           if (!batchId) throw new Error("wallet_sendCalls returned no id");
         } catch (e) {
-          const refused = walletNotProcessed(e, "wallet_sendCalls");
-          if (refused) {
+          const how = classifyWalletError(e, "wallet_sendCalls");
+          if ("notSent" in how) {
             const code = (e as { code?: unknown }).code;
             for (const r of records)
               await bestEffort(
-                journal.put(stamp(r, "NOT_SENT", `the wallet did not process it (${code})`)),
+                journal.put(stamp(r, "NOT_SENT", `the wallet refused it before signing (${code})`)),
               );
-            return { kind: "efs.sendBatch", status: "NOT_SENT", reason: refused };
+            return { kind: "efs.sendBatch", status: "NOT_SENT", reason: how.notSent };
           }
-          return {
-            kind: "efs.sendBatch",
-            status: "AMBIGUOUS",
-            reason: reason(
-              "RESPONSE_LOST",
-              "after-reconcile",
-              e instanceof Error ? e.message : "no response",
-            ),
-          };
+          return { kind: "efs.sendBatch", status: "AMBIGUOUS", reason: how.ambiguous };
         }
         for (const r of records)
           await bestEffort(

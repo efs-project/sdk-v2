@@ -227,7 +227,7 @@ describe("write lifecycle (fixture)", () => {
     expect([onMainnet.sent, otherAccount.sent]).toEqual([0, 0]);
   });
 
-  it("wallet errors that mean 'not processed' are NOT_SENT with a named reason; any other code stays AMBIGUOUS", async () => {
+  it("NOT_SENT only for a refusal before signing; a disconnect or any other code stays AMBIGUOUS", async () => {
     const planner = await createWriter(efs, {
       authorizer: { kind: "eip1193", profile: "direct", provider: wallet(BOB) },
       journal: memoryJournal(),
@@ -242,14 +242,17 @@ describe("write lifecycle (fixture)", () => {
     );
     const p1 = await planner.planActions(r1);
     if (p1.status !== "PLANNED") throw new Error(p1.status);
-    const cases: [number, string, string][] = [
-      [4100, "WALLET_UNAUTHORIZED", "transient"],
-      [4200, "WALLET_UNSUPPORTED", "never"],
-      [4900, "WALLET_DISCONNECTED", "transient"],
-      [4901, "WALLET_CHAIN_DISCONNECTED", "transient"],
-      [-32602, "WALLET_INVALID_PARAMS", "never"],
+    // [code, status, reason, retry, the attempt's stage after]
+    const cases: [number, string, string, string, string][] = [
+      [4100, "NOT_SENT", "WALLET_UNAUTHORIZED", "transient", "NOT_SENT"],
+      [4200, "NOT_SENT", "WALLET_UNSUPPORTED", "never", "NOT_SENT"],
+      [-32602, "NOT_SENT", "WALLET_INVALID_PARAMS", "never", "NOT_SENT"],
+      // A wallet can lose its connection after relaying: "checking whether the save went out", reconcile decides.
+      [4900, "AMBIGUOUS", "WALLET_DISCONNECTED", "after-reconcile", "SUBMISSION_POSSIBLE"],
+      [4901, "AMBIGUOUS", "WALLET_CHAIN_DISCONNECTED", "after-reconcile", "SUBMISSION_POSSIBLE"],
+      [-32000, "AMBIGUOUS", "RESPONSE_LOST", "after-reconcile", "SUBMISSION_POSSIBLE"],
     ];
-    for (const [code, name, retry] of cases) {
+    for (const [code, status, name, retry, stage] of cases) {
       const journal = memoryJournal();
       const w = await createWriter(efs, {
         authorizer: {
@@ -260,23 +263,11 @@ describe("write lifecycle (fixture)", () => {
         journal,
       });
       expect(await w.send(p1.plan), String(code)).toMatchObject({
-        status: "NOT_SENT",
+        status,
         reason: { code: name, retry },
       });
-      // Stamped NOT_SENT: settling never waits on it, and the plan can be sent again.
-      expect((await journal.get(p1.plan.id))?.stage, String(code)).toBe("NOT_SENT");
+      expect((await journal.get(p1.plan.id))?.stage, String(code)).toBe(stage);
     }
-    const unknown = memoryJournal();
-    const w = await createWriter(efs, {
-      authorizer: {
-        kind: "eip1193",
-        profile: "direct",
-        provider: wallet(BOB, { failWith: -32000 }),
-      },
-      journal: unknown,
-    });
-    expect(await w.send(p1.plan)).toMatchObject({ status: "AMBIGUOUS" });
-    expect((await unknown.get(p1.plan.id))?.stage).toBe("SUBMISSION_POSSIBLE"); // may have gone out: reconcile decides
   });
 
   it("two concurrent sends for one account: the second is BUSY", async () => {

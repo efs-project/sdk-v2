@@ -512,21 +512,21 @@ describe("runSequence (fixture)", () => {
     expect(["IN_FLIGHT", "COMPLETE"]).toContain(settled.state);
   });
 
-  it("a batch the wallet did not process (4900) is NOT_SENT: the save is NOT_STARTED, never held as in flight", async () => {
+  it("a batch the wallet refused before signing (4100) is NOT_SENT: NOT_STARTED, and it resumes", async () => {
     const journal = memoryJournal();
-    const offline = wallet(ERIN, { atomic5792: true, batchFailWith: 4900 });
+    const locked = wallet(ERIN, { atomic5792: true, batchFailWith: 4100 });
     const w = await createWriter(efs, {
-      authorizer: { kind: "eip1193", profile: "direct", provider: offline, account: ERIN },
+      authorizer: { kind: "eip1193", profile: "direct", provider: locked, account: ERIN },
       journal,
     });
-    const r = await w.runSequence(parts(w.principal, "seq-batch-offline"));
+    const r = await w.runSequence(parts(w.principal, "seq-batch-locked"));
     expect(r).toMatchObject({
       state: "NOT_STARTED",
       committed: 0,
       mode: "batch",
-      reason: { code: "WALLET_DISCONNECTED", retry: "transient" },
+      reason: { code: "WALLET_UNAUTHORIZED", retry: "transient" },
     });
-    expect(offline.sends).toBe(0);
+    expect(locked.sends).toBe(0);
     const back = await createWriter(efs, {
       authorizer: {
         kind: "eip1193",
@@ -537,6 +537,28 @@ describe("runSequence (fixture)", () => {
       journal,
     });
     expect(await back.resume(r.sequenceId, { pollMs: 50 })).toMatchObject({ state: "COMPLETE" });
+  });
+
+  it("a batch whose wallet lost its connection (4900) stays in flight: it may have gone out", async () => {
+    const offline = wallet(ERIN, { atomic5792: true, batchFailWith: 4900 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: offline, account: ERIN },
+      journal: memoryJournal(),
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-offline"), {
+      settleMs: 200,
+      pollMs: 50,
+    });
+    expect(r).toMatchObject({
+      state: "IN_FLIGHT",
+      committed: 0,
+      reason: { code: "WALLET_DISCONNECTED", retry: "after-reconcile" },
+    });
+    expect((await w.pending()).map((a) => a.stage)).toEqual([
+      "SUBMISSION_POSSIBLE",
+      "SUBMISSION_POSSIBLE",
+      "SUBMISSION_POSSIBLE",
+    ]);
   });
 
   it("a part sent and never committed, proven so past its deadline, says EXPIRED; it is never re-sent by itself", async () => {

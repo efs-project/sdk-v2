@@ -198,8 +198,8 @@ export type ReasonCode =
   | "POLICY_BLOCKED" | "INVALID_RESUME_TOKEN" | "TOO_LARGE" | "CHAIN_MISMATCH"
   | "JOURNAL_UNAVAILABLE" | "OVER_TX_GAS_CAP" | "STALE" | "WALLET_MISMATCH" | "USER_REJECTED" | "BUSY"
   | "NOT_YET_DECIDABLE" | "REORGED_DROPPED" | "EXPIRED"
-  | "WALLET_UNAUTHORIZED" | "WALLET_UNSUPPORTED" | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED"
-  | "WALLET_INVALID_PARAMS"
+  | "WALLET_UNAUTHORIZED" | "WALLET_UNSUPPORTED" | "WALLET_INVALID_PARAMS"        // NOT_SENT
+  | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED"                         // AMBIGUOUS
   | (string & Record<never, never>);    // open union
 ```
 
@@ -707,12 +707,13 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   sent twice. Journal failures up to and including the write-ahead write are not thrown: they return NOT_SENT
   JOURNAL_UNAVAILABLE. A non-EfsFault error is rethrown as INVARIANT with the original as `cause`.
 - **Each part keeps its `deadlineSeconds`:** it is applied each time the part is planned, including on resume.
-- **Wallet errors:** only the errors EIP-1193 and JSON-RPC define as "the request was not processed" are NOT_SENT
-  (the attempt is stamped NOT_SENT, so nothing waits on it): 4001 USER_REJECTED and 4100 WALLET_UNAUTHORIZED
-  (`retry: "transient"`), 4900 WALLET_DISCONNECTED and 4901 WALLET_CHAIN_DISCONNECTED (transient), 4200
-  WALLET_UNSUPPORTED and -32602 WALLET_INVALID_PARAMS (`retry: "never"`: the same wallet request will not work; for
-  wallet_sendCalls, send part by part with `batch: "never"`). Any other wallet error, or a lost response, is
-  AMBIGUOUS: the request may have gone out, so the part stays in flight until reconcile decides.
+- **Wallet errors:** NOT_SENT only for errors that mean the request was refused before signing; the attempt is
+  stamped NOT_SENT, so nothing waits on it. They are 4001 USER_REJECTED and 4100 WALLET_UNAUTHORIZED
+  (`retry: "transient"`), and 4200 WALLET_UNSUPPORTED and -32602 WALLET_INVALID_PARAMS (`retry: "never"`: the same
+  wallet request will not work; for wallet_sendCalls, send part by part with `batch: "never"`). A disconnect, 4900
+  WALLET_DISCONNECTED or 4901 WALLET_CHAIN_DISCONNECTED, can be raised after the wallet relayed, so it is AMBIGUOUS
+  with that named reason (`retry: "after-reconcile"`: "Your wallet lost its connection; checking whether the save
+  went out"), as is any other wallet error or a lost response: the part stays in flight until reconcile decides.
 - **EXPIRED:** a part that was sent and never committed, then proven not committed (a finalized block past its
   deadline, or its nonce finalized for another plan) without a reorg, is NOT_STARTED or PARTIAL with reason EXPIRED
   (`retry: "transient"`), never a bare "not sent": "This save didn't go through — Send again" (resume, the
