@@ -31,7 +31,18 @@
 > - a read the node refuses as too large (out of gas) is tried again with half the bounds, up to four times, before
 >   it is UNKNOWN;
 > - batches: each planned part carries the planner's own estimate (rows, per-level terms, the floor), which
->   `packBatches` sums; a part with tag binds and no estimate is never batched.
+>   `packBatches` sums; a part with tag binds and no estimate is never batched;
+> - topic statements: `planLabel` (a topic's or a home's name in one BCP 47 language, lowercased; the text/1 record
+>   published when new), `planSame` and `planBroader` (both ends registered earlier in the same save, as the
+>   validator's codes 10 and 11 need; a topic is never either of these to itself), each with `remove: true` for a
+>   RELEASE of your own, refused UNCHANGED or NOT_STATED. No gas row is measured for these purposes yet: they are
+>   priced at the dearest bind row, which covers the contracts' step-2 figures, and eth_estimateGas decides;
+> - names (section 5.5): `labelOf(subject, { lens, langs })`, and `topicName(topic, { lens, langs })` for every
+>   segment: a path-level label from the Lens, else the word's label, else the word (`source`). In each language,
+>   in the reader's order, the first Lens author with a label decides, and an earlier one's "no label" (MASKED) stops
+>   that language. A label is used only when its target really is an admitted text/1 record (its id recomputed from
+>   the body read back); one that is not is skipped, counted, and the next author is tried. A failed read is UNKNOWN,
+>   never "no name";
 >
 > **Not built yet:**
 > - the fold rule itself (James's ruling: the planners and readers take a `fold` step meanwhile, and check every
@@ -40,7 +51,9 @@
 >   give;
 > - synonym merging across "same as" lists;
 > - Lens-applied `tagsOf` (it reads no Lens today, and gives each place's exact yes-count);
-> - planners for labels, "same as" and "broader" (their actions are built and vector-tested).
+> - the name of a file shown in a topic (spec §3.7: its tagger's name for it, its creator's, the first from the Lens);
+> - gathering "same as" across both levels, and merged item reads across those lists (a multi-list cursor changes
+>   `topicItems`' paging, so it is its own reviewed step).
 
 ## 1. The model
 

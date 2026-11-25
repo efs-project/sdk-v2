@@ -5,8 +5,9 @@ trees, external locations), names and path segments, protocol ids, the write lif
 reconcile) with durable attempt journals (IndexedDB + Web Locks in browsers and workers, files in Node), folders and
 homes (an address as a parent: list, look up, resolve paths and links, and create, edit, move, rename, remove,
 restore, hide and unhide entries), and tags (topics and homes as places, `planTag` / `planDeny` / `planUntag`, and
-the Mine / Everyone / Raw reads). **Not yet:** the tag word fold (words are checked as given until it is ruled), a
-Lens-applied `tagsOf`, label / same / broader planners, authoring as a contract principal (the writer is
+the Mine / Everyone / Raw reads, labels and topic names, "same as" and "broader"). **Not yet:** the tag word fold
+(words are checked as given until it is ruled), a Lens-applied `tagsOf`, a file's name inside a topic, synonym
+gathering and merged synonym reads, authoring as a contract principal (the writer is
 key-principal only), and storage for files above the chain's per-file ceiling (about 1 MiB). An edit re-publishes
 every chunk of its content, including chunks already on chain. When the edited revision belongs to another author, only the planning-time base check guards it
 (the ledger's compare-and-swap covers the editor's own HEAD). web3:// reads cover addresses on the client's own chain in ERC-5219 mode. ENS names, other

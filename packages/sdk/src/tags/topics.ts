@@ -372,6 +372,24 @@ export function labelActions(
   const bind = propertyAction(subject, labelKey(lang), textRecordId(t, c.bytes), expectedRevision);
   return { actions: [rec.action, bind], bodies: [rec.body, "0x"] };
 }
+/** The PUBLISH of a text/1 record (a label's display string). MISUSE for a refused text. */
+export function textRecordAction(
+  t: TopicTypes,
+  text: string | Uint8Array,
+): { action: ActionData; body: Hex } {
+  const c = checkText(text);
+  if (!c.ok) throw misuse(`not a text the chain admits (code ${c.code}: ${c.rule})`);
+  return publishOf(t.text, c.bytes);
+}
+/** Back to "said nothing" for any statement of yours: a RELEASE at (purpose, subject, role). */
+export function releaseAction(
+  purpose: Hex,
+  subject: Hex,
+  role: Hex,
+  expectedRevision: bigint,
+): ActionData {
+  return bindKind(ACTION.RELEASE, purpose, subject, role, ZERO_WORD, expectedRevision, 0);
+}
 /** "subject is the same topic as other": (SAME, subject, other) → other. */
 export const sameAction = (subject: Hex, other: Hex, expectedRevision: bigint): ActionData =>
   bindKind(ACTION.BIND, PURPOSES.same, subject, other, other, expectedRevision, 0);

@@ -179,7 +179,8 @@ function thingOf(t: TagTarget, i: number): { thing: Hex; proof: "subject" | "rec
 }
 
 /** The place's id, its words (topics), every prefix's id root first, and the proper ancestors. */
-function placeOf(
+/** @internal A place from words (checked after the fold, with every prefix's id) or a home. */
+export function placeOf(
   t: TopicTypes,
   p: TagPlace,
   fold: FoldStep | undefined,
@@ -213,17 +214,20 @@ function placeOf(
   return { place: { kind: "topic", words, id: ids[ids.length - 1] as TopicId }, words, ids };
 }
 
-const failed = (out: { ok: false; reason: Reason } | undefined): Step<never> => ({
+/** @internal */
+export const failed = (out: { ok: false; reason: Reason } | undefined): Step<never> => ({
   ok: false,
   retryElsewhere: true,
   reason: out ? out.reason : reason("RPC_UNAVAILABLE", "transient"),
 });
-const badReply = (what: string): Step<never> => ({
+/** @internal */
+export const badReply = (what: string): Step<never> => ({
   ok: false,
   retryElsewhere: true,
   reason: reason("RPC_ERROR", "transient", `${what} did not decode`),
 });
-const callOf = (
+/** @internal */
+export const callOf = (
   to: Hex,
   abi: readonly unknown[],
   functionName: string,
@@ -232,7 +236,8 @@ const callOf = (
   to: to as `0x${string}`,
   data: encodeFunctionData({ abi: abi as never, functionName, args } as never),
 });
-function decoded<T>(
+/** @internal */
+export function decoded<T>(
   abi: readonly unknown[],
   functionName: string,
   out: { ok: boolean; result?: unknown } | undefined,
@@ -254,7 +259,7 @@ function decoded<T>(
 
 type RawHead = { state: number; revision: bigint; strength: number };
 /** The most ids one records() call takes (Limits.maxReadIds). */
-const READ_IDS = 64;
+export const READ_IDS = 64;
 
 async function plan(
   efs: Efs,
