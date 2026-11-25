@@ -86,6 +86,47 @@ export function decodeRevert(data: unknown): RevertInfo | null {
 
 const revertName = (r: RevertInfo): string => r.error ?? `unknown error ${r.selector}`;
 
+/**
+ * A wallet error that EIP-1193 or JSON-RPC defines as "the request was not processed", as the NOT_SENT reason; null
+ * for anything else, which stays AMBIGUOUS (the request may have gone out, and reconcile decides).
+ */
+export function walletNotProcessed(e: unknown, method: string): Reason | null {
+  switch ((e as { code?: unknown } | null)?.code) {
+    case 4001:
+      return reason("USER_REJECTED", "transient", "the wallet refused the request");
+    case 4100:
+      return reason(
+        "WALLET_UNAUTHORIZED",
+        "transient",
+        `the wallet has not authorized this account or ${method} (4100): connect it, then try again`,
+      );
+    case 4200:
+      return reason(
+        "WALLET_UNSUPPORTED",
+        "never",
+        method === "wallet_sendCalls"
+          ? 'the wallet does not support wallet_sendCalls (4200): send part by part (batch: "never")'
+          : `the wallet does not support ${method} (4200)`,
+      );
+    case 4900:
+      return reason("WALLET_DISCONNECTED", "transient", "the wallet is disconnected (4900)");
+    case 4901:
+      return reason(
+        "WALLET_CHAIN_DISCONNECTED",
+        "transient",
+        "the wallet is not connected to this chain (4901)",
+      );
+    case -32602:
+      return reason(
+        "WALLET_INVALID_PARAMS",
+        "never",
+        `the wallet rejected the ${method} parameters (-32602)`,
+      );
+    default:
+      return null;
+  }
+}
+
 /** The wallet is not on the plan's chain or account: nothing is sent, and switching back lets the same save go on. */
 export function walletMismatch(
   plan: { chainId: number; account: Address },
@@ -256,15 +297,13 @@ export async function sendPlan(
           await bestEffort(journal.put({ ...stamp(record, "SUBMITTED"), txHash: hash }));
           return { kind: "efs.send", status: "SUBMITTED", planId: plan.id, txHash: hash };
         } catch (e) {
-          const code = (e as { code?: unknown })?.code;
-          if (code === 4001) {
-            await bestEffort(journal.put(stamp(record, "NOT_SENT", "wallet refused (4001)")));
-            return {
-              kind: "efs.send",
-              status: "NOT_SENT",
-              planId: plan.id,
-              reason: reason("USER_REJECTED", "transient", "the wallet refused the request"),
-            };
+          const refused = walletNotProcessed(e, "eth_sendTransaction");
+          if (refused) {
+            const code = (e as { code?: unknown }).code;
+            await bestEffort(
+              journal.put(stamp(record, "NOT_SENT", `the wallet did not process it (${code})`)),
+            );
+            return { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: refused };
           }
           return {
             kind: "efs.send",

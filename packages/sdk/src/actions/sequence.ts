@@ -26,6 +26,7 @@ import {
   type AttemptStage,
   type Journal,
   lockKey,
+  type SequenceEffect,
   type SequencePart,
   type SequenceRecord,
   type SequenceState,
@@ -81,6 +82,11 @@ export interface SequenceProgress {
   mode?: "batch" | "sequential";
   /** Why the save stopped (when it did not reach COMPLETE). */
   reason?: Reason;
+  /**
+   * What the save is for, e.g. { kind: "files.edit", file, revision }: name it ("readme.txt: Partially saved") and
+   * hold new saves of that file. Display only, never what resume sends. Absent on saves started before 0.1 had it.
+   */
+  effect?: SequenceEffect;
 }
 
 export type SequencePartInput = Omit<PlanInput, "account" | "nonce">;
@@ -109,24 +115,52 @@ const sleep = (ms: number) =>
   });
 
 /** The wallet-free part: settle sequences from the ledger and describe them. Needs no account. */
+const WORD = /^0x[0-9a-fA-F]{64}$/;
+
 /**
- * Why a save is open because of a reorg, from the record: REORGED while the undone part is in flight again (it may be
- * re-included; wait), REORGED_DROPPED once it is proven not committed (sending it again is the person's choice).
+ * The one file edit a save carries (its parts' `files.edit` effects all name the same file and revision), else
+ * undefined: no edit, a malformed effect, or several different edits (nothing single to name).
  */
-function reorgReason(r: SequenceRecord): Reason | undefined {
-  const p = r.parts.find((x) => x.reorged && !x.committed);
-  if (!p) return undefined;
-  return p.planId
-    ? reason(
-        "REORGED",
-        "after-reconcile",
-        "a committed part was undone by a reorg; it may be re-included",
-      )
-    : reason(
-        "REORGED_DROPPED",
-        "transient",
-        "a part undone by a reorg is proven not committed: sending it again is the person's choice",
-      );
+export function sequenceEffect(parts: readonly SequencePartInput[]): SequenceEffect | undefined {
+  let found: SequenceEffect | undefined;
+  for (const part of parts)
+    for (const e of part.effects) {
+      if (e.code !== "files.edit") continue;
+      const file = e.args["file"];
+      const revision = e.args["revision"];
+      if (!file || !revision || !WORD.test(file) || !WORD.test(revision)) return undefined;
+      if (found && (found.file !== file || found.revision !== revision)) return undefined;
+      found = { kind: "files.edit", file: file as Hex, revision: revision as Hex };
+    }
+  return found;
+}
+
+/**
+ * Why a save is open, from the record alone: REORGED while a part undone by a reorg is in flight again (it may be
+ * re-included; wait), REORGED_DROPPED once that part is proven not committed, and EXPIRED for a part that was sent,
+ * never committed, and is proven so past its deadline. For the last two, sending again is the person's choice.
+ */
+function recordReason(r: SequenceRecord): Reason | undefined {
+  const reorged = r.parts.find((x) => x.reorged && !x.committed);
+  if (reorged)
+    return reorged.planId
+      ? reason(
+          "REORGED",
+          "after-reconcile",
+          "a committed part was undone by a reorg; it may be re-included",
+        )
+      : reason(
+          "REORGED_DROPPED",
+          "transient",
+          "a part undone by a reorg is proven not committed: sending it again is the person's choice",
+        );
+  if (r.parts.some((x) => x.expired && !x.committed && !x.planId))
+    return reason(
+      "EXPIRED",
+      "transient",
+      "a part that was sent is proven not committed (past its deadline, or its nonce went to another plan): sending it again is the person's choice",
+    );
+  return undefined;
 }
 
 /** Some part of the save may be on chain: committed, or planned and past its write-ahead (in flight). */
@@ -199,7 +233,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
     const index = r.parts.findIndex((p) => !p.committed);
     const part = r.parts[index];
     const known = stage ?? (part && !part.planId ? "NOT_PLANNED" : undefined);
-    const why = extra.reason ?? reorgReason(r);
+    const why = extra.reason ?? recordReason(r);
     return {
       kind: "efs.sequence",
       sequenceId: r.sequenceId,
@@ -219,6 +253,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
         : {}),
       ...(extra.mode ? { mode: extra.mode } : {}),
       ...(why ? { reason: why } : {}),
+      ...(r.effect ? { effect: r.effect } : {}),
     };
   };
 
@@ -257,7 +292,9 @@ function sequenceCore(efs: Efs, journal: Journal) {
           continue;
         }
         if (attempt.stage === "NOT_COMMITTED_PROVEN") {
-          if (p.committed) p.reorged = true; // it was committed here: a reorg dropped it
+          // Committed here: a reorg dropped it. Sent and never committed: it expired. Either way, never "not sent".
+          if (p.committed) p.reorged = true;
+          else if (!p.reorged) p.expired = true;
           delete p.planId;
           delete p.committed;
           continue;
@@ -266,6 +303,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
           p.committed = true;
           p.final = true;
           delete p.reorged;
+          delete p.expired;
           if (attempt.publication !== undefined) p.publication = attempt.publication;
           continue;
         }
@@ -274,11 +312,13 @@ function sequenceCore(efs: Efs, journal: Journal) {
           p.committed = true;
           p.final = rec.final === true;
           delete p.reorged;
+          delete p.expired;
           if (rec.publication !== undefined) p.publication = rec.publication;
         } else if (rec.outcome === "NOT_COMMITTED_PROVEN") {
           // A part that was committed here, or already seen reorged, is proven dropped (REORGED_DROPPED): sending it
           // again is the person's call.
           if (p.committed) p.reorged = true;
+          else if (!p.reorged) p.expired = true; // sent, never committed, past its deadline
           delete p.planId;
           delete p.committed;
         } else {
@@ -384,6 +424,7 @@ export function sequenceOps(d: Deps) {
       remaining.forEach(({ i }, k) => {
         (parts[i] as SequencePart).planId = (planned.plans[k] as Plan).id;
         delete (parts[i] as SequencePart).reorged; // sent again: a new attempt, not the reorged one
+        delete (parts[i] as SequencePart).expired;
       });
       r = await save({ ...r, parts }, "sending the remaining parts as one wallet request");
       const asked = remaining.map(({ i }) => i);
@@ -424,6 +465,7 @@ export function sequenceOps(d: Deps) {
       const parts = r.parts.map((p) => ({ ...p }));
       (parts[i] as SequencePart).planId = planned.plan.id;
       delete (parts[i] as SequencePart).reorged; // sent again: a new attempt, not the reorged one
+      delete (parts[i] as SequencePart).expired;
       r = await save({ ...r, parts }, `sending part ${i + 1} of ${r.parts.length}`);
       const sent = await sendPlan(
         efs,
@@ -507,6 +549,8 @@ export function sequenceOps(d: Deps) {
           state: "NOT_STARTED",
           history: [{ state: "NOT_STARTED", at: Date.now() }],
         };
+        const effect = sequenceEffect(parts);
+        if (effect) r.effect = effect;
         await journal.putSequence(r);
         stored = r.sequenceId;
         return await advance(r, o, call);

@@ -165,7 +165,12 @@ describe("edit-flow transcript replay (RPC and wallet halves)", () => {
       journal: memoryJournal(),
     });
     const r = await edit(t, efs, writer);
-    expect(await writer.runSequence(r.parts)).toMatchObject({ state: "COMPLETE", final: false });
+    expect(await writer.runSequence(r.parts)).toMatchObject({
+      state: "COMPLETE",
+      final: false,
+      // what the banner names and holds per file
+      effect: { kind: "files.edit", file: t.ids["file"], revision: t.ids["revision"] },
+    });
     const after = await openFile(efs, { kind: "file", subject: t.ids["file"] as SubjectId });
     if (after.status !== "PRESENT") throw new Error(after.status);
     expect(after.file.revision).toBe(t.ids["revision"]);
@@ -195,7 +200,12 @@ describe("edit-flow transcript replay (RPC and wallet halves)", () => {
       journal,
     });
     const [open] = await w2.pendingSequences();
-    expect(open).toMatchObject({ state: "IN_FLIGHT", committed: 0, total: 1 });
+    expect(open).toMatchObject({
+      state: "IN_FLIGHT",
+      committed: 0,
+      total: 1,
+      effect: { kind: "files.edit", file: t.ids["file"], revision: t.ids["revision"] }, // named after the reload
+    });
     if (!open) return;
     expect(await w2.resume(open.sequenceId)).toMatchObject({ state: "COMPLETE", final: false });
     // The replay itself made exactly one send (strict: a second one would be a miss), and the recording has one.

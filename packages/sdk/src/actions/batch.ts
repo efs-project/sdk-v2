@@ -9,7 +9,14 @@ import { EfsFault, type Reason, type RevertInfo, reason } from "../core/errors.j
 import type { Hex } from "../core/hex.js";
 import { setTimer } from "../core/platform.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
-import { estimate, notify, type SendOpts, txGasCapOf, walletMismatch } from "./send.js";
+import {
+  estimate,
+  notify,
+  type SendOpts,
+  txGasCapOf,
+  walletMismatch,
+  walletNotProcessed,
+} from "./send.js";
 import type { Plan } from "./types.js";
 
 export type BatchSendResult =
@@ -155,14 +162,14 @@ export async function sendPlansAsBatch(
           batchId = typeof res === "string" ? res : String(res?.id ?? "");
           if (!batchId) throw new Error("wallet_sendCalls returned no id");
         } catch (e) {
-          if ((e as { code?: unknown })?.code === 4001) {
+          const refused = walletNotProcessed(e, "wallet_sendCalls");
+          if (refused) {
+            const code = (e as { code?: unknown }).code;
             for (const r of records)
-              await bestEffort(journal.put(stamp(r, "NOT_SENT", "wallet refused (4001)")));
-            return {
-              kind: "efs.sendBatch",
-              status: "NOT_SENT",
-              reason: reason("USER_REJECTED", "transient", "the wallet refused the request"),
-            };
+              await bestEffort(
+                journal.put(stamp(r, "NOT_SENT", `the wallet did not process it (${code})`)),
+              );
+            return { kind: "efs.sendBatch", status: "NOT_SENT", reason: refused };
           }
           return {
             kind: "efs.sendBatch",

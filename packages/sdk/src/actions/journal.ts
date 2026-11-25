@@ -62,11 +62,30 @@ export interface SequencePart {
    * set (REORGED), proven dropped once it is not (REORGED_DROPPED). Cleared when it commits or is planned again.
    */
   reorged?: true;
+  /**
+   * True once a part that was sent (past its write-ahead) and never committed is proven not committed past its
+   * deadline, without a reorg (EXPIRED). Cleared when it is planned again.
+   */
+  expired?: true;
+}
+
+/**
+ * What a save is for, so a UI can name it and hold new saves per file. Display and blocking data only: it never
+ * changes what is planned or sent. Set when runSequence starts; records written before it have none.
+ */
+export interface SequenceEffect {
+  kind: "files.edit";
+  /** The file (subject) being edited. */
+  file: Hex;
+  /** The revision the edit creates. */
+  revision: Hex;
 }
 
 export interface SequenceRecord {
   schema: "efs-sdk-sequence/1";
   sequenceId: Hex;
+  /** What the save is for (see SequenceEffect); absent on records written before it, or when no single file. */
+  effect?: SequenceEffect;
   /** The submission lock key of the account (lockKey). */
   lock: string;
   chainId: number;

@@ -197,7 +197,9 @@ export type ReasonCode =
   | "NOT_VERIFIED_DEPLOYMENT" | "UNSUPPORTED_PROFILE" | "GATEWAY_UNAVAILABLE" | "DIGEST_MISMATCH"
   | "POLICY_BLOCKED" | "INVALID_RESUME_TOKEN" | "TOO_LARGE" | "CHAIN_MISMATCH"
   | "JOURNAL_UNAVAILABLE" | "OVER_TX_GAS_CAP" | "STALE" | "WALLET_MISMATCH" | "USER_REJECTED" | "BUSY"
-  | "NOT_YET_DECIDABLE" | "REORGED_DROPPED"
+  | "NOT_YET_DECIDABLE" | "REORGED_DROPPED" | "EXPIRED"
+  | "WALLET_UNAUTHORIZED" | "WALLET_UNSUPPORTED" | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED"
+  | "WALLET_INVALID_PARAMS"
   | (string & Record<never, never>);    // open union
 ```
 
@@ -618,8 +620,7 @@ export interface EffectView {
 
 export type SendResult =
   | { kind: "efs.send"; status: "SUBMITTED"; planId: Hex; txHash: Hex }
-  | { kind: "efs.send"; status: "NOT_SENT"; planId: Hex; reason: Reason }          // nothing broadcast: a wallet refusal
-                                                                                   // (4001), WALLET_MISMATCH, OVER_TX_GAS_CAP
+  | { kind: "efs.send"; status: "NOT_SENT"; planId: Hex; reason: Reason }          // nothing broadcast: see "Wallet errors"
   | { kind: "efs.send"; status: "AMBIGUOUS"; planId: Hex; reason: Reason }         // lost response or timeout
   | { kind: "efs.send"; status: "STALE"; planId: Hex; reasons: readonly string[]; revert?: RevertInfo }
                                                                                    // the ledger refuses the plan (e.g. E_CAS)
@@ -706,6 +707,21 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   sent twice. Journal failures up to and including the write-ahead write are not thrown: they return NOT_SENT
   JOURNAL_UNAVAILABLE. A non-EfsFault error is rethrown as INVARIANT with the original as `cause`.
 - **Each part keeps its `deadlineSeconds`:** it is applied each time the part is planned, including on resume.
+- **Wallet errors:** only the errors EIP-1193 and JSON-RPC define as "the request was not processed" are NOT_SENT
+  (the attempt is stamped NOT_SENT, so nothing waits on it): 4001 USER_REJECTED and 4100 WALLET_UNAUTHORIZED
+  (`retry: "transient"`), 4900 WALLET_DISCONNECTED and 4901 WALLET_CHAIN_DISCONNECTED (transient), 4200
+  WALLET_UNSUPPORTED and -32602 WALLET_INVALID_PARAMS (`retry: "never"`: the same wallet request will not work; for
+  wallet_sendCalls, send part by part with `batch: "never"`). Any other wallet error, or a lost response, is
+  AMBIGUOUS: the request may have gone out, so the part stays in flight until reconcile decides.
+- **EXPIRED:** a part that was sent and never committed, then proven not committed (a finalized block past its
+  deadline, or its nonce finalized for another plan) without a reorg, is NOT_STARTED or PARTIAL with reason EXPIRED
+  (`retry: "transient"`), never a bare "not sent": "This save didn't go through — Send again" (resume, the
+  person's click). It clears when the part is planned again.
+- **`effect`:** `SequenceProgress.effect` names what the save is for, `{ kind: "files.edit", file, revision }` when
+  its parts carry one file edit (planEditFile's `files.edit` effect). It is stored when runSequence starts, so
+  `pendingSequences` names the file after a reload ("readme.txt: Partially saved") and a client can hold new saves
+  per file. Display and blocking data only: it never changes what resume sends. Saves started before it have none
+  (hold account-wide for those).
 - **The other calls:** `pendingSequences()` lists open saves (the "2 of 5 saved — Continue" state).
   `reconcileSequence(id)` settles from the ledger and never prompts, so it is safe on every app start.
   `resume(id)` continues, and is the only sequence call that may prompt. `abandon(id)` stops offering to continue:
