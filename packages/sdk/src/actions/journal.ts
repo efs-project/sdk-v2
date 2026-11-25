@@ -108,7 +108,17 @@ export type SequenceEffect =
   /** Your hides removed (Unhide): each name falls through to the next author's entry again. */
   | { kind: "files.unhide"; entries: readonly { folder: Hex; name: string }[] }
   /** Names hidden (planHideEntries), each with the author whose entry the hide covers when the planner knew it. */
-  | { kind: "files.hide"; entries: readonly { folder: Hex; name: string; author?: Hex }[] };
+  | { kind: "files.hide"; entries: readonly { folder: Hex; name: string; author?: Hex }[] }
+  /** Things filed in a topic or home (tags.tag, n ≥ 0) or said not to be (tags.deny, n < 0), with the number. */
+  | { kind: "tags.tag" | "tags.deny"; topic: Hex; number: number; targets: readonly Hex[] }
+  /** Statements taken back (back to "said nothing"). */
+  | { kind: "tags.untag"; topic: Hex; targets: readonly Hex[] }
+  /** Only registration parts (a save whose statements never came): the topics it registers. */
+  | { kind: "tags.register"; topics: readonly Hex[] }
+  /** A label of a topic or home in one language, or (remove) its RELEASE. */
+  | { kind: "tags.label"; subject: Hex; lang: string; remove: boolean }
+  /** "Same as" or "broader than" between two topics, or (remove) its RELEASE. */
+  | { kind: "tags.same" | "tags.broader"; subject: Hex; other: Hex; remove: boolean };
 
 export interface SequenceRecord {
   schema: "efs-sdk-sequence/1";

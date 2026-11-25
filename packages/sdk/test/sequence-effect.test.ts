@@ -138,6 +138,91 @@ describe("sequenceEffect for folder saves", () => {
   });
 });
 
+describe("sequenceEffect for tag saves", () => {
+  const TOPIC = `0x${"71".repeat(32)}`;
+  const OTHER = `0x${"72".repeat(32)}`;
+  const A = `0x${"a1".repeat(32)}`;
+  const B = `0x${"b2".repeat(32)}`;
+  const fx = (code: string, args: Record<string, string>): EffectView => ({ code, args });
+  const reg = fx("tags.register", { topic: TOPIC, part: "1", parts: "2", stage: "register" });
+  const tag = (code: string, thing: string, number?: string) =>
+    fx(code, {
+      topic: TOPIC,
+      thing,
+      ...(number !== undefined ? { number } : {}),
+      part: "2",
+      parts: "2",
+      stage: "finish",
+    });
+
+  it("a tag, a denial or an untag names its topic, its number and its targets; registration parts fold in", () => {
+    expect(
+      sequenceEffect([part(reg), part(tag("tags.tag", A, "3"), tag("tags.tag", B, "3"))]),
+    ).toEqual({
+      kind: "tags.tag",
+      topic: TOPIC,
+      number: 3,
+      targets: [A, B],
+    });
+    expect(sequenceEffect([part(tag("tags.deny", A, "-1"))])).toEqual({
+      kind: "tags.deny",
+      topic: TOPIC,
+      number: -1,
+      targets: [A],
+    });
+    expect(sequenceEffect([part(tag("tags.untag", A), tag("tags.untag", A))])).toEqual({
+      kind: "tags.untag",
+      topic: TOPIC,
+      targets: [A],
+    });
+    // Only registration (an abandoned save's first parts): the topics it registers.
+    expect(sequenceEffect([part(reg)])).toEqual({ kind: "tags.register", topics: [TOPIC] });
+  });
+
+  it("labels, same as and broader name their subject and the rest", () => {
+    const fin = { part: "1", parts: "1", stage: "finish" };
+    expect(
+      sequenceEffect([
+        part(reg),
+        part(fx("tags.label", { subject: TOPIC, lang: "en", remove: "false", ...fin })),
+      ]),
+    ).toEqual({ kind: "tags.label", subject: TOPIC, lang: "en", remove: false });
+    expect(
+      sequenceEffect([
+        part(fx("tags.same", { subject: TOPIC, other: OTHER, remove: "true", ...fin })),
+      ]),
+    ).toEqual({
+      kind: "tags.same",
+      subject: TOPIC,
+      other: OTHER,
+      remove: true,
+    });
+    expect(
+      sequenceEffect([
+        part(fx("tags.broader", { subject: TOPIC, other: OTHER, remove: "false", ...fin })),
+      ]),
+    ).toEqual({ kind: "tags.broader", subject: TOPIC, other: OTHER, remove: false });
+  });
+
+  it("is undefined for a malformed tag effect, two numbers, two topics, or tags mixed with files", () => {
+    expect(sequenceEffect([part(tag("tags.tag", A, "one"))])).toBeUndefined();
+    expect(
+      sequenceEffect([part(tag("tags.tag", A, "1"), tag("tags.tag", B, "2"))]),
+    ).toBeUndefined();
+    expect(
+      sequenceEffect([
+        part(tag("tags.tag", A, "1"), fx("tags.tag", { topic: OTHER, thing: B, number: "1" })),
+      ]),
+    ).toBeUndefined();
+    expect(sequenceEffect([part(tag("tags.tag", "cat.jpg", "1"))])).toBeUndefined();
+    expect(
+      sequenceEffect([
+        part(tag("tags.tag", A, "1"), fx("files.hide", { folder: TOPIC, name: "a" })),
+      ]),
+    ).toBeUndefined();
+  });
+});
+
 describe("SequenceProgress.effect", () => {
   const account = "0x2a871d0798f97d79848a013d4936a73bf4cc922c" as Hex;
   const d = efs.deployment;
@@ -188,6 +273,20 @@ describe("SequenceProgress.effect", () => {
     expect(
       pending.map((p) => p.effect).sort((a, b) => (a?.kind ?? "").localeCompare(b?.kind ?? "")),
     ).toEqual([effects[1], effects[0]]);
+  });
+
+  it("tag effects survive the journal codec and are listed from the record", async () => {
+    const journal = memoryJournal();
+    const effect = {
+      kind: "tags.tag",
+      topic: `0x${"71".repeat(32)}`,
+      number: 2,
+      targets: [`0x${"a1".repeat(32)}`],
+    } as const;
+    const stored = record({ sequenceId: `0x${"9".repeat(64)}` as Hex, effect });
+    expect(decodeSequenceRecord(encodeSequenceRecord(stored)).effect).toEqual(effect);
+    await journal.putSequence(stored);
+    expect((await openJournal(efs, { journal }).pendingSequences())[0]?.effect).toEqual(effect);
   });
 
   it("is absent on a record written before it (the client keeps its account-wide hold for those)", async () => {
