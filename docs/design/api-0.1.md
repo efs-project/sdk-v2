@@ -1012,9 +1012,20 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   To test it on a chain, `planLoneHide(efs, w, { folder, name, lens? })` from `@efs/sdk/testing` plans a lone hide
   (the name record when missing, then an UNBIND at your revision there; review `efs.loneHideReview`, effect
   `files.hide`). It throws MISUSE unless the name is lone for you: never stated, or released after lone hides only.
-- Every planner writes only the writer's own entries, each with a compare-and-swap on its revision. Refusal codes:
+- `planHideEntries(efs, w, { entries, lens? })`: hide other authors' entries (a folder owner hiding spam, say): an
+  UNBIND, a mask, at your own position at each name, after the name record if it is missing. Nothing shows there for a
+  reader whose Lens puts you before the entry's author; a reader who ranks that author first still sees it, and the
+  hide is public. The chain lets anyone mask their own position, so the SDK does not gate it by ownership: whom to
+  offer it is the app's rule, as for Remove and block. Review `efs.hideReview`: per entry `shownNow` (the author whose
+  entry it covers) and `shownAfter` (null when it is hidden in this Lens; an author ranked before you when your hide
+  doesn't change this view), plus `notice`, one plain sentence saying what a hide does. Refused: `NAME_TAKEN_MINE`
+  (your own entry: Remove and block, `planRemoveEntries` with `hide: true`), `ALREADY_HIDDEN`, `ENTRY_ABSENT` (this
+  Lens shows nothing there). Effect `files.hide`; `planUnhideEntries` undoes it, and `listRemoved` shows it as
+  `NEVER_BOUND` (or `KNOWN` where you once had an entry of your own there).
+- Every planner writes only the writer's own positions (a hide masks yours; it never touches the other author's
+  entry), each with a compare-and-swap on its revision. Refusal codes:
   `NAME_TAKEN_MINE` (your own entry holds the name), `NOT_YOURS` (with `author` and `admission`), `FOLDER_ABSENT`,
-  `ENTRY_ABSENT`, `NOT_REMOVED`, `NEVER_BOUND`, `HISTORY_UNKNOWN`, `NOT_HIDDEN`, `PATH_CHANGED`. A batch refuses as a whole and lists every refusal by `index`
+  `ENTRY_ABSENT`, `NOT_REMOVED`, `NEVER_BOUND`, `HISTORY_UNKNOWN`, `NOT_HIDDEN`, `ALREADY_HIDDEN`, `PATH_CHANGED`. A batch refuses as a whole and lists every refusal by `index`
   (a move's source and destination refusals both). A `salt` the writer already used is MISUSE. Another author's
   entry at the name is not a refusal: the review says what this Lens will show (`visibleInLens`, `shownInstead`,
   `hiddenBy`, and `shownAfter` for the place an entry leaves). Invalid names (checkName) and media types throw MISUSE

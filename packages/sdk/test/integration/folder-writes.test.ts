@@ -20,11 +20,14 @@ import { openFile, readBytes } from "../../src/files/bytes.ts";
 import {
   planCreateFile,
   planCreateFolder,
+  planHideEntries,
   planMoveEntries,
   planRemoveEntries,
   planRestoreEntries,
+  planUnhideEntries,
 } from "../../src/files/entries.ts";
 import { type FolderRef, listFolder, lookupEntry, resolvePath } from "../../src/files/folders.ts";
+import { listRemoved } from "../../src/files/removed.ts";
 import { ledgerReadsAbi } from "../../src/generated/abis.ts";
 import { PURPOSES } from "../../src/generated/constants.ts";
 import { bindingKey, positionKey } from "../../src/protocol/keys.ts";
@@ -639,5 +642,105 @@ describe("folder writes (fixture)", () => {
       status: "PLANNED",
       review: { entries: [{ alsoPlaced: null }] },
     });
+  });
+});
+
+describe("planHideEntries: a folder owner hides another author's entry (fixture)", () => {
+  it("masks Bob's entry in Alice's folder for views that put Alice first; Unhide undoes it", async () => {
+    const made = await run(
+      w,
+      planCreateFolder(efs, w, { folder: root, name: "hide-test", lens: both }),
+    );
+    const here: FolderRef = { kind: "folder", directory: made.review.created.directory };
+    await run(
+      wb,
+      planCreateFile(efs, wb, { folder: here, name: "spam.txt", content: text("spam") }),
+    );
+    await run(
+      wb,
+      planCreateFile(efs, wb, { folder: here, name: "more.txt", content: text("more") }),
+    );
+    await run(w, planCreateFile(efs, w, { folder: here, name: "mine.txt", content: text("mine") }));
+
+    const p = await planHideEntries(efs, w, {
+      entries: [{ folder: here, name: "spam.txt" }],
+      lens: both,
+    });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect(p.review).toMatchObject({
+      kind: "efs.hideReview",
+      author: A,
+      records: 0, // Bob's entry already published the name record
+      entries: [
+        {
+          entry: { folder: { directory: here.directory }, name: "spam.txt" },
+          shownNow: { author: B },
+          shownAfter: null,
+        },
+      ],
+    });
+    expect(p.review.notice).toMatch(/puts you before/);
+    expect(p.review.notice).toMatch(/public/);
+    expect(p.parts.flatMap((x) => x.actions.map((a) => [a.kind, a.expectedRevision]))).toEqual([
+      [ACTION.UNBIND, 0n],
+    ]);
+    expect((await w.runSequence(p.parts)).state).toBe("COMPLETE");
+
+    // Hidden in Alice-first views; Bob's own view still shows it.
+    expect(
+      await lookupEntry(efs, { folder: here, name: "spam.txt" }, { lens: both }),
+    ).toMatchObject({
+      status: "MASKED",
+      by: A,
+    });
+    const bobFirst = await lookupEntry(
+      efs,
+      { folder: here, name: "spam.txt" },
+      { lens: { principals: [B, A] } },
+    );
+    expect(bobFirst.status === "PRESENT" && bobFirst.selected.author).toBe(B);
+    // Alice's Show removed lists it as a hide with nothing of hers behind it: Unhide, not Restore.
+    const removed = await listRemoved(efs, { folder: here, author: A });
+    expect(
+      removed.status === "PRESENT" && removed.rows.find((r) => r.name === "spam.txt"),
+    ).toMatchObject({ state: "MASKED", last: "NEVER_BOUND" });
+
+    // A view that puts Bob first is not changed by Alice's hide, and the review says so.
+    const after = await planHideEntries(efs, w, {
+      entries: [{ folder: here, name: "more.txt" }],
+      lens: { principals: [B, A] },
+    });
+    expect(after).toMatchObject({
+      status: "PLANNED",
+      review: { entries: [{ shownNow: { author: B }, shownAfter: { author: B } }] },
+    });
+
+    // Refusals, every one listed: your own entry (Remove and block instead), a hide already there, nothing to hide.
+    expect(
+      await planHideEntries(efs, w, {
+        entries: [
+          { folder: here, name: "mine.txt" },
+          { folder: here, name: "spam.txt" },
+          { folder: here, name: "nothing.txt" },
+          { folder: here, name: "more.txt" },
+        ],
+        lens: both,
+      }),
+    ).toMatchObject({
+      status: "REFUSED",
+      refused: [
+        { index: 0, code: "NAME_TAKEN_MINE" },
+        { index: 1, code: "ALREADY_HIDDEN" },
+        { index: 2, code: "ENTRY_ABSENT" },
+      ],
+    });
+
+    // Unhide undoes it: Bob's entry shows again in Alice-first views.
+    await run(
+      w,
+      planUnhideEntries(efs, w, { entries: [{ folder: here, name: "spam.txt" }], lens: both }),
+    );
+    const back = await lookupEntry(efs, { folder: here, name: "spam.txt" }, { lens: both });
+    expect(back.status === "PRESENT" && back.selected.author).toBe(B);
   });
 });

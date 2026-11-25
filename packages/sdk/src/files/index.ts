@@ -4,8 +4,9 @@
  * the edit planner (planEditFile: a new revision of an existing file, for writer.runSequence), and normalizeMediaType
  * (the check planning applies to a declared media type, for validating one as it is typed).
  * Folders: listFolder, lookupEntry and resolvePath read a folder under a Lens, always from a parent the caller names;
- * planCreateFile, planCreateFolder, planMoveEntries, planRemoveEntries and planRestoreEntries plan the writer's own
- * entries, for writer.runSequence.
+ * planCreateFile, planCreateFolder, planMoveEntries, planRemoveEntries, planRestoreEntries and planUnhideEntries plan
+ * the writer's own entries, and planHideEntries hides other authors' entries for views that put the writer first, for
+ * writer.runSequence.
  */
 
 export type {
@@ -39,6 +40,9 @@ export type {
   FolderPlanOpts,
   FolderPlanResult,
   FolderReviewBase,
+  HideEntriesInput,
+  HideReview,
+  HideReviewItem,
   LensView,
   MoveEntriesInput,
   MoveInput,
@@ -57,6 +61,7 @@ export type {
 export {
   planCreateFile,
   planCreateFolder,
+  planHideEntries,
   planMoveEntries,
   planRemoveEntries,
   planRestoreEntries,
