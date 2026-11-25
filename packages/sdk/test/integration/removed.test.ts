@@ -1,0 +1,205 @@
+// SPDX-License-Identifier: MIT
+// "Show removed" on a real chain: one author's released and hidden entries in a folder, each with its last target,
+// from their own scope list (no Lens), paged, COMPLETE only for a whole scan, and restorable straight from the list.
+// Uses anvil's public development mnemonic, index 15 (no other test file uses it).
+import { readFileSync } from "node:fs";
+import { decodeFunctionResult, encodeFunctionResult } from "viem";
+import { mnemonicToAccount } from "viem/accounts";
+import { beforeAll, describe, expect, inject, it } from "vitest";
+import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { createEfs } from "../../src/client.ts";
+import type { Hex, PrincipalId, RecordId } from "../../src/core/hex.ts";
+import {
+  planCreateFile,
+  planCreateFolder,
+  planRemoveEntries,
+  planRestoreEntries,
+} from "../../src/files/entries.ts";
+import type { FolderRef } from "../../src/files/folders.ts";
+import { listRemoved, type RemovedRow } from "../../src/files/removed.ts";
+import { ledgerViewsAbi } from "../../src/generated/abis.ts";
+import { type Edit, sel, tampered } from "./tamper.ts";
+
+const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
+const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
+  root: { directoryRecordId: RecordId };
+  seed: { files: { name: string; headRecordId: RecordId }[] };
+};
+const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
+const root: FolderRef = { kind: "folder", directory: deployment.root.directoryRecordId };
+const dana = mnemonicToAccount("test test test test test test test test test test test junk", {
+  addressIndex: 15,
+});
+const text = (s: string) => new TextEncoder().encode(s);
+let w: Awaited<ReturnType<typeof createWriter>>;
+let me: PrincipalId;
+let folder: FolderRef;
+const files: Record<string, { kind: "file"; subject: string }> = {};
+
+/** The fixture behind a fetch whose historyAt replies are rewritten by `f` (History code, head). */
+const historyEdited = (f: (found: number, head: Record<string, unknown>) => [number, unknown]) => {
+  const edit: Edit = (result) => {
+    const [found, head] = decodeFunctionResult({
+      abi: ledgerViewsAbi,
+      functionName: "historyAt",
+      data: result,
+    }) as unknown as [number, Record<string, unknown>];
+    return encodeFunctionResult({
+      abi: ledgerViewsAbi,
+      functionName: "historyAt",
+      result: f(found, head) as never,
+    }) as Hex;
+  };
+  return createEfs({
+    rpcs: [fixture.rpcUrl],
+    deployment,
+    fetch: tampered({ [sel(ledgerViewsAbi, "historyAt")]: edit }),
+  });
+};
+const rowOf = async (e: ReturnType<typeof createEfs>, name: string) => {
+  const page = await listRemoved(e, { folder, author: me });
+  if (page.status !== "PRESENT") throw new Error(page.status);
+  return page.rows.find((r) => r.name === name);
+};
+
+const run = async (planned: Promise<{ status: string } & Record<string, unknown>>) => {
+  const p = (await planned) as {
+    status: string;
+    parts?: unknown[];
+    review?: Record<string, unknown>;
+  };
+  if (p.status !== "PLANNED") throw new Error(`not planned: ${p.status}`);
+  expect((await w.runSequence(p.parts as never)).state).toBe("COMPLETE");
+  return p.review as Record<string, unknown>;
+};
+
+beforeAll(async () => {
+  await fetch(fixture.rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "anvil_setBalance",
+      params: [dana.address, "0x56bc75e2d63100000"],
+    }),
+  });
+  w = await createWriter(efs, {
+    authorizer: { kind: "local", profile: "direct", account: dana },
+    journal: memoryJournal(),
+  });
+  me = w.principal;
+  const made = await run(planCreateFolder(efs, w, { folder: root, name: "removed-test" }) as never);
+  folder = made["created"] as FolderRef;
+  for (const n of ["kept.txt", "gone.txt", "hidden.txt", "p1.txt", "p2.txt", "p3.txt"]) {
+    const r = await run(planCreateFile(efs, w, { folder, name: n, content: text(n) }) as never);
+    files[n] = r["file"] as { kind: "file"; subject: string };
+  }
+  await run(
+    planRemoveEntries(efs, w, {
+      entries: [
+        { folder, name: "gone.txt" },
+        { folder, name: "p1.txt" },
+        { folder, name: "p2.txt" },
+        { folder, name: "p3.txt" },
+      ],
+    }) as never,
+  );
+  await run(
+    planRemoveEntries(efs, w, { entries: [{ folder, name: "hidden.txt" }], hide: true }) as never,
+  );
+});
+
+describe("listRemoved (fixture)", () => {
+  it("lists your released and hidden entries with their last targets, and nothing live; one page is COMPLETE", async () => {
+    const page = await listRemoved(efs, { folder, author: me });
+    if (page.status !== "PRESENT") throw new Error(page.status);
+    expect(page.coverage).toEqual({ state: "COMPLETE" });
+    const byName = Object.fromEntries(page.rows.map((r) => [r.name, r]));
+    expect(Object.keys(byName).sort()).toEqual([
+      "gone.txt",
+      "hidden.txt",
+      "p1.txt",
+      "p2.txt",
+      "p3.txt",
+    ]);
+    expect(byName["gone.txt"]).toMatchObject({ state: "RELEASED", target: files["gone.txt"] });
+    expect(byName["hidden.txt"]).toMatchObject({ state: "MASKED", target: files["hidden.txt"] });
+    expect((byName["gone.txt"] as RemovedRow).revision).toBeGreaterThan(0n);
+  });
+
+  it("pages: PARTIAL with a cursor until the end, the same rows in all, never COMPLETE from a cursor", async () => {
+    const names: string[] = [];
+    let page = await listRemoved(efs, { folder, author: me }, { limit: 2 });
+    if (page.status !== "PRESENT") throw new Error(page.status);
+    expect(page.coverage).toEqual({ state: "PARTIAL", why: "MORE_PAGES" });
+    names.push(...page.rows.map((r) => r.name));
+    let guard = 0;
+    while (page.status === "PRESENT" && page.next && guard++ < 10) {
+      page = await listRemoved(efs, { folder, author: me }, { limit: 2, cursor: page.next });
+      if (page.status !== "PRESENT") throw new Error(page.status);
+      expect(page.coverage.state).toBe("PARTIAL");
+      names.push(...page.rows.map((r) => r.name));
+    }
+    expect(page.status === "PRESENT" && page.coverage).toEqual({
+      state: "PARTIAL",
+      why: "RESUMED",
+    });
+    expect(names.sort()).toEqual(["gone.txt", "hidden.txt", "p1.txt", "p2.txt", "p3.txt"]);
+  });
+
+  it("an author with nothing removed here: an empty COMPLETE page, the only empty page there is", async () => {
+    const stranger = `0x${"0".repeat(24)}${"34".repeat(20)}` as PrincipalId;
+    expect(await listRemoved(efs, { folder, author: stranger })).toMatchObject({
+      status: "PRESENT",
+      rows: [],
+      coverage: { state: "COMPLETE" },
+    });
+  });
+
+  it("not a folder: ABSENT_PROVEN for no record, INVALID for a record of another Type", async () => {
+    const missing: FolderRef = { kind: "folder", directory: `0x${"5a".repeat(32)}` as RecordId };
+    expect((await listRemoved(efs, { folder: missing, author: me })).status).toBe("ABSENT_PROVEN");
+    const revision: FolderRef = {
+      kind: "folder",
+      directory: deployment.seed.files[0]?.headRecordId as RecordId,
+    };
+    expect((await listRemoved(efs, { folder: revision, author: me })).status).toBe("INVALID");
+  });
+
+  // A row whose last target the history can't give (target null) must never become a restore of a guessed target.
+  it("history that can't be read back: the row stays, target null, and restore is UNKNOWN", async () => {
+    const lost = historyEdited((_found, head) => [2, head]); // History.NONE
+    expect(await rowOf(lost, "p1.txt")).toMatchObject({ state: "RELEASED", target: null });
+    const planned = await planRestoreEntries(lost, w, { entries: [{ folder, name: "p1.txt" }] });
+    expect(planned).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "NOT_YET_DECIDABLE", retry: "transient" },
+    });
+    // The same entry on an honest endpoint restores to its real target.
+    const honest = await planRestoreEntries(efs, w, { entries: [{ folder, name: "p1.txt" }] });
+    expect(honest.status).toBe("PLANNED");
+  });
+
+  it("history deeper than the walk: the row stays, target null, and restore is UNKNOWN (LIMIT_EXCEEDED)", async () => {
+    // Every version reads as released, each pointing at one more before it: no bound version within the hop limit.
+    const deep = historyEdited((_found, head) => [3, { ...head, state: 3, prevAdmission: 1n }]);
+    expect(await rowOf(deep, "p1.txt")).toMatchObject({ state: "RELEASED", target: null });
+    const planned = await planRestoreEntries(deep, w, { entries: [{ folder, name: "p1.txt" }] });
+    expect(planned).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "LIMIT_EXCEEDED", retry: "never" },
+    });
+  });
+
+  it("restores straight from the list", async () => {
+    await run(planRestoreEntries(efs, w, { entries: [{ folder, name: "gone.txt" }] }) as never);
+    const page = await listRemoved(efs, { folder, author: me });
+    expect(page.status === "PRESENT" && page.rows.map((r) => r.name).sort()).toEqual([
+      "hidden.txt",
+      "p1.txt",
+      "p2.txt",
+      "p3.txt",
+    ]);
+  });
+});

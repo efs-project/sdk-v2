@@ -26,7 +26,8 @@ const ABIS = {
   lensReaderAbi: "LensReader",
   filesPageReaderAbi: "FilesPageReader",
   web3GatewayAbi: "EfsWeb3Gateway", // ERC-6860 resource requests (web3://)
-  indexAbi: "RealmIndex", // IIndexReads: posting heads (the backlink list's live count)
+  indexAbi: "RealmIndex", // IIndexReads: posting heads (the backlink list's live count), coverage, stores
+  bitmapStoreAbi: "BitmapStore", // the kind-10 scope lists (a principal's positions under one subject)
 };
 
 function header(inputs) {

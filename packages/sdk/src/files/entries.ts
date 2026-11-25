@@ -1405,6 +1405,19 @@ export async function planRestoreEntries(
         asOf = BigInt(h.prevAdmission);
       }
       if (!prior) {
+        // Never a guessed target. History still to walk: the SDK can't say what was there, so UNKNOWN.
+        if (asOf > 0n)
+          return {
+            ok: false,
+            retryElsewhere: false,
+            reason: reason(
+              "LIMIT_EXCEEDED",
+              "never",
+              `the entry's last target is more than ${RESTORE_HOPS} versions back`,
+            ),
+          };
+        // The walk reached the binding's first version and none was bound: you never placed anything here (a hide
+        // of another author's entry), so there is nothing of yours to put back.
         refused.push({ index: i, code: "ENTRY_ABSENT", entry: entryOf(p) });
         continue;
       }

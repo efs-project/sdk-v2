@@ -78,6 +78,8 @@ export type {
 export { listFolder, lookupEntry, openObject, resolvePath } from "./folders.js";
 export type { MediaTypeCheck } from "./media.js";
 export { MAX_MEDIA_TYPE_BYTES, normalizeMediaType } from "./media.js";
+export type { ListRemovedOpts, RemovedCursor, RemovedPage, RemovedRow } from "./removed.js";
+export { listRemoved } from "./removed.js";
 export type { FileChunks, StreamFailure, StreamOpts } from "./stream.js";
 export { fileChunks } from "./stream.js";
 export type { UnverifiedChunks, UnverifiedOpts, UnverifiedResult } from "./unverified.js";
