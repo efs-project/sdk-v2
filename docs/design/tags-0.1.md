@@ -80,8 +80,8 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
 - **Changing a number** is one action, with the usual compare-and-swap on the author's own binding: a positive to
   another positive is a rebind, and a negative to another negative is another UNBIND. A first statement may be
   negative (a denial on its own).
-- **Targets.** A file, or one revision of it (for claims about content that an edit could change), a folder, a topic,
-  or an address. An address needs no record, including one that has never transacted. Address targets are for TAG
+- **Targets.** Any existing record or subject, of any Type, other apps' Types included. In particular: a file, or one
+  revision of it (for claims about content that an edit could change), a folder, a topic, or an address. An address needs no record, including one that has never transacted. Address targets are for TAG
   only; anywhere else the chain refuses them with a named error, and the planners refuse them first (MISUSE).
 - **Registration is planned automatically.** The planner reads which word pages and path records already exist (one
   batched read). It publishes the missing ones parent first, in the same save as the first tag, with no extra prompt.
@@ -113,6 +113,9 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
   the entry was filed under. A denial does not travel down to child topics, and a stranger's negative number never
   hides anything from anyone else.
 - **Raw:** nothing hidden.
+- **In Everyone and Raw, a row exists because a statement exists.** A row never needs a positive number to appear:
+  otherwise a few pre-emptive negatives would keep a thing out of the public views altogether. Each row shows the
+  stances found (who says it applies, who says it doesn't), and says when not every author was read.
 - **Public lists are newest first, meaning most recently first stated.** An entry is placed at an author's first
   statement on (topic, thing). Changing a number, or removing a tag and adding it back, never moves it up. The SDK
   offers no "recently active" order and never synthesizes one. The client labels the order "recently added".
@@ -168,6 +171,9 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
     many distinct authors tagged it.
   - **Junk rule (an SDK default, so clients agree):** a child with no statement from the Lens needs tags from at least
     2 different authors to be listed. `showAll` turns the rule off. How many rows to show is each client's choice.
+    - The chain keeps no per-child author count. "2 different authors" comes from the per-item "who said it" lists:
+      the read samples a bounded number of a child's items. When it stops before it can decide, the child is reported
+      as undecided and the listing is PARTIAL, never quietly dropped.
   - A big directory cannot be ranked in one read, so the read scans a bounded number of entries and reports PARTIAL,
     never a short list as COMPLETE.
 - **Word pages** read the directory "topics that use a word".
