@@ -73,7 +73,10 @@ import { lastBoundTarget } from "./removed.js";
 export interface EntryRefusal {
   /** The input's index (0 for the single-entry planners). */
   index: number;
-  code: /** Your own entry already holds this name here: choose another name, or open it and save a new version. */
+  code: /**
+   * Your own entry already holds this name here: choose another name, or open it and save a new version. From
+   * planHideEntries: hide your own entry with planRemoveEntries and `hide: true` (Remove and block) instead.
+   */
     | "NAME_TAKEN_MINE"
     /** The entry this Lens shows is another author's: you can move or remove only your own. */
     | "NOT_YOURS"
@@ -89,6 +92,8 @@ export interface EntryRefusal {
     | "HISTORY_UNKNOWN"
     /** Unhide: your entry here is not hidden. */
     | "NOT_HIDDEN"
+    /** Hide: your hide is already at this name (planUnhideEntries removes it). */
+    | "ALREADY_HIDDEN"
     /** The destination path (`via`) no longer reaches the destination folder under this Lens: resolve it again. */
     | "PATH_CHANGED";
   entry: EntryRef;
@@ -1408,6 +1413,139 @@ export async function planUnhideEntries(
   });
 }
 
+// ---- hide another author's entry
+
+/** An UNBIND (a mask) at your position for a place, after its name record when that is missing (effect files.hide). */
+const hideUnit = (
+  types: Types,
+  p: Place,
+  mine: RawHead,
+  needName: boolean,
+  group: number,
+  extra: Record<string, string>,
+): Unit => {
+  const args = effectArgs(p, extra);
+  return {
+    effect: (stage, part, parts) => ({
+      code: "files.hide",
+      args: { ...args, part: String(part), parts: String(parts), stage },
+      text: `Hide ${p.name}`,
+    }),
+    actions: [
+      ...(needName ? [publish(types.name, p.nameBytes, "files-name/2", group)] : []),
+      plain(
+        {
+          kind: ACTION.UNBIND,
+          purpose: PURPOSES.folder,
+          subject: p.folder,
+          role: p.role,
+          expectedRevision: BigInt(mine.revision),
+        },
+        { group, firstStatement: isUnset(mine), bindRow: "unbindFolder" },
+      ),
+    ],
+    finishes: true,
+  };
+};
+
+const HIDE_NOTICE =
+  "A hide covers this entry for anyone whose view puts you before its author. Other apps and views may still " +
+  "show it, and the hide itself is public.";
+
+export interface HideEntriesInput {
+  entries: readonly EntryRef[];
+  lens?: Lens;
+}
+export interface HideReviewItem {
+  entry: EntryRef;
+  /** The entry this Lens shows at that name now: the one the hide covers. */
+  shownNow: { author: PrincipalId };
+  /**
+   * What this Lens shows afterwards: null when your hide covers the entry here, or an author ranked before you in
+   * this Lens, whose entry your hide does not change.
+   */
+  shownAfter: { author: PrincipalId } | null;
+}
+export interface HideReview extends FolderReviewBase {
+  kind: "efs.hideReview";
+  entries: readonly HideReviewItem[];
+  /** What a hide does, in plain words for the confirmation. */
+  notice: string;
+}
+
+/**
+ * Plan hiding other authors' entries (an UNBIND, a mask, at your own position at each name): nothing shows there for
+ * a reader whose Lens puts you before the entry's author; readers who rank that author first still see it. The chain
+ * lets anyone mask their own position, so this is not gated by ownership: whom to offer it (a folder's owner hiding
+ * spam, say) is the app's rule. planUnhideEntries undoes it. Refused: NAME_TAKEN_MINE (your own entry: Remove and
+ * block, planRemoveEntries with `hide: true`), ALREADY_HIDDEN, and ENTRY_ABSENT (this Lens shows nothing there). A
+ * batch plans every entry or none.
+ */
+export async function planHideEntries(
+  efs: Efs,
+  writer: { readonly principal: PrincipalId },
+  input: HideEntriesInput,
+  o: FolderPlanOpts = {},
+): Promise<FolderPlanResult<HideReview>> {
+  if (!input.entries?.length) throw misuse("planHideEntries needs at least one entry");
+  const me = lower(writer.principal) as PrincipalId;
+  const principals = lensPrincipals(efs, input.lens);
+  const types = typesOf(efs);
+  const places = input.entries.map((e, i) => placeOf(e.folder, e.name, i));
+  if (new Set(places.map((p) => p.position)).size !== places.length)
+    throw misuse("the same entry is listed twice");
+  const nameIds = [...new Set(places.map((p) => nameRecord(types, p)))];
+  return atOneBasis(efs, o, async (ctx, s, basis) => {
+    const r = await readSeen(ctx, s, basis, me, principals, places, nameIds);
+    if (!r.ok) return r;
+    const seen = r.value;
+    const refused: EntryRefusal[] = [];
+    const items: HideReviewItem[] = [];
+    const units: Unit[] = [];
+    let published = 0;
+    for (const [i, p] of places.entries()) {
+      const st = seen.places.get(p.position) as PlaceState;
+      const state = headState(st.mine.state);
+      if (state === "BOUND") {
+        refused.push({ index: i, code: "NAME_TAKEN_MINE", entry: entryOf(p) });
+        continue;
+      }
+      if (state === "MASKED") {
+        refused.push({ index: i, code: "ALREADY_HIDDEN", entry: entryOf(p) });
+        continue;
+      }
+      const now = lensAt(principals, st, me);
+      if (!now.shown) {
+        refused.push({ index: i, code: "ENTRY_ABSENT", entry: entryOf(p) });
+        continue;
+      }
+      // An entry shown here means the record exists (the validator needs it for a first statement); checked anyway.
+      const needName = !(seen.records.get(nameRecord(types, p))?.present ?? false);
+      if (needName) published++;
+      units.push(hideUnit(types, p, st.mine, needName, i + 1, { author: now.shown }));
+      items.push({
+        entry: entryOf(p),
+        shownNow: { author: now.shown },
+        shownAfter: shownAfter(principals, st, me, "MASKED"),
+      });
+    }
+    if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
+    return {
+      ok: true,
+      value: () =>
+        toParts(
+          efs,
+          o,
+          units,
+          (base) => ({ kind: "efs.hideReview", ...base, entries: items, notice: HIDE_NOTICE }),
+          me,
+          basis,
+          published,
+        ),
+    };
+  });
+}
+
 // ---- a lone hide (test-only: exported from @efs/sdk/testing)
 
 export interface LoneHideInput {
@@ -1459,31 +1597,7 @@ export async function planLoneHide(
       if (last.value.last !== "NEVER_BOUND") return notLone("you placed something there before");
     }
     const needName = !(r.value.records.get(nameId)?.present ?? false);
-    const unset = isUnset(st.mine);
-    const args = effectArgs(p, {});
-    const units: Unit[] = [
-      {
-        effect: (stage, part, parts) => ({
-          code: "files.hide",
-          args: { ...args, part: String(part), parts: String(parts), stage },
-          text: `Hide ${p.name}`,
-        }),
-        actions: [
-          ...(needName ? [publish(types.name, p.nameBytes, "files-name/2", 1)] : []),
-          plain(
-            {
-              kind: ACTION.UNBIND,
-              purpose: PURPOSES.folder,
-              subject: p.folder,
-              role: p.role,
-              expectedRevision: BigInt(st.mine.revision),
-            },
-            { group: 1, firstStatement: unset, bindRow: "unbindFolder" },
-          ),
-        ],
-        finishes: true,
-      },
-    ];
+    const units = [hideUnit(types, p, st.mine, needName, 1, {})];
     const item = { entry: entryOf(p), shownAfter: shownAfter(principals, st, me, "MASKED") };
     return {
       ok: true,
