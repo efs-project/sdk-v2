@@ -151,6 +151,33 @@ describe("folder reads against tampered or failing replies (fixture)", () => {
     });
   });
 
+  it("a follow-up read that sees another basis is read again, and the page says how many times", async () => {
+    let left = 1;
+    const efs = efsWith({
+      [sel(lensReaderAbi, "resolveManyAt")]: (result) => {
+        if (left-- <= 0) return result;
+        const [q, sels] = decodeFunctionResult({
+          abi: lensReaderAbi,
+          functionName: "resolveManyAt",
+          data: result,
+        }) as unknown as [{ status: number }, unknown[]];
+        // BASIS_STALE, as anvil's burst mining can make it (tools/anvil-blockhash-repro).
+        return encodeFunctionResult({
+          abi: lensReaderAbi,
+          functionName: "resolveManyAt",
+          result: [{ ...q, status: 11 }, sels] as never,
+        });
+      },
+    });
+    const page = await listFolder(efs, docs);
+    expect(page).toMatchObject({ status: "PRESENT", rereads: 1 });
+    expect(page.evidence.attempts.filter((a) => a.outcome === "FAILED")).toHaveLength(1);
+    // A clean read carries no count.
+    expect(
+      "rereads" in (await listFolder(createEfs({ rpcs: [fixture.rpcUrl], deployment }), docs)),
+    ).toBe(false);
+  });
+
   it("lookups: a failed heads read is UNKNOWN (never ABSENT_PROVEN), and a selection that skips the Lens law is refused", async () => {
     const HEADS_AT = sel(ledgerViewsAbi, "headsAt");
     expect(

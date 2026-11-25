@@ -840,7 +840,9 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   the index cannot vouch for is PARTIAL `INDEX_PARTIAL`; an empty PARTIAL page with a `next` means "keep reading". A
   page with no rows is PRESENT only when COMPLETE (or the end of a resumed listing): a fresh scan that found nothing
   but cannot vouch for it is UNKNOWN, never an empty folder. A fresh listing whose readers saw the chain move
-  (BASIS_STALE) is read again from the start, at most three times; a stale cursor is UNKNOWN with BASIS_STALE,
+  (BASIS_STALE) is read again from the start, at most three times, and says so (`rereads`, with every attempt in
+  `evidence.attempts`: on a real chain it should stay absent; anvil does it while mining bursts, see
+  `tools/anvil-blockhash-repro`); a stale cursor is UNKNOWN with BASIS_STALE,
   `after-replan`: list again from the start. A row with no name record is returned as `invalid`, and the rest of the
   page stands. Cost: three
   round trips per page (the page, its authors, the rows' Types and owners); `withSize` adds one read per file row and

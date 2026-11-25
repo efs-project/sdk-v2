@@ -153,6 +153,12 @@ export type FolderPage =
       /** COMPLETE only for a listing scanned from its start to its end on one page. An empty PARTIAL page means "keep reading". */
       coverage: FolderCoverage;
       next?: FolderCursor;
+      /**
+       * How many times this page was read again because its readers disagreed about the chain's state at one block
+       * (BASIS_STALE between calls). Absent when none. Every attempt is in `evidence.attempts`. On a real chain this
+       * should stay absent: a count here means the endpoint answered one block hash from two states.
+       */
+      rereads?: number;
       basis: Basis;
       evidence: Evidence;
     }
@@ -166,6 +172,12 @@ export type FolderPage =
       status: "ABSENT_PROVEN" | "UNKNOWN" | "INVALID";
       folder: FolderRef;
       reason: Reason;
+      /**
+       * How many times this page was read again because its readers disagreed about the chain's state at one block
+       * (BASIS_STALE between calls). Absent when none. Every attempt is in `evidence.attempts`. On a real chain this
+       * should stay absent: a count here means the endpoint answered one block hash from two states.
+       */
+      rereads?: number;
       basis?: Basis;
       evidence: Evidence;
     };
@@ -616,10 +628,17 @@ export async function listFolder(
   // BASIS_STALE means the readers saw the chain move between calls: read the page again at a fresh basis, a bounded
   // number of times. A cursor the page reader itself refuses as stale is the caller's to restart; one refused only
   // by a follow-up read is still good, so that page is read again too.
+  const attempts: Evidence["attempts"][number][] = [];
+  let requests = 0;
   for (let attempt = 1; ; attempt++) {
     const page = await listFolderOnce(efs, folder, o);
+    attempts.push(...page.evidence.attempts);
+    requests += page.evidence.requests;
     const stale = page.status === "UNKNOWN" && page.reason.code === "BASIS_STALE";
-    if (!stale || attempt >= 3 || (o.cursor && !rereadable.has(page.reason))) return page;
+    if (!stale || attempt >= 3 || (o.cursor && !rereadable.has(page.reason)))
+      return attempt === 1
+        ? page
+        : { ...page, rereads: attempt - 1, evidence: { attempts, requests } };
   }
 }
 
