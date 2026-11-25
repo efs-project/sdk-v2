@@ -25,7 +25,20 @@ export interface StartFixtureOptions {
   ttlSeconds?: number;
   /** The lease registry and state directory. Default: a new temporary directory, removed by stop(). */
   home?: string;
+  /**
+   * The chain id (a positive safe integer). Default 31337. The deployment plan is built for this chain, so the
+   * returned `deployment` carries the ids and addresses for it. A sticky id per worktree keeps wallets apart.
+   */
+  chainId?: number;
+  /**
+   * The lease name (the registry's rule: a letter or digit, then letters, digits, `.`, `_` or `-`; at most 64).
+   * Default: a unique name for this process. Reusing a name whose anvil is still running fails as already leased.
+   */
+  name?: string;
 }
+
+/** The fixture registry's instance-name rule. */
+const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export interface FixtureAccount {
   address: Hex;
@@ -53,6 +66,8 @@ export interface FixtureSeed {
 }
 
 export interface FixtureChain {
+  /** The lease name (StartFixtureOptions.name, or the generated one). */
+  name: string;
   rpcUrl: string;
   chainId: number;
   /** The efs-deployment document: pass it to createEfs({ rpcs: [rpcUrl], deployment }). */
@@ -113,6 +128,48 @@ function parseResult(command: string, r: Ran): Record<string, unknown> {
   throw new Error(`efs-fixture ${command} failed: ${why}`);
 }
 
+/** `down --purge` one named instance in `home`. NO_INSTANCE (nothing leased under that name) is not an error. */
+async function downInstance(
+  name: string,
+  home: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ existed: boolean; wasLive: boolean }> {
+  const r = await runCli(["down", "--name", name, "--home", home, "--purge", "--json"], env);
+  let out: { ok?: boolean; wasLive?: boolean; error?: { code?: string } } | undefined;
+  try {
+    out = JSON.parse(r.stdout) as typeof out;
+  } catch {
+    // no JSON: parseResult below reports the failure
+  }
+  if (out?.ok === false && out.error?.code === "NO_INSTANCE")
+    return { existed: false, wasLive: false };
+  const done = parseResult("down", r) as { wasLive?: boolean };
+  return { existed: true, wasLive: done.wasLive === true };
+}
+
+export interface StopFixtureOptions {
+  /** The lease name the chain was started with (StartFixtureOptions.name). */
+  name: string;
+  /** The registry home it was started with (StartFixtureOptions.home). Required: only that registry is touched. */
+  home: string;
+}
+
+/**
+ * Stop the fixture chain leased as `name` in `home` and remove its state, e.g. after the process that started it
+ * died without stop() (kill -9), so the next start does not fail as already leased. A no-op when no such instance
+ * exists. It signals only the anvil whose pid, start time and command match the lease, never another process.
+ */
+export async function stopFixtureChain(
+  o: StopFixtureOptions,
+): Promise<{ existed: boolean; wasLive: boolean }> {
+  if (!NAME.test(o.name))
+    throw new Error(
+      `name ${JSON.stringify(o.name)} must match ${NAME} (letters, digits, . _ -; at most 64)`,
+    );
+  if (typeof o.home !== "string" || o.home === "") throw new Error("home is required");
+  return downInstance(o.name, resolve(o.home), { ...process.env });
+}
+
 /** Start a fresh fixture chain. Resolves once the deployment and the seed are in place and verified. */
 export async function startFixtureChain(o: StartFixtureOptions = {}): Promise<FixtureChain> {
   const env = { ...process.env };
@@ -126,9 +183,15 @@ export async function startFixtureChain(o: StartFixtureOptions = {}): Promise<Fi
       throw new Error(`anvilPath's directory must not contain "${delimiter}"`);
     env["PATH"] = `${dirname(bin)}${delimiter}${env["PATH"] ?? ""}`;
   }
+  if (o.chainId !== undefined && !(Number.isSafeInteger(o.chainId) && o.chainId > 0))
+    throw new Error(`chainId must be a positive safe integer (got ${String(o.chainId)})`);
+  if (o.name !== undefined && !NAME.test(o.name))
+    throw new Error(
+      `name ${JSON.stringify(o.name)} must match ${NAME} (letters, digits, . _ -; at most 64)`,
+    );
   const ownHome = o.home === undefined;
-  const home = o.home ?? mkdtempSync(join(tmpdir(), "efs-fixture-"));
-  const name = `efs-fixture-${process.pid}-${randomBytes(3).toString("hex")}`;
+  const home = o.home === undefined ? mkdtempSync(join(tmpdir(), "efs-fixture-")) : resolve(o.home);
+  const name = o.name ?? `efs-fixture-${process.pid}-${randomBytes(3).toString("hex")}`;
   const args = [
     "up",
     "--name",
@@ -142,13 +205,14 @@ export async function startFixtureChain(o: StartFixtureOptions = {}): Promise<Fi
     "--json",
   ];
   if (o.port !== undefined) args.push("--port", String(o.port));
+  if (o.chainId !== undefined) args.push("--chain-id", String(o.chainId));
 
-  /** `down`, then (only once anvil is known to be stopped) the temporary home with its lease registry. */
+  /**
+   * `down` (already gone, e.g. stopped by stopFixtureChain, counts as stopped), then, only once anvil is known to be
+   * stopped, the temporary home with its lease registry.
+   */
   const down = async (): Promise<void> => {
-    parseResult(
-      "down",
-      await runCli(["down", "--name", name, "--home", home, "--purge", "--json"], env),
-    );
+    await downInstance(name, home, env);
     if (ownHome) rmSync(home, { recursive: true, force: true });
   };
 
@@ -176,6 +240,7 @@ export async function startFixtureChain(o: StartFixtureOptions = {}): Promise<Fi
     let stopping: Promise<void> | undefined;
     let stopped = false;
     return {
+      name,
       rpcUrl: String(ready["rpcUrl"]),
       chainId: Number(ready["chainId"]),
       deployment,

@@ -18,13 +18,31 @@ with the `@efs/sdk` tarball packed from the same commit.
 import { startFixtureChain } from "@efs/fixture";
 import { createEfs } from "@efs/sdk";
 
-const chain = await startFixtureChain();          // { rpcUrl, chainId, deployment, accounts, seed, contracts, stop }
+const chain = await startFixtureChain();          // { name, rpcUrl, chainId, deployment, accounts, seed, contracts, stop }
 const efs = createEfs({ rpcs: [chain.rpcUrl], deployment: chain.deployment });
 // … edit chain.seed.files[0] as chain.accounts.fixture.address through your EIP-1193 provider …
 await chain.stop();
 ```
 
 Options: `anvilPath` (an `anvil` binary; default `anvil` on PATH), `port` (default: a free port), `ttlSeconds`
-(default 900; 0 = never), `home` (lease and state directory; default a temporary one, removed by `stop()`).
+(default 900; 0 = never), `home` (lease and state directory; default a temporary one, removed by `stop()`),
+`chainId` (default 31337; the deployment is built for that chain, e.g. a sticky id per worktree so wallets keep
+them apart) and `name` (the lease name; default a unique one per process; letters, digits, `.`, `_`, `-`, at most
+64).
+
+A chain left running under a sticky `name` (its process died without `stop()`) makes the next start fail as already
+leased. `stopFixtureChain({ name, home })` stops it and removes its state; it is a no-op when nothing is leased under
+that name, and it signals only the anvil whose pid, start time and command match the lease:
+
+```js
+import { startFixtureChain, stopFixtureChain } from "@efs/fixture";
+
+const opts = { name: "efs-dev-3f9a1c", home: ".efs-dev/fixture", chainId: 3133742, ttlSeconds: 86_400 };
+const chain = await startFixtureChain(opts).catch(async (e) => {
+  if (!/already leased/.test(String(e))) throw e;
+  await stopFixtureChain(opts); // this worktree's own orphan
+  return startFixtureChain(opts);
+});
+```
 
 The keys are anvil's public development keys: never use them with value. License: MIT.
