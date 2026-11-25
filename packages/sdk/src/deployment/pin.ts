@@ -136,7 +136,9 @@ export async function pinDeployment(
         args: [d.ledger],
       });
       // Every contract the SDK reads through, with the code hash the document recorded for it. The newer ones are
-      // checked whenever the document names them.
+      // checked whenever the document names them. The web3:// gateway (EfsWeb3Gateway) and its content contract
+      // (EfsWeb3Content) are deliberately not pinned: a web3:// read is verified by the file's digest (length and
+      // sha256), so a gateway that lies can only make a read UNAVAILABLE, never wrong.
       const pinned: { what: string; address: Hex; codehash: Hex }[] = [
         {
           what: "ledger implementation",
