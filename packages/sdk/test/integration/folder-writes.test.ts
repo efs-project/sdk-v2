@@ -4,7 +4,13 @@
 // keeps working, a path through the old name answers ABSENT_PROVEN), batches, and the refusals that plan nothing.
 // Two accounts of anvil's public development mnemonic (indexes 10 and 11, used by no other test file), funded here.
 import { readFileSync } from "node:fs";
-import { decodeFunctionResult, encodeFunctionData, keccak256, toHex } from "viem";
+import {
+  decodeFunctionResult,
+  encodeFunctionData,
+  keccak256,
+  toFunctionSelector,
+  toHex,
+} from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { ACTION, createWriter, memoryJournal } from "../../src/actions/index.ts";
@@ -582,5 +588,56 @@ describe("folder writes (fixture)", () => {
       planRestoreEntries(efs, w, { entries: [{ folder, name: "deep.txt" }], lens: both }),
     );
     expect(back.review).toMatchObject({ entries: [{ target: f.review.file }] });
+  });
+
+  it("restore's count comes only from the index generation the deployment names", async () => {
+    await run(
+      w,
+      planCreateFile(efs, w, { folder, name: "pinned.txt", content: text("p"), lens: both }),
+    );
+    await run(
+      w,
+      planRemoveEntries(efs, w, { entries: [{ folder, name: "pinned.txt" }], lens: both }),
+    );
+    const honest = await planRestoreEntries(efs, w, {
+      entries: [{ folder, name: "pinned.txt" }],
+      lens: both,
+    });
+    expect(honest).toMatchObject({ status: "PLANNED", review: { entries: [{ alsoPlaced: 0 }] } });
+    // An endpoint whose ledger names another index generation: the count can't be vouched for, so it is null.
+    const indexSel = toFunctionSelector("function index()");
+    const elsewhere = `0x${"0".repeat(24)}${"ee".repeat(20)}`;
+    const lying = createEfs({
+      rpcs: [fixture.rpcUrl],
+      deployment,
+      fetch: async (url, init) => {
+        const res = await fetch(url, init as RequestInit);
+        const sent = JSON.parse(init.body ?? "null");
+        const got = JSON.parse(await res.text());
+        const reqs = Array.isArray(sent) ? sent : [sent];
+        const outs = Array.isArray(got) ? got : [got];
+        for (const r of reqs)
+          if (r?.method === "eth_call" && String(r.params?.[0]?.data).startsWith(indexSel)) {
+            const item = outs.find((o: { id: number }) => o.id === r.id);
+            if (item) item.result = elsewhere;
+          }
+        const body = JSON.stringify(Array.isArray(got) ? outs : outs[0]);
+        return {
+          ok: true,
+          status: 200,
+          headers: res.headers,
+          text: async () => body,
+          arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer,
+        };
+      },
+    });
+    const unvouched = await planRestoreEntries(lying, w, {
+      entries: [{ folder, name: "pinned.txt" }],
+      lens: both,
+    });
+    expect(unvouched).toMatchObject({
+      status: "PLANNED",
+      review: { entries: [{ alsoPlaced: null }] },
+    });
   });
 });

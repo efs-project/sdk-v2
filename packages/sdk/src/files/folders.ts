@@ -15,7 +15,6 @@ import { decodeFunctionResult, encodeFunctionData, keccak256 } from "viem";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs, Lens } from "../client.js";
-import { encode } from "../content/codec.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import {
   bytesToHex,
@@ -35,7 +34,7 @@ import {
 } from "../generated/abis.js";
 import { FILES, PURPOSES } from "../generated/constants.js";
 import { checkName, decodeScalars, type NameRule } from "../names/name.js";
-import { positionKey, recordId } from "../protocol/keys.js";
+import { positionKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import {
   type Ctx,

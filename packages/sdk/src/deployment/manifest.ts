@@ -9,7 +9,6 @@ import {
   lower,
   type PrincipalId,
   type RecordId,
-  type SubjectId,
 } from "../core/hex.js";
 
 export interface ProtocolLimits {
@@ -66,7 +65,7 @@ export interface DeploymentInfo {
    * The index families the SDK reads, as the deployment recorded them (the live generation's address is read from
    * the ledger at each basis). `backlinkFamily`: bindings by target (kind 5, universe TARGET), null when absent.
    */
-  index: { backlinkFamily: Hex | null };
+  index: { address: Address | null; backlinkFamily: Hex | null };
   defaultLens: readonly PrincipalId[];
   typeIds: Readonly<Record<string, Hex>>;
   limits: ProtocolLimits;
@@ -93,7 +92,7 @@ const ROOT_HEADER_BYTES = 64;
 /** Validate an efs-deployment/1 document. Pure; no network. */
 /** The backlink family's id (kind 5 over the TARGET universe), or null when the document names none. */
 function backlinkFamily(index: unknown): Hex | null {
-  const families = (obj(index) ?? {})["families"];
+  const families = obj(index)?.["families"];
   if (!Array.isArray(families)) return null;
   for (const f of families) {
     const o = obj(f);
@@ -135,6 +134,7 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
   const unit = (name: string): Obj => obj(contracts[name]) ?? {};
   const proxy = obj(obj(d["proxies"])?.["ledger"]) ?? {};
   const root = obj(d["root"]) ?? {};
+  const indexDoc = obj(d["index"]) ?? {};
   const limits = obj(d["limits"]) ?? {};
   const activation = obj(d["activation"]) ?? {};
   const typeIds = obj(d["typeIds"]) ?? {};
@@ -206,7 +206,12 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       directoryRecordId: word("root.directoryRecordId", root["directoryRecordId"]) as RecordId,
       principalId: word("root.principalId", root["principalId"]) as PrincipalId,
     },
-    index: { backlinkFamily: backlinkFamily(d["index"]) },
+    index: {
+      address: isAddress(indexDoc["address"])
+        ? (lower(indexDoc["address"] as Address) as Address)
+        : null,
+      backlinkFamily: backlinkFamily(indexDoc),
+    },
     defaultLens: defaultLens.map((p, i) => word(`defaultLensPrincipals[${i}]`, p) as PrincipalId),
     typeIds: typeIdOut,
     limits: {

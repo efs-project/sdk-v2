@@ -1149,7 +1149,8 @@ async function placements(
 ): Promise<Step<(number | null)[]>> {
   const d = ctx.efs.deployment;
   const family = d.index.backlinkFamily;
-  if (!family || targets.length === 0) return { ok: true, value: targets.map(() => null) };
+  const nulls = targets.map(() => null);
+  if (!family || !d.index.address || targets.length === 0) return { ok: true, value: nulls };
   ctx.requests += 1;
   const [ix] = await callsAt(s, basis.blockHash, [
     { to: d.ledger, data: encodeFunctionData({ abi: ledgerAbi, functionName: "index" }) },
@@ -1165,6 +1166,9 @@ async function placements(
   } catch {
     return bad("index");
   }
+  // Only the generation the deployment document names (its family ids are that generation's): another one, or an
+  // endpoint that names another, can't vouch for the count.
+  if (lower(index) !== d.index.address) return { ok: true, value: nulls };
   ctx.requests += targets.length;
   const outs = await callsAt(
     s,
