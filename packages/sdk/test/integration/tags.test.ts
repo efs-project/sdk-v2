@@ -564,7 +564,7 @@ describe("tags: the review's cases (fixture)", () => {
         abi: topicMineReaderAbi,
         functionName: "mine",
         data: result,
-      }) as unknown[];
+      }) as unknown as unknown[];
       return encodeFunctionResult({
         abi: topicMineReaderAbi,
         functionName: "mine",
