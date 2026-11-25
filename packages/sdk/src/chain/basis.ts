@@ -36,7 +36,8 @@ export async function getBlock(s: Session, at: BasisPolicy | bigint): Promise<St
 }
 
 export interface CallRequest {
-  to: Address;
+  /** Absent for a deployless call: `data` is initcode, and the call returns what it would deploy. */
+  to?: Address;
   data: Hex;
   from?: Address;
 }
@@ -51,7 +52,7 @@ export async function callsAt(
     calls.map((c) => ({
       method: "eth_call",
       params: [
-        { to: c.to, data: c.data, ...(c.from ? { from: c.from } : {}) },
+        { ...(c.to ? { to: c.to } : {}), data: c.data, ...(c.from ? { from: c.from } : {}) },
         { blockHash, requireCanonical: true },
       ],
     })),

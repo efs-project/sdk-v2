@@ -918,6 +918,22 @@ dropped. The whole answer is UNKNOWN when no consistent endpoint read the kind, 
 `efs.lens.place({ reader, owner, base })` builds a place's
 Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out), then `base`, each once.
 
+**Homes.** Wherever a folder parent is taken, a home is too: `{ kind: "home", address }` (`HomeRef`; the union is
+`ParentRef`). A home is an address as a folder parent: its entries are FOLDER bindings at the left-padded address,
+the word the gateway's `/0x<address>/…` serves (FilesFinalValidator admits an address-shaped parent), so anyone can
+attach files and folders to anyone's address and the Lens decides whose show. A home always exists (any address but
+zero; zero or a malformed address is MISUSE), so it is never ABSENT_PROVEN or INVALID: an untouched home is an empty
+COMPLETE page. Its `owner` is the address's author identity at the read's block, the gateway's `Keys.principalFor`:
+the key principal (the padded address) of a key account, an EIP-7702 account with exactly the `ef0100 ‖ address`
+designator included, and the Realm's contract principal of a contract, so a Safe's home shows the Safe's own entries.
+It is true only as of that basis and can change (a counterfactual Safe's address is a key home until code lands; a
+7702 delegation set or cleared): never cache it across bases. The SDK reads it with one deployless probe in the same
+batch. `openHome(efs, address, { reader?, base? })` → `PRESENT { home (with owner), lens }` | `UNKNOWN`: the Lens to
+show a home under is the reader, then its owner, then `base`. `openPath` takes a `HomeLink` with names
+(`/0x<address>/photos/cat.jpg`) the same way, under the link's own `?lens=` or that default. Every write planner
+takes a home as a parent (create, move to or from it, `via` from it, remove, restore, hide, unhide), and
+`listRemoved` lists a home's removed entries. In effects and reviews' `folder` words a home is its padded address.
+
 **Reads** (`@efs/sdk/files`, all at one block):
 - `listFolder(efs, folder, { lens?, kinds?, limit?, cursor?, withSize? })` → `PRESENT { folder, rows, skipped,
   coverage, next? }` | `ABSENT_PROVEN` (no such folder: never "empty") | `UNKNOWN` | `INVALID`. One row per name.

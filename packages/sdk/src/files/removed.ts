@@ -8,7 +8,7 @@ import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
-import { type Hex, hexToBytes, lower, type PrincipalId, type RecordId } from "../core/hex.js";
+import { type Hex, hexToBytes, lower, type PrincipalId } from "../core/hex.js";
 import { utf8Encode } from "../core/platform.js";
 import {
   bitmapStoreAbi,
@@ -22,7 +22,14 @@ import { decodeScalars } from "../names/name.js";
 import { bindingKey, recordFromHash, scopeKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import type { Ctx, Evidence } from "./bytes.js";
-import { type EntryTarget, type FolderCoverage, type FolderRef, targetRef } from "./folders.js";
+import {
+  checkParent,
+  type EntryTarget,
+  type FolderCoverage,
+  type ParentRef,
+  parentSubject,
+  targetRef,
+} from "./folders.js";
 
 /**
  * What an entry pointed at before it was removed, read from its history:
@@ -65,7 +72,7 @@ export type RemovedPage =
   | {
       kind: "efs.removedPage";
       status: "PRESENT";
-      folder: FolderRef;
+      folder: ParentRef;
       author: PrincipalId;
       rows: readonly RemovedRow[];
       /** COMPLETE only for the author's whole scope list read from its start on this page. */
@@ -78,7 +85,7 @@ export type RemovedPage =
       kind: "efs.removedPage";
       /** ABSENT_PROVEN: no such folder. UNKNOWN: nothing decided (never an empty list). INVALID: not a folder. */
       status: "ABSENT_PROVEN" | "UNKNOWN" | "INVALID";
-      folder: FolderRef;
+      folder: ParentRef;
       author: PrincipalId;
       reason: Reason;
       basis?: Basis;
@@ -144,20 +151,18 @@ type RawHead = {
  */
 export async function listRemoved(
   efs: Efs,
-  input: { folder: FolderRef; author: PrincipalId },
+  input: { folder: ParentRef; author: PrincipalId },
   o: ListRemovedOpts = {},
 ): Promise<RemovedPage> {
-  const dir = input.folder?.directory;
-  if (input.folder?.kind !== "folder" || !/^0x[0-9a-fA-F]{64}$/.test(dir ?? ""))
-    throw misuse("a folder is { kind: 'folder', directory: <files-directory/1 record id> }");
+  const folder = checkParent(input.folder);
+  const subject = parentSubject(folder);
   if (!/^0x[0-9a-fA-F]{64}$/.test(input.author ?? ""))
     throw misuse("author is a 32-byte principal id");
   const limit = o.limit ?? 50;
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT)
     throw misuse(`limit is a whole number from 1 to ${MAX_LIMIT}`);
-  const folder: FolderRef = { kind: "folder", directory: lower(dir) as RecordId };
   const author = lower(input.author) as PrincipalId;
-  const query = queryOf(folder.directory, author);
+  const query = queryOf(subject, author);
   if (o.cursor && (o.cursor.v !== 1 || o.cursor.query !== query || !/^[0-9]+$/.test(o.cursor.from)))
     throw misuse("this cursor continues another listing (another folder or author)");
   const from = o.cursor ? BigInt(o.cursor.from) : 0n;
@@ -188,29 +193,35 @@ export async function listRemoved(
     };
   const dirType = lower(d.typeIds["files-directory/1"] as Hex);
   const nameType = d.typeIds["files-name/2"] as Hex;
-  const scope = scopeKey(author, PURPOSES.folder, folder.directory);
+  const scope = scopeKey(author, PURPOSES.folder, subject);
   type Out =
     | { kind: "page"; rows: RemovedRow[]; coverage: FolderCoverage; next?: bigint }
     | { kind: "refused"; status: "ABSENT_PROVEN" | "UNKNOWN" | "INVALID"; reason: Reason };
   const r = await onEndpoint<Out>(
     efs._internal.pool,
     async (s) => {
-      // 1. The index generation and its store must be the deployment's, and the folder must be a folder.
-      ctx.requests += 4;
+      // 1. The index generation and its store must be the deployment's, and the folder must be a folder (a home
+      // always exists: it has no record to read).
+      const home = folder.kind === "home";
+      ctx.requests += home ? 3 : 4;
       const outs1 = await callsAt(s, basis.blockHash, [
         call(d.ledger, ledgerAbi, "index"),
         call(indexAddress, indexAbi, "bitmapStore"),
         call(indexAddress, indexAbi, "coverage", [scopeFamily, scope]),
-        call(d.readers.ledgerViews, ledgerViewsAbi, "records", [d.ledger, [folder.directory]]),
+        ...(home
+          ? []
+          : [call(d.readers.ledgerViews, ledgerViewsAbi, "records", [d.ledger, [subject]])]),
       ]);
       const ix = decode<Hex>(ledgerAbi, "index", outs1[0]);
       const store = decode<Hex>(indexAbi, "bitmapStore", outs1[1]);
       const cov = decode<[number, bigint, bigint, number]>(indexAbi, "coverage", outs1[2]);
-      const rec = decode<[number[], { typeId: Hex; length: number }[]]>(
-        ledgerViewsAbi,
-        "records",
-        outs1[3],
-      );
+      const rec = home
+        ? ({ ok: true, value: [[], []] } as const)
+        : decode<[number[], { typeId: Hex; length: number }[]]>(
+            ledgerViewsAbi,
+            "records",
+            outs1[3],
+          );
       for (const x of [ix, store, cov, rec]) if (!x.ok) return x;
       if (!ix.ok || !store.ok || !cov.ok || !rec.ok) return bad("unreachable");
       if (lower(ix.value) !== indexAddress || lower(store.value) !== bitmapStore)
@@ -226,8 +237,8 @@ export async function listRemoved(
             ),
           },
         };
-      const st = chainStatus(rec.value[0][0] as number);
-      const h = rec.value[1][0];
+      const st = home ? "PRESENT" : chainStatus(rec.value[0][0] as number);
+      const h = home ? undefined : rec.value[1][0];
       if (st === "ABSENT_PROVEN")
         return {
           ok: true,
@@ -237,8 +248,8 @@ export async function listRemoved(
             reason: reason("NOT_YET_DECIDABLE", "never", "no folder has this record id"),
           },
         };
-      if (st !== "PRESENT" || !h) return bad(`records (${st})`);
-      if (lower(h.typeId) !== dirType || Number(h.length) !== 64)
+      if (!home && (st !== "PRESENT" || !h)) return bad(`records (${st})`);
+      if (h && (lower(h.typeId) !== dirType || Number(h.length) !== 64))
         return {
           ok: true,
           value: {
@@ -308,12 +319,12 @@ export async function listRemoved(
             outs4[1 + i],
           );
           if (!cell.ok) return cell;
-          const [cst, purpose, subject, role] = cell.value;
+          const [cst, purpose, cellSubject, role] = cell.value;
           // The scope list is this author's FOLDER positions under this folder: anything else is a reply to refuse.
           if (
             chainStatus(cst) !== "PRESENT" ||
             lower(purpose) !== lower(PURPOSES.folder) ||
-            lower(subject) !== folder.directory
+            lower(cellSubject) !== subject
           )
             return {
               ok: false,

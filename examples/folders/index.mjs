@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // EFS SDK v0.1, folders: create a folder and a file under a parent, list it, rename the file, remove it and restore
 // it, on a local fixture chain (`anvil` on PATH). Every step is asserted, so CI fails if this stops being true. The
-// Realm's shared root is only a stand-in parent here: real folders will live under an address once homes land.
+// parent here is the Realm's shared root; a home (`{ kind: "home", address }`: anyone's address) works the same way.
 import assert from "node:assert/strict";
 import { startFixtureChain } from "@efs/fixture";
 import { createEfs, link, parseLink } from "@efs/sdk";

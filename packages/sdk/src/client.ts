@@ -67,8 +67,9 @@ export interface LensTools {
   from(input: readonly (PrincipalId | Address)[]): Lens;
   mineFirst(me: Address | PrincipalId, base?: Lens): Lens;
   /**
-   * The Lens for viewing a place (a folder, later an address or a topic): the reader first, then the place's owner
-   * (FolderRef.owner, or the address itself), then `base` (default: the client's default Lens), each principal once.
+   * The Lens for viewing a place (a folder or a home; later a topic): the reader first, then the place's owner
+   * (FolderRef.owner, or HomeRef.owner: the address's author identity as of a read, from openHome or a listing), then
+   * `base` (default: the client's default Lens), each principal once.
    * Pass `owner: null` to leave the owner out (the reader switched it off). "Everyone" (public) arrives with the
    * contracts' all-authors lists and is not a Lens principal.
    */
