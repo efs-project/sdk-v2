@@ -33,7 +33,7 @@
 | `@efs/sdk/web` | browser helpers (no journal) | yes |
 | `@efs/sdk/web/journal` | `indexedDbJournal`, submission lock (Web Locks) | no |
 | `@efs/sdk/node` | `fileJournal`, file-system stores (Node condition only) | no |
-| `@efs/sdk/testing` | `guestProbe`, fixture helpers | dev only |
+| `@efs/sdk/testing` | `guestProbe`, RPC transcript replay, `planLoneHide` (a lone hide, for Unhide tests) | dev only |
 | `@efs/sdk/fixtures/*.json` | recorded result fixtures (§9) | dev only |
 | `@efs/sdk/protocol-inputs.json` | the contracts commit (later, the release digest) this build targets | — |
 
@@ -1009,6 +1009,9 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
 - `planUnhideEntries(efs, w, { entries, lens? })`: RELEASE your own hidden (MASKED) entries, so the Lens falls through
   to the next author's entry at each name again. It answers a `NEVER_BOUND` row and works on any of your hides;
   `NOT_HIDDEN` for an entry that isn't hidden, `ENTRY_ABSENT` where you have no entry. Effect `files.unhide`.
+  To test it on a chain, `planLoneHide(efs, w, { folder, name, lens? })` from `@efs/sdk/testing` plans a lone hide
+  (the name record when missing, then an UNBIND at your revision there; review `efs.loneHideReview`, effect
+  `files.hide`). It throws MISUSE unless the name is lone for you: never stated, or released after lone hides only.
 - Every planner writes only the writer's own entries, each with a compare-and-swap on its revision. Refusal codes:
   `NAME_TAKEN_MINE` (your own entry holds the name), `NOT_YOURS` (with `author` and `admission`), `FOLDER_ABSENT`,
   `ENTRY_ABSENT`, `NOT_REMOVED`, `NEVER_BOUND`, `HISTORY_UNKNOWN`, `NOT_HIDDEN`, `PATH_CHANGED`. A batch refuses as a whole and lists every refusal by `index`

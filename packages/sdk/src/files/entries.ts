@@ -1408,6 +1408,99 @@ export async function planUnhideEntries(
   });
 }
 
+// ---- a lone hide (test-only: exported from @efs/sdk/testing)
+
+export interface LoneHideInput {
+  folder: FolderRef;
+  name: string;
+  lens?: Lens;
+}
+export interface LoneHideReview extends FolderReviewBase {
+  kind: "efs.loneHideReview";
+  entry: EntryRef;
+  /** What this Lens shows at that name afterwards: an earlier author's entry, or nothing (null). */
+  shownAfter: { author: PrincipalId } | null;
+}
+
+/**
+ * Test-only (exported from `@efs/sdk/testing`): plan a lone hide, an UNBIND at a name where you never placed anything,
+ * which listRemoved shows as NEVER_BOUND (the case Unhide answers). The name record is published first when it is
+ * missing (the validator refuses a first statement without it). Throws MISUSE unless the name is lone for you: never
+ * stated, or released after lone hides only (so a retried test can hide it again); your own entry, one you once
+ * placed, or a hide already in place is not.
+ */
+export async function planLoneHide(
+  efs: Efs,
+  writer: { readonly principal: PrincipalId },
+  input: LoneHideInput,
+  o: FolderPlanOpts = {},
+): Promise<FolderPlanResult<LoneHideReview>> {
+  const me = lower(writer.principal) as PrincipalId;
+  const principals = lensPrincipals(efs, input.lens);
+  const types = typesOf(efs);
+  const p = placeOf(input.folder, input.name, 0);
+  const nameId = nameRecord(types, p);
+  return atOneBasis(efs, o, async (ctx, s, basis) => {
+    const r = await readSeen(ctx, s, basis, me, principals, [p], [nameId]);
+    if (!r.ok) return r;
+    const st = r.value.places.get(p.position) as PlaceState;
+    const state = headState(st.mine.state);
+    const notLone = (why: string): Step<() => Promise<FolderPlanResult<LoneHideReview>>> => ({
+      ok: true,
+      value: async () => {
+        throw misuse(`planLoneHide: ${p.name} is not lone for you: ${why}`, { name: p.name });
+      },
+    });
+    if (state === "BOUND") return notLone("your entry is there");
+    if (state === "MASKED") return notLone("your hide is already there");
+    if (state === "RELEASED") {
+      const last = await lastBoundTarget(ctx, s, basis, bindingKey(me, p.position), st.mine);
+      if (!last.ok) return last;
+      if (last.value.last !== "NEVER_BOUND") return notLone("you placed something there before");
+    }
+    const needName = !(r.value.records.get(nameId)?.present ?? false);
+    const unset = isUnset(st.mine);
+    const args = effectArgs(p, {});
+    const units: Unit[] = [
+      {
+        effect: (stage, part, parts) => ({
+          code: "files.hide",
+          args: { ...args, part: String(part), parts: String(parts), stage },
+          text: `Hide ${p.name}`,
+        }),
+        actions: [
+          ...(needName ? [publish(types.name, p.nameBytes, "files-name/2", 1)] : []),
+          plain(
+            {
+              kind: ACTION.UNBIND,
+              purpose: PURPOSES.folder,
+              subject: p.folder,
+              role: p.role,
+              expectedRevision: BigInt(st.mine.revision),
+            },
+            { group: 1, firstStatement: unset, bindRow: "unbindFolder" },
+          ),
+        ],
+        finishes: true,
+      },
+    ];
+    const item = { entry: entryOf(p), shownAfter: shownAfter(principals, st, me, "MASKED") };
+    return {
+      ok: true,
+      value: () =>
+        toParts(
+          efs,
+          o,
+          units,
+          (base) => ({ kind: "efs.loneHideReview", ...base, ...item }),
+          me,
+          basis,
+          needName ? 1 : 0,
+        ),
+    };
+  });
+}
+
 export interface RestoreEntriesInput {
   /**
    * `via` is required when the entry restored is a folder, as for planMoveEntries: the path to the entry's folder

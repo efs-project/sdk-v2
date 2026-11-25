@@ -82,7 +82,7 @@ if (edit.status === "BASE_CHANGED") {
 | `@efs/sdk/web/journal` | `indexedDbJournal`, the durable write journal for pages and workers |
 | `@efs/sdk/web/cache` | `indexedDbByteStore`, an opt-in persistent cache of verified bytes |
 | `@efs/sdk/node` | `fileJournal` (Node only) |
-| `@efs/sdk/testing` | RPC transcript replay for chain-free tests (development only) |
+| `@efs/sdk/testing` | RPC transcript replay for chain-free tests; `planLoneHide` for fixture tests (development only) |
 | `@efs/sdk/fixtures/*.json` | recorded results and RPC transcripts from a real fixture chain |
 
 License: MIT.

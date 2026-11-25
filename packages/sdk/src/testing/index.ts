@@ -15,9 +15,16 @@
  * Write flows also carry a wallet half (`wallet`): the EIP-1193 requests the writer made of the wallet, in order, with
  * the wallet's result or error. `replayProvider(t)` answers them by the same matching rule, so a fake wallet plus
  * `replayFetch(t)` replays a whole edit (plan, approval, send, settle) with no chain and no wallet.
+ *
+ * `planLoneHide(efs, writer, { folder, name })` plans, for writer.runSequence, a state the SDK's planners never make
+ * on purpose: your hide at a name where you never placed anything (listRemoved's NEVER_BOUND row, which Unhide
+ * answers). It is for tests on a real chain; an app does not need it.
  */
 import type { Eip1193Like, FetchLike } from "../chain/rpc.js";
 import { utf8Encode } from "../core/platform.js";
+
+export type { LoneHideInput, LoneHideReview } from "../files/entries.js";
+export { planLoneHide } from "../files/entries.js";
 
 export interface RpcCall {
   /** The request body as sent: one JSON-RPC object or a batch array. */

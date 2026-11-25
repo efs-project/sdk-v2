@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { decodeFunctionResult, encodeFunctionResult } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
-import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { ACTION, createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Hex, PrincipalId, RecordId } from "../../src/core/hex.ts";
 import {
@@ -20,6 +20,7 @@ import type { FolderRef } from "../../src/files/folders.ts";
 import { publish } from "../../src/files/plan.ts";
 import { listRemoved, type RemovedRow } from "../../src/files/removed.ts";
 import { ledgerViewsAbi } from "../../src/generated/abis.ts";
+import { planLoneHide } from "../../src/testing/index.ts";
 import { hideEntry, releaseEntry } from "./recipes.ts";
 import { type Edit, sel, tampered } from "./tamper.ts";
 
@@ -340,5 +341,68 @@ describe("removed entries under the tag release's rules (fixture)", () => {
     expect(
       await planRestoreEntries(efs, w, { entries: [{ folder, name: "deeper.txt" }] }),
     ).toMatchObject({ status: "REFUSED", refused: [{ index: 0, code: "HISTORY_UNKNOWN" }] });
+  });
+});
+
+describe("planLoneHide (@efs/sdk/testing, fixture)", () => {
+  it("hides a name you never placed anything at, publishing its name record only when missing", async () => {
+    const made = await run(planCreateFolder(efs, w, { folder: root, name: "lone-test" }) as never);
+    const here = made["created"] as FolderRef;
+    const kinds = (parts: { actions: { kind: number; expectedRevision: bigint }[] }[]) =>
+      parts.flatMap((p) => p.actions.map((a) => [a.kind, a.expectedRevision]));
+    const rowAt = async (name: string) => {
+      const page = await listRemoved(efs, { folder: here, author: me });
+      if (page.status !== "PRESENT") throw new Error(page.status);
+      return page.rows.find((r) => r.name === name);
+    };
+    // A fresh name: the name record (validator code 1), then the UNBIND at revision 0.
+    const first = await planLoneHide(efs, w, { folder: here, name: "lone.txt" });
+    if (first.status !== "PLANNED") throw new Error(first.status);
+    expect(first.review).toMatchObject({
+      kind: "efs.loneHideReview",
+      records: 1,
+      entry: { folder: { kind: "folder", directory: here.directory }, name: "lone.txt" },
+    });
+    expect(kinds(first.parts as never)).toEqual([
+      [ACTION.PUBLISH, 0n],
+      [ACTION.UNBIND, 0n],
+    ]);
+    expect((await w.runSequence(first.parts)).state).toBe("COMPLETE");
+    expect(await rowAt("lone.txt")).toMatchObject({
+      state: "MASKED",
+      last: "NEVER_BOUND",
+      revision: 1n,
+    });
+    // Already hidden, or your own entry: not a lone hide to make.
+    await expect(planLoneHide(efs, w, { folder: here, name: "lone.txt" })).rejects.toMatchObject({
+      code: "MISUSE",
+    });
+    await run(
+      planCreateFile(efs, w, { folder: here, name: "mine.txt", content: text("m") }) as never,
+    );
+    await expect(planLoneHide(efs, w, { folder: here, name: "mine.txt" })).rejects.toMatchObject({
+      code: "MISUSE",
+    });
+    // After Unhide the name can be hidden again (a retried test), now without the name record.
+    await run(
+      planUnhideEntries(efs, w, { entries: [{ folder: here, name: "lone.txt" }] }) as never,
+    );
+    const again = await planLoneHide(efs, w, { folder: here, name: "lone.txt" });
+    if (again.status !== "PLANNED") throw new Error(again.status);
+    expect(again.review.records).toBe(0);
+    expect(kinds(again.parts as never)).toEqual([[ACTION.UNBIND, 2n]]);
+    expect((await w.runSequence(again.parts)).state).toBe("COMPLETE");
+    expect(await rowAt("lone.txt")).toMatchObject({
+      state: "MASKED",
+      last: "NEVER_BOUND",
+      revision: 3n,
+    });
+    // A name you once placed something at is not lone: its hide would be KNOWN.
+    await run(
+      planRemoveEntries(efs, w, { entries: [{ folder: here, name: "mine.txt" }] }) as never,
+    );
+    await expect(planLoneHide(efs, w, { folder: here, name: "mine.txt" })).rejects.toMatchObject({
+      code: "MISUSE",
+    });
   });
 });
