@@ -1,10 +1,22 @@
 // SPDX-License-Identifier: MIT
 /** `@efs/sdk/actions`: plan, review, send and reconcile publications, with a durable attempt journal. */
 
-export type { AttemptRecord, AttemptStage, Journal, WithLock } from "./journal.js";
+export type { BatchSendResult } from "./batch.js";
+export { atomicBatchSupport } from "./batch.js";
+export type {
+  AttemptRecord,
+  AttemptStage,
+  Journal,
+  SequencePart,
+  SequenceRecord,
+  SequenceState,
+  WithLock,
+} from "./journal.js";
 export {
   decodeJournalRecord,
+  decodeSequenceRecord,
   encodeJournalRecord,
+  encodeSequenceRecord,
   isResolved,
   localLocks,
   lockKey,
@@ -16,6 +28,7 @@ export type { ReconcileOpts } from "./reconcile.js";
 export { reconcileAttempt } from "./reconcile.js";
 export type { Authorizer, LocalAccountLike, SendOpts } from "./send.js";
 export { decodeRevert } from "./send.js";
+export type { SequenceOpts, SequencePartInput, SequenceProgress } from "./sequence.js";
 export type {
   BatchLimits,
   GasModel,

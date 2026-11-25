@@ -12,11 +12,15 @@ import { join } from "node:path";
 import {
   type AttemptRecord,
   decodeJournalRecord,
+  decodeSequenceRecord,
   encodeJournalRecord,
+  encodeSequenceRecord,
+  isOpenSequence,
   isResolved,
   type Journal,
   localLocks,
   lockKey,
+  type SequenceRecord,
 } from "../actions/journal.js";
 import { EfsFault } from "../core/errors.js";
 
@@ -79,6 +83,7 @@ const alive = (pid: number): boolean => {
  */
 export function fileJournal(dir: string, options: FileJournalOptions = {}): Journal {
   const attempts = join(dir, "attempts");
+  const sequences = join(dir, "sequences");
   const lockDir = join(dir, "locks");
   const staleMs = options.staleLockMs ?? 30 * 60_000;
   const pollMs = options.pollMs ?? 100;
@@ -86,6 +91,7 @@ export function fileJournal(dir: string, options: FileJournalOptions = {}): Jour
   const ensure = (): Promise<void> => {
     ready ??= Promise.all([
       mkdir(attempts, { recursive: true }),
+      mkdir(sequences, { recursive: true }),
       mkdir(lockDir, { recursive: true }),
     ]).then(
       () => undefined,
@@ -209,8 +215,55 @@ export function fileJournal(dir: string, options: FileJournalOptions = {}): Jour
     });
   };
 
+  const readSequence = async (file: string): Promise<SequenceRecord | undefined> => {
+    let text: string;
+    try {
+      text = await readFile(join(sequences, file), "utf8");
+    } catch (e) {
+      if (code(e) === "ENOENT") return undefined;
+      throw unavailable(e, `cannot read ${file}`);
+    }
+    try {
+      return decodeSequenceRecord(text);
+    } catch (e) {
+      throw new EfsFault("INVARIANT", `sequence record ${file} is unreadable`, { cause: e });
+    }
+  };
+
   return {
     durable: true,
+    async putSequence(record) {
+      const id = record.sequenceId.toLowerCase();
+      if (!PLAN_ID.test(id))
+        throw new EfsFault("MISUSE", `not a sequence id: ${record.sequenceId}`);
+      await ensure();
+      try {
+        await writeDurably(sequences, `${id}.json`, `${encodeSequenceRecord(record)}\n`);
+      } catch (e) {
+        throw unavailable(e, `cannot write ${id}.json`);
+      }
+    },
+    async getSequence(id) {
+      const k = id.toLowerCase();
+      if (!PLAN_ID.test(k)) return undefined;
+      await ensure();
+      return readSequence(`${k}.json`);
+    },
+    async openSequences(lock) {
+      await ensure();
+      let files: string[];
+      try {
+        files = await readdir(sequences);
+      } catch (e) {
+        throw unavailable(e, `cannot list ${sequences}`);
+      }
+      const out: SequenceRecord[] = [];
+      for (const f of files.filter((n) => /^0x[0-9a-f]{64}\.json$/.test(n)).sort()) {
+        const r = await readSequence(f);
+        if (r && r.lock === lock && isOpenSequence(r)) out.push(r);
+      }
+      return out;
+    },
     async put(record) {
       const id = record.planId.toLowerCase();
       if (!PLAN_ID.test(id)) throw new EfsFault("MISUSE", `not a plan id: ${record.planId}`);

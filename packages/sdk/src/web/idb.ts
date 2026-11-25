@@ -26,7 +26,8 @@ export interface LazyDb {
 export function lazyDb(
   name: string,
   version: number,
-  upgrade: (db: IDBDatabase) => void,
+  /** Create what versions after `oldVersion` add (0 for a new database). */
+  upgrade: (db: IDBDatabase, oldVersion: number) => void,
   unavailable: (e: unknown) => Error,
 ): LazyDb {
   let conn: Promise<IDBDatabase> | undefined;
@@ -69,13 +70,19 @@ export function lazyDb(
   const openCreating = (): Promise<IDBDatabase> =>
     new Promise((resolve, reject) => {
       const req = factory().open(name, version);
-      req.onupgradeneeded = () => upgrade(req.result);
+      req.onupgradeneeded = (ev: IDBVersionChangeEvent) => upgrade(req.result, ev.oldVersion);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(unavailable(req.error));
     });
   return {
     async connect(create) {
-      if (conn) return conn;
+      if (conn) {
+        const c = await conn.catch(() => undefined);
+        // A read opened an older version (it never upgrades); a write needs this version: reopen, upgrading.
+        if (!(create && c && c.version < version)) return conn;
+        c.close();
+        conn = undefined;
+      }
       if (!create) {
         const found = await openExisting();
         if (!found) return null;
