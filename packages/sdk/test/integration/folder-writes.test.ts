@@ -495,7 +495,10 @@ describe("folder writes (fixture)", () => {
     // Removed (released), so nothing else points at the folder: restoring adds no second placement.
     expect(back.review).toMatchObject({
       entries: [
-        { target: { kind: "folder", directory: holder.review.created.directory }, alsoPlaced: 0 },
+        {
+          target: { kind: "folder", directory: holder.review.created.directory },
+          alsoReferenced: 0,
+        },
       ],
     });
     // A file moved away, then restored at its old name: it is placed in both folders (one file, two entries).
@@ -516,7 +519,7 @@ describe("folder writes (fixture)", () => {
       planRestoreEntries(efs, w, { entries: [{ folder, name: "both.txt" }], lens: both }),
     );
     // The review says so: one live placement (the moved entry in holder) already points at the file.
-    expect(twice.review).toMatchObject({ entries: [{ target: f.review.file, alsoPlaced: 1 }] });
+    expect(twice.review).toMatchObject({ entries: [{ target: f.review.file, alsoReferenced: 1 }] });
     for (const where of [folder, H]) {
       const look = await lookupEntry(efs, { folder: where, name: "both.txt" }, { lens: both });
       expect(look.status === "PRESENT" && look.selected.target).toEqual(f.review.file);

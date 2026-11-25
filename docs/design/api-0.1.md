@@ -897,9 +897,11 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   Nothing is destroyed: the file stays reachable by its link.
 - `planRestoreEntries(efs, w, { entries, lens? })`: BIND a released or hidden entry back to the target it had before,
   read from the binding's history (walking back through hides and releases). Restoring a folder needs `via` (the
-  path to its folder), with the same cycle checks as a move. Each review item carries `alsoPlaced`: how many live
-  placements point at the target now, by anyone (the index's backlink count, from the generation the ledger names).
-  Above 0, restoring puts it in one more place, for example after it was moved. Null when the index can't vouch.
+  path to its folder), with the same cycle checks as a move. Each review item carries `alsoReferenced`: how many live
+  bindings of every purpose point at the target now, by anyone (the index's backlink count, keyed by target alone,
+  from the generation the ledger names). Today only folder entries can point at a file or a folder, so above 0 means
+  it is also placed elsewhere, for example after a move; once tags exist, tag statements count too. Null when the
+  index can't vouch.
 - Every planner writes only the writer's own entries, each with a compare-and-swap on its revision. Refusal codes:
   `NAME_TAKEN_MINE` (your own entry holds the name), `NOT_YOURS` (with `author` and `admission`), `FOLDER_ABSENT`,
   `ENTRY_ABSENT`, `NOT_REMOVED`, `PATH_CHANGED`. A batch refuses as a whole and lists every refusal by `index`

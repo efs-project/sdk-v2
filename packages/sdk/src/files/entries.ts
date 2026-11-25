@@ -1134,10 +1134,10 @@ export async function planMoveEntries(
   });
 }
 
-// ---- where else a target is placed
+// ---- what else points at a target
 
 /**
- * The live placements pointing at each target (the backlink family's `live` count) at the basis, read from the
+ * The live bindings pointing at each target, of every purpose (the backlink family's `live` count) at the basis, read from the
  * index generation the ledger names now. Null for a target whose count the index can't vouch for (coverage not
  * COMPLETE), or when the deployment names no backlink family.
  */
@@ -1305,10 +1305,12 @@ export interface RestoreReviewItem extends LensView {
   /** The target the entry had before it was removed (read from its history). */
   target: EntryTarget;
   /**
-   * How many live placements point at that target now, by anyone (the index's backlink count): above 0, restoring
-   * puts it in one more place (for example after it was moved). Null when the index can't vouch for the count.
+   * How many live bindings point at that target now, by anyone, of every purpose (the index's backlink count, keyed
+   * by target alone). In this generation only folder entries can point at a file or a folder, so above 0 means the
+   * target is also placed elsewhere (for example after a move); once tags exist, tag statements count too, so treat
+   * it as "referenced elsewhere", not as a folder count. Null when the index can't vouch for the count.
    */
-  alsoPlaced: number | null;
+  alsoReferenced: number | null;
 }
 export interface RestoreReview extends FolderReviewBase {
   kind: "efs.restoreReview";
@@ -1449,13 +1451,13 @@ export async function planRestoreEntries(
       items.push({
         entry: entryOf(p),
         target,
-        alsoPlaced: null,
+        alsoReferenced: null,
         ...viewAfterBind(principals, st, me),
       });
     }
     refuseCycles(restoredFolders);
     if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
-    // Where else each target is placed now: the backlink list's live count, from the live index generation.
+    // What else points at each target now: the backlink list's live count (every purpose), from the live index.
     const counted = await placements(
       ctx,
       s,
@@ -1464,7 +1466,7 @@ export async function planRestoreEntries(
     );
     if (!counted.ok) return counted;
     items.forEach((x, i) => {
-      x.alsoPlaced = counted.value[i] ?? null;
+      x.alsoReferenced = counted.value[i] ?? null;
     });
     return {
       ok: true,
