@@ -29,7 +29,7 @@ Nothing in `packages/` may import from `tools/` or `examples/`.
 
 ## Commands
 
-| Change touches | Run before a PR |
+| Change touches | Run before you push |
 | --- | --- |
 | anything | `pnpm lint` and `pnpm typecheck` |
 | TypeScript source or exports | `pnpm test`, `pnpm build`, `pnpm pack:all`, `pnpm lint:package`, `pnpm test:package` |
@@ -43,6 +43,7 @@ Nothing in `packages/` may import from `tools/` or `examples/`.
 - **Licensing:** every source file starts with `// SPDX-License-Identifier: MIT` (or `#` for TOML/YAML). Keep third-party notices intact. The package `LICENSE` copies must equal the root file.
 - **Versions** are pinned: Node `.node-version`, pnpm in `package.json#devEngines`, TypeScript and Vitest in the pnpm catalog, Foundry in CI, solc in `foundry.toml`. Never write "latest" in configuration or docs.
 - **Dependencies:** no dependency lifecycle scripts (`strictDepBuilds`). New runtime dependencies need an ADR and a permissive license.
+- **Pushing** (owner decision, 2026-11-25, recorded in the planning Decisions log): push to `main` directly, and keep PRs for really big things (a release rehearsal, an npm publish), asking the integration owner first. Low-risk work (docs, tests, internal fixes) goes to `main` once the gates in Commands pass; CI runs on every push to `main`. Higher-risk work (exports the client uses, the write, journal and reconcile path, re-vendors of the contracts inputs) goes to a branch first, gets the integration owner's review, and is then pushed to `main` without a PR. Never force-push or rewrite `main`.
 - **Authority:** agents never publish packages, create registry tokens, change repository settings or deploy contracts. The release workflow is a dry run with no publish path.
 - **Local processes:** do not start long-lived chains or servers from this repo at S0. Never kill processes by port or by name; other work may share the machine.
 - **Decisions:** record consequential choices as a short ADR in `docs/adr/`.
