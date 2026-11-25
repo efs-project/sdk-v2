@@ -5,7 +5,7 @@
   "note": "writer.reconcile() after the lost response",
   "result": {
     "kind": "efs.reconcile",
-    "planId": "0xba28ee83324dd966e8d9f0e4546680cc958cc437c2c0bb5fe8d86232fa06b2c8",
+    "planId": "0x7cc20dfd28f9ca2fb02428440a407f0d9f37deef8bdd7aeab8d71918378ca7a3",
     "outcome": "COMMITTED",
     "final": false,
     "publication": {
@@ -16,7 +16,7 @@
       "blockNumber": {
         "$efs:bigint": "63"
       },
-      "blockHash": "0xf26e061c4bd647ee937b89e737ceae0dbf67ccc9298e786aad98eec157f4ce85",
+      "blockHash": "0x1b974fd2a2f9f22a2b8790c2dc1339b7471296137d9bc63ca57c93ecfe400746",
       "executionSet": "0x5440a17bac803bdcd97568ccffe1d4f3becb0b28ccafaa63932f651fd2be9d44",
       "endpoint": "local fixture"
     }

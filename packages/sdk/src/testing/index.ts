@@ -11,8 +11,12 @@
  * answered with the caller's own id. Calls inside a batch are matched one by one and answered in the caller's order,
  * so a batch is never matched as a whole. When one call was recorded several times its answers are served in
  * recorded order, and the last answer repeats.
+ *
+ * Write flows also carry a wallet half (`wallet`): the EIP-1193 requests the writer made of the wallet, in order, with
+ * the wallet's result or error. `replayProvider(t)` answers them by the same matching rule, so a fake wallet plus
+ * `replayFetch(t)` replays a whole edit (plan, approval, send, settle) with no chain and no wallet.
  */
-import type { FetchLike } from "../chain/rpc.js";
+import type { Eip1193Like, FetchLike } from "../chain/rpc.js";
 import { utf8Encode } from "../core/platform.js";
 
 export interface RpcCall {
@@ -32,6 +36,16 @@ export interface RpcTranscript {
   /** The steps the SDK ran, in order, as human-readable calls. */
   steps: readonly string[];
   calls: readonly RpcCall[];
+  /** Write flows only: the wallet half, every EIP-1193 request the writer made of the wallet, in order. */
+  wallet?: readonly WalletCall[];
+}
+
+/** One EIP-1193 request to the wallet and what the wallet answered (a result, or an error it threw). */
+export interface WalletCall {
+  method: string;
+  params: unknown;
+  result?: unknown;
+  error?: { code?: number; message: string };
 }
 
 interface JsonRpcRequest {
@@ -149,4 +163,80 @@ export function recordingFetch(inner: FetchLike): { fetch: FetchLike; calls: Rpc
     };
   };
   return { fetch: f, calls };
+}
+
+/** Wrap an EIP-1193 provider so every request and its result or error is recorded as a WalletCall. */
+export function recordingProvider(inner: Eip1193Like): {
+  provider: Eip1193Like;
+  calls: WalletCall[];
+} {
+  const calls: WalletCall[] = [];
+  const provider: Eip1193Like = {
+    async request(args: {
+      method: string;
+      params?: object | readonly unknown[];
+    }): Promise<unknown> {
+      const params = args.params ?? [];
+      try {
+        const result = await inner.request(args);
+        calls.push({ method: args.method, params, result });
+        return result;
+      } catch (e) {
+        const code = (e as { code?: unknown })?.code;
+        calls.push({
+          method: args.method,
+          params,
+          error: {
+            ...(typeof code === "number" ? { code } : {}),
+            message: e instanceof Error ? e.message : String(e),
+          },
+        });
+        throw e;
+      }
+    },
+  };
+  return { provider, calls };
+}
+
+/**
+ * A fake wallet answering from the transcripts' wallet halves: each request is matched on `[method, params]`, answers
+ * are served in recorded order and the last repeats, and a recorded error is thrown (with its `code`). An unmatched
+ * request throws and is listed in `misses`.
+ */
+export function replayProvider(
+  transcripts: RpcTranscript | readonly RpcTranscript[],
+): Eip1193Like & { readonly misses: readonly string[] } {
+  const answers = new Map<string, WalletCall[]>();
+  const served = new Map<string, number>();
+  for (const t of Array.isArray(transcripts) ? transcripts : [transcripts as RpcTranscript])
+    for (const c of t.wallet ?? []) {
+      const k = JSON.stringify([c.method, c.params ?? []]);
+      answers.set(k, [...(answers.get(k) ?? []), c]);
+    }
+  const misses: string[] = [];
+  return {
+    misses,
+    async request(args: {
+      method: string;
+      params?: object | readonly unknown[];
+    }): Promise<unknown> {
+      const k = JSON.stringify([args.method, args.params ?? []]);
+      const list = answers.get(k);
+      if (!list?.length) {
+        misses.push(`${args.method} ${JSON.stringify(args.params ?? [])}`);
+        throw Object.assign(new Error(`replay: no recorded wallet answer for ${args.method}`), {
+          code: 4200,
+        });
+      }
+      const n = served.get(k) ?? 0;
+      served.set(k, n + 1);
+      const c = list[Math.min(n, list.length - 1)] as WalletCall;
+      if (c.error)
+        throw Object.assign(
+          new Error(c.error.message),
+          c.error.code !== undefined ? { code: c.error.code } : {},
+        );
+      return c.result;
+    },
+  };
 }

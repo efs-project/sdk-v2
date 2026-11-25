@@ -755,6 +755,23 @@ publisher's https URL, reads it with the default policy (POLICY_BLOCKED, nothing
 `[method, params]` and ignores the JSON-RPC id. Calls inside a batch are matched one by one, and an unmatched call
 gets a JSON-RPC error and is listed in `misses`.
 
+**Edit-flow transcripts** carry a second half, `wallet`: every EIP-1193 request the writer made of the wallet, in
+order, as `{ method, params, result | error }`. `replayProvider(t)` (`@efs/sdk/testing`) answers them by the same
+matching rule as the RPC half, and throws recorded errors with their `code`. So a page wired to
+`createEfs({ fetch: replayFetch(t) })` and a wallet backed by `replayProvider(t)` replays a whole edit with no chain and
+no wallet, provided it follows `steps` exactly: the same calls in the same order, with the same options. Blocks mined
+between steps are already in the recorded answers. The cases edit `ids.file` (docs/readme.txt) as `ids.account` (the
+fixture principal) from `ids.base` to the bytes of `ids.text`, giving `ids.revision`:
+- `edit-one-approval`: open → planEditFile → runSequence → COMPLETE (`final: false`, "Saved · confirming") → the new
+  HEAD reads back.
+- `edit-reload-resume`: the wallet broadcasts but its response is lost, and the page reloads while the transaction is
+  pending. `runSequence(parts, { settleMs: 0 })` → IN_FLIGHT. After the reload, `pendingSequences()` lists it, and
+  `resume(id)` settles it from the ledger to COMPLETE with no second wallet request.
+- `edit-confirming-final`: an edit saves with `final: false`, its block is finalized, and `reconcileSequence(id)` →
+  `final: true`. `pendingSequences()` is then empty. Neither call uses the wallet.
+`recordingProvider(inner)` is the recording side. The SDK's own `test/replay.test.ts` replays all three exactly as
+above.
+
 **A live chain (`@efs/fixture`, Node only):** a second private tarball, packed from the same commit as `@efs/sdk`,
 for live-chain tests such as the client's required e2e job. `startFixtureChain({ anvilPath?, port?, ttlSeconds?,
 home? })` → `{ rpcUrl, chainId, deployment, deploymentPath, accounts: { fixture, unlocked }, seed, contracts, stop() }`.
