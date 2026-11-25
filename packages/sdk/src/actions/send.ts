@@ -36,6 +36,22 @@ export type Authorizer =
 
 export interface SendOpts extends CallOpts {
   waitForLock?: boolean | number;
+  /**
+   * Called just before the wallet is asked to approve (eth_sendTransaction or wallet_sendCalls), after the
+   * write-ahead record: the moment to show "Approve in your wallet". Never for a local account, nor when nothing
+   * is sent. Not awaited; anything it throws is ignored.
+   */
+  onWalletRequest?: () => void;
+}
+
+/** Run a caller's UI callback: never awaited, and never allowed to break a save. */
+export function notify(fn: (() => void) | undefined): void {
+  if (!fn) return;
+  try {
+    fn();
+  } catch {
+    // a UI callback's failure is the UI's; the save goes on
+  }
 }
 
 const stamp = (r: AttemptRecord, stage: AttemptStage, detail?: string): AttemptRecord => ({
@@ -221,6 +237,7 @@ export async function sendPlan(
         record = stamp(record, "SUBMISSION_POSSIBLE");
         await journal.put(record); // write-ahead: from here on, a crash or lost response is AMBIGUOUS
         mayHaveBroadcast = true;
+        notify(o.onWalletRequest);
         try {
           const tx = {
             from: plan.account,

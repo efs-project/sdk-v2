@@ -5,11 +5,11 @@
 // that might broadcast. The ledger, not the wallet's status report, decides each part (reconcileAttempt).
 import type { Eip1193Like } from "../chain/rpc.js";
 import type { Efs } from "../client.js";
-import { type CallOpts, EfsFault, type Reason, type RevertInfo, reason } from "../core/errors.js";
+import { EfsFault, type Reason, type RevertInfo, reason } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
 import { setTimer } from "../core/platform.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
-import { estimate, txGasCapOf, walletMismatch } from "./send.js";
+import { estimate, notify, type SendOpts, txGasCapOf, walletMismatch } from "./send.js";
 import type { Plan } from "./types.js";
 
 export type BatchSendResult =
@@ -55,7 +55,7 @@ export async function sendPlansAsBatch(
   journal: Journal,
   provider: Eip1193Like,
   plans: readonly Plan[],
-  o: CallOpts & { waitForLock?: boolean | number } = {},
+  o: SendOpts = {},
 ): Promise<BatchSendResult> {
   const first = plans[0];
   if (!first) throw new EfsFault("MISUSE", "sendPlansAsBatch needs at least one plan");
@@ -137,6 +137,7 @@ export async function sendPlansAsBatch(
         );
         for (const r of records) await journal.put(r);
         mayHaveBroadcast = true;
+        notify(o.onWalletRequest);
         let batchId: string;
         try {
           const res = (await provider.request({

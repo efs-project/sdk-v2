@@ -29,7 +29,13 @@ export type { ReconcileOpts } from "./reconcile.js";
 export { reconcileAttempt } from "./reconcile.js";
 export type { Authorizer, LocalAccountLike, SendOpts } from "./send.js";
 export { decodeRevert } from "./send.js";
-export type { JournalView, SequenceOpts, SequencePartInput, SequenceProgress } from "./sequence.js";
+export type {
+  JournalView,
+  SequenceEvent,
+  SequenceOpts,
+  SequencePartInput,
+  SequenceProgress,
+} from "./sequence.js";
 export { openJournal } from "./sequence.js";
 export type {
   BatchLimits,
