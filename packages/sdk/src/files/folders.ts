@@ -109,7 +109,11 @@ export type FolderCoverage =
    * MORE_PAGES: `next` continues the listing. RESUMED: a page reached from a cursor is never proof of the whole
    * listing (the chain's law); with no `next`, the listing ended. LIMIT/GAS are folded into MORE_PAGES.
    */
-  | { state: "PARTIAL"; why: "MORE_PAGES" | "RESUMED" }
+  /**
+   * INDEX_PARTIAL: a scan from the start ended, but the index cannot vouch that it saw every entry; the rows are
+   * real, and there may be more.
+   */
+  | { state: "PARTIAL"; why: "MORE_PAGES" | "RESUMED" | "INDEX_PARTIAL" }
   /** The index could not vouch for the listing's coverage: the rows are real, but "that's all" is not known. */
   | { state: "UNKNOWN"; reason: Reason };
 
@@ -449,7 +453,8 @@ const queryOf = (folder: FolderRef, principals: readonly Hex[], kinds: readonly 
     ),
   );
 
-const subjectInfoCall = (efs: Efs, subject: Hex): CallRequest => ({
+/** @internal */
+export const subjectInfoCall = (efs: Efs, subject: Hex): CallRequest => ({
   to: efs.deployment.readers.ledgerReads,
   data: encodeFunctionData({
     abi: ledgerReadsAbi,
@@ -465,8 +470,10 @@ const bodySliceCall = (efs: Efs, id: Hex, offset: number, length: number): CallR
     args: [efs.deployment.ledger, id, offset, length],
   }),
 });
-type Outcome = Awaited<ReturnType<typeof callsAt>>[number] | undefined;
-const decodeCreator = (out: Outcome): Step<PrincipalId | null> => {
+/** @internal */
+export type Outcome = Awaited<ReturnType<typeof callsAt>>[number] | undefined;
+/** @internal The subject's creator, or null when the subject was never created. */
+export const decodeCreator = (out: Outcome): Step<PrincipalId | null> => {
   if (!out?.ok) return failed(out);
   try {
     const [st, , creator] = decodeFunctionResult({
@@ -606,6 +613,20 @@ export async function listFolder(
   folder: FolderRef,
   o: ListFolderOpts = {},
 ): Promise<FolderPage> {
+  // BASIS_STALE means the readers saw the chain move between calls: read the page again at a fresh basis, a bounded
+  // number of times. A cursor the page reader itself refuses as stale is the caller's to restart; one refused only
+  // by a follow-up read is still good, so that page is read again too.
+  for (let attempt = 1; ; attempt++) {
+    const page = await listFolderOnce(efs, folder, o);
+    const stale = page.status === "UNKNOWN" && page.reason.code === "BASIS_STALE";
+    if (!stale || attempt >= 3 || (o.cursor && !rereadable.has(page.reason))) return page;
+  }
+}
+
+/** BASIS_STALE reasons raised after a page was served (the page can simply be read again). */
+const rereadable = new WeakSet<Reason>();
+
+async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): Promise<FolderPage> {
   checkFolder(folder);
   const principals = lensOf(efs, o.lens);
   const kinds = o.kinds ?? [];
@@ -712,66 +733,128 @@ export async function listFolder(
           return { ok: false, retryElsewhere: true, reason: refused.reason }; // a fresh listing: another endpoint may agree
         return { ok: true, value: { kind: "refused", ...refused } };
       }
-      // Authors: the reader's rows do not carry them, so resolve every row's position under the Lens (one call).
+      // Authors: the reader's rows do not carry them. Named rows resolve under the Lens in one call; a row with no
+      // name (an INVALID row: no files-name/2 record for its role) is resolved by its position, so one bad row never
+      // costs the rest of the page.
       const shown = page.rows.filter((x) => x.rowKind !== ROW_WHITEOUT);
+      const named = shown.filter((x) => x.name !== "0x");
+      const unnamed = shown.filter((x) => x.name === "0x");
       const folderIds = shown
         .filter((x) => x.targetKind === TARGET_RECORD)
         .map((x) => lower(x.target));
-      const authors: PrincipalId[] = [];
+      const authorOf = new Map<Hex, PrincipalId>();
       const subjects = new Map<Hex, SubjectId>();
       if (shown.length > 0) {
-        ctx.requests += folderIds.length > 0 ? 2 : 1;
-        const [sel, recs] = await callsAt(s, basis.blockHash, [
-          {
-            to: d.readers.lens,
+        const calls: CallRequest[] = [];
+        const si =
+          named.length > 0
+            ? calls.push({
+                to: d.readers.lens,
+                data: encodeFunctionData({
+                  abi: lensReaderAbi,
+                  functionName: "resolveManyAt",
+                  args: [
+                    principals,
+                    named.map((x) => ({
+                      purpose: PURPOSES.folder,
+                      subject: dir.directory,
+                      role: keccak256(x.name), // checked below: the position must be the row's
+                    })),
+                    page.q.observed.admissionHighWater,
+                    EMPTY_BASIS,
+                  ],
+                }),
+              }) - 1
+            : -1;
+        const fi = folderIds.length > 0 ? calls.push(recordsCall(efs, folderIds)) - 1 : -1;
+        const hi = calls.length;
+        for (const x of unnamed)
+          calls.push({
+            to: d.readers.ledgerViews,
             data: encodeFunctionData({
-              abi: lensReaderAbi,
-              functionName: "resolveManyAt",
-              args: [
-                principals,
-                shown.map((x) => ({
-                  purpose: PURPOSES.folder,
-                  subject: dir.directory,
-                  role: keccak256(x.name), // checked below: the position must be the row's
-                })),
-                page.q.observed.admissionHighWater,
-                EMPTY_BASIS,
-              ],
+              abi: ledgerViewsAbi,
+              functionName: "headsAt",
+              args: [d.ledger, principals as Hex[], lower(x.position)],
             }),
-          },
-          ...(folderIds.length > 0 ? [recordsCall(efs, folderIds)] : []),
-        ]);
-        if (!sel?.ok) return failed(sel);
-        if (folderIds.length > 0) {
-          const fr = decodeRecords(efs, recs, folderIds.length);
+          });
+        ctx.requests += calls.length;
+        const outs = await callsAt(s, basis.blockHash, calls);
+        if (fi >= 0) {
+          const fr = decodeRecords(efs, outs[fi], folderIds.length);
           if (!fr.ok) return fr;
           fr.value.forEach((x, i) => {
             // The chain admits only files-directory/1 records as folder entries; anything else is not given a subject.
             if (x.status === "PRESENT" && x.directory) subjects.set(folderIds[i] as Hex, x.subject);
           });
         }
-        let q: { status: number };
-        let sels: readonly { status: number; target: Hex; principalId: Hex }[];
-        try {
-          [q, sels] = decodeFunctionResult({
-            abi: lensReaderAbi,
-            functionName: "resolveManyAt",
-            data: sel.result as Hex,
-          }) as unknown as [typeof q, typeof sels];
-        } catch {
-          return badReply("resolveManyAt");
+        if (si >= 0) {
+          const sel = outs[si];
+          if (!sel?.ok) return failed(sel);
+          let q: { status: number };
+          let sels: readonly { status: number; target: Hex; principalId: Hex }[];
+          try {
+            [q, sels] = decodeFunctionResult({
+              abi: lensReaderAbi,
+              functionName: "resolveManyAt",
+              data: sel.result as Hex,
+            }) as unknown as [typeof q, typeof sels];
+          } catch {
+            return badReply("resolveManyAt");
+          }
+          const refusedSel = refusal(q.status, "resolveManyAt");
+          if (refusedSel) {
+            // The page itself was served; only the follow-up read saw another basis. The cursor (if any) is still
+            // good, so this page can be read again as it is.
+            if (refusedSel.reason.code === "BASIS_STALE") rereadable.add(refusedSel.reason);
+            return { ok: false, retryElsewhere: true, reason: refusedSel.reason };
+          }
+          for (let i = 0; i < named.length; i++) {
+            const row = named[i] as RawRow;
+            const x = sels[i];
+            // The same block, the same Lens: the selection must be the row the page reader returned.
+            if (
+              !x ||
+              chainStatus(x.status) !== "PRESENT" ||
+              lower(x.target) !== lower(row.target) ||
+              positionKey(PURPOSES.folder, dir.directory, keccak256(row.name)) !==
+                lower(row.position)
+            )
+              return {
+                ok: false,
+                retryElsewhere: true,
+                reason: reason(
+                  "RPC_ERROR",
+                  "transient",
+                  "the Lens and page readers disagree on a row",
+                ),
+              };
+            authorOf.set(lower(row.position), lower(x.principalId) as PrincipalId);
+          }
         }
-        const refusedSel = refusal(q.status, "resolveManyAt");
-        if (refusedSel) return { ok: false, retryElsewhere: true, reason: refusedSel.reason };
-        for (let i = 0; i < shown.length; i++) {
-          const row = shown[i] as RawRow;
-          const x = sels[i];
-          // The same block, the same Lens: the selection must be the row the page reader returned.
+        for (const [i, row] of unnamed.entries()) {
+          const out = outs[hi + i];
+          if (!out?.ok) return failed(out);
+          let status: number;
+          let selectedIndex: number;
+          let all: readonly RawHead[];
+          try {
+            [status, , selectedIndex, all] = decodeFunctionResult({
+              abi: ledgerViewsAbi,
+              functionName: "headsAt",
+              data: out.result as Hex,
+            }) as unknown as [number, RawHead, number, RawHead[]];
+          } catch {
+            return badReply("headsAt");
+          }
+          const st = chainStatus(status);
           if (
-            !x ||
-            chainStatus(x.status) !== "PRESENT" ||
-            lower(x.target) !== lower(row.target) ||
-            positionKey(PURPOSES.folder, dir.directory, keccak256(row.name)) !== lower(row.position)
+            st !== "PRESENT" ||
+            !selectionAgrees(
+              st,
+              Number(selectedIndex),
+              all.map((x) => headState(x.state)),
+            ) ||
+            lower((all[Number(selectedIndex)] as RawHead).target) !== lower(row.target)
           )
             return {
               ok: false,
@@ -779,23 +862,22 @@ export async function listFolder(
               reason: reason(
                 "RPC_ERROR",
                 "transient",
-                "the Lens and page readers disagree on a row",
+                "the ledger and page reader disagree on a row",
               ),
             };
-          authors.push(lower(x.principalId) as PrincipalId);
+          authorOf.set(lower(row.position), principals[Number(selectedIndex)] as PrincipalId);
         }
       }
       const want = new Set<string>(kinds);
       const rows: FolderRow[] = [];
       let hidden = 0;
       let filtered = 0;
-      let k = 0;
       for (const raw of page.rows) {
         if (raw.rowKind === ROW_WHITEOUT) {
           hidden++;
           continue;
         }
-        const row = toRow(raw, authors[k++] as PrincipalId);
+        const row = toRow(raw, authorOf.get(lower(raw.position)) as PrincipalId);
         if (!row) continue;
         if (row.target?.kind === "folder") {
           const subject = subjects.get(row.target.directory);
@@ -836,7 +918,22 @@ export async function listFolder(
                 "the index does not vouch for this listing yet",
               ),
             }
-          : { state: "PARTIAL", why: more ? "MORE_PAGES" : "RESUMED" };
+          : { state: "PARTIAL", why: more ? "MORE_PAGES" : o.cursor ? "RESUMED" : "INDEX_PARTIAL" };
+      // A page with no rows is "empty" only when COMPLETE. A fresh scan that ended without COMPLETE and found
+      // nothing to show cannot say "nothing here", so it is UNKNOWN rather than an empty page with nowhere to go.
+      if (rows.length === 0 && coverage.state !== "COMPLETE" && !more && !o.cursor)
+        return {
+          ok: true,
+          value: {
+            kind: "refused",
+            status: "UNKNOWN",
+            reason: reason(
+              "NOT_YET_DECIDABLE",
+              "transient",
+              "the index cannot vouch for an empty listing of this folder yet",
+            ),
+          },
+        };
       return {
         ok: true,
         value: {
@@ -902,7 +999,8 @@ type RawHead = {
   bindingOrdinal: bigint;
   target: Hex;
 };
-type Looked =
+/** @internal */
+export type Looked =
   | { status: "NOT_A_FOLDER" }
   | { status: "PRESENT"; selected: FolderRow; candidates: EntryCandidate[]; conflict: boolean }
   | { status: "MASKED"; by: PrincipalId; candidates: EntryCandidate[]; conflict: boolean }
@@ -1144,7 +1242,7 @@ export async function lookupEntry(
   const basis = pin.basis;
   const r = await onEndpoint<Looked>(
     efs._internal.pool,
-    (s) => lookupAt(ctx, s, basis, principals, e.folder, bytes, true),
+    (s) => lookupAt(ctx, s, basis, principals, e.folder, bytes, true, true),
     o,
   );
   const evidence: Evidence = {
@@ -1153,6 +1251,20 @@ export async function lookupEntry(
   };
   if (!r.ok)
     return { kind: "efs.entry", status: "UNKNOWN", entry: e, reason: r.reason, basis, evidence };
+  // The folder itself is checked in the same batch: a name in something that is not a folder is never "absent".
+  if (r.value.status === "NOT_A_FOLDER")
+    return {
+      kind: "efs.entry",
+      status: "INVALID",
+      entry: e,
+      reason: reason(
+        "UNSUPPORTED_PROFILE",
+        "never",
+        "the folder is not a files-directory/1 record",
+      ),
+      basis,
+      evidence,
+    };
   return { kind: "efs.entry", entry: e, ...r.value, basis, evidence } as EntryLookup;
 }
 
@@ -1229,11 +1341,25 @@ export async function resolvePath(
           folder,
           names[i] as Uint8Array,
           last,
-          i > 0,
+          true,
         );
         if (!step.ok) return step;
         const v = step.value;
         // The folder segment i-1 pointed at is not a files-directory/1 record: the path cannot continue there.
+        // `from` itself is not a folder: the path never started.
+        if (v.status === "NOT_A_FOLDER" && i === 0)
+          return {
+            ok: true,
+            value: {
+              status: "INVALID",
+              segment: 0,
+              reason: reason(
+                "UNSUPPORTED_PROFILE",
+                "never",
+                "`from` is not a files-directory/1 folder",
+              ),
+            },
+          };
         if (v.status === "NOT_A_FOLDER")
           return {
             ok: true,

@@ -836,8 +836,13 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   filter run by the SDK, counted in `skipped.filtered`; names an earlier author hid are `skipped.hidden`. In this
   generation the chain admits only files and folders as entries, so the kind is the Type; a filter by Type id comes
   with tag and topic views, where items of any Type appear. `coverage` is COMPLETE only for a listing scanned from its
-  start to its end on one page; a page from a cursor is at most PARTIAL (`RESUMED`), and an empty PARTIAL page means
-  "keep reading". A stale cursor is UNKNOWN with BASIS_STALE, `after-replan`: list again from the start. Cost: three
+  start to its end on one page; a page from a cursor is at most PARTIAL (`RESUMED`); a fresh scan that ended but that
+  the index cannot vouch for is PARTIAL `INDEX_PARTIAL`; an empty PARTIAL page with a `next` means "keep reading". A
+  page with no rows is PRESENT only when COMPLETE (or the end of a resumed listing): a fresh scan that found nothing
+  but cannot vouch for it is UNKNOWN, never an empty folder. A fresh listing whose readers saw the chain move
+  (BASIS_STALE) is read again from the start, at most three times; a stale cursor is UNKNOWN with BASIS_STALE,
+  `after-replan`: list again from the start. A row with no name record is returned as `invalid`, and the rest of the
+  page stands. Cost: three
   round trips per page (the page, its authors, the rows' Types and owners); `withSize` adds one read per file row and
   one more round trip for files stored under a descriptor.
 - `lookupEntry(efs, { folder, name }, { lens? })` → `PRESENT { selected, candidates, conflict }` | `MASKED { by,
@@ -846,7 +851,8 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   app that shows same-named entries as a list orders them itself.
 - `resolvePath(efs, { from, segments }, { lens?, maxSegments? })` → `PRESENT { target, entry, chain }` |
   `ABSENT_PROVEN` / `MASKED { segment, chain }` | `NOT_A_FOLDER { segment }` | `INVALID { segment?, rule? }` |
-  `UNKNOWN`. Each segment follows the Lens's choice, with its author in `chain`. No depth limit: a path costs one
+  `UNKNOWN`. A `from` (or a lookupEntry folder) that is not a files-directory/1 record is INVALID, never
+  ABSENT_PROVEN. Each segment follows the Lens's choice, with its author in `chain`. No depth limit: a path costs one
   round trip per segment, so object links are the fast (and rename-proof) way to open a file; a path is a lookup that
   a rename or move can break.
 - Each reply is cross-checked: the folder must be a files-directory/1 record, the heads' selection must be the Lens
@@ -859,18 +865,25 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   BIND(FOLDER). `review.created` is the new FolderRef with its subject.
 - `planMoveEntries(efs, w, { moves: [{ from, to: { folder?, name?, via? } }], lens? })`: rename (a new name) and move
   (a new folder). Each move RELEASEs the old place (the Lens falls through to the next author there) and BINDs the new
-  one, atomically in one publication; links to the file or folder keep working. Moving a folder needs `via` (the
-  destination's folders, from resolvePath) and refuses (MISUSE, `details.code: "INTO_ITSELF"`) a move into itself or
-  below itself under this Lens: there are no parent pointers, so that path is the only check.
+  one, atomically in one publication; links to the file or folder keep working. Moving a folder needs
+  `via: { from, segments }` (MISUSE without it): the destination's path from a folder you name, such as the start of
+  your view. The planner resolves that path again itself at the planning block, under the same Lens, and it must end
+  at the destination (REFUSED `PATH_CHANGED` otherwise). A move that puts the folder on that path, into itself or below
+  itself, is MISUSE (`details.code: "INTO_ITSELF"`). There are no parent pointers, so this path is the only check. In a
+  batch, each destination's ancestry is followed through the batch's other folder moves, so no batch can close a
+  cycle.
 - `planRemoveEntries(efs, w, { entries, hide?, lens? })`: RELEASE by default (you no longer put anything there: the
   next author's entry shows). `hide: true` UNBINDs (a mask: nothing shows there for a reader who ranks you above the
   entry's author). The chain lets anyone mask their own position; offering hide only to a place's owner is an app rule.
   Nothing is destroyed: the file stays reachable by its link.
 - `planRestoreEntries(efs, w, { entries, lens? })`: BIND a released or hidden entry back to the target it had before,
-  read from the binding's history.
+  read from the binding's history (walking back through hides and releases). Restoring a folder needs `via` (the
+  path to its folder), with the same cycle checks as a move. Restoring an entry whose file was moved elsewhere places
+  the same file at both names; the review does not yet say so (it needs the backlink list).
 - Every planner writes only the writer's own entries, each with a compare-and-swap on its revision. Refusal codes:
   `NAME_TAKEN_MINE` (your own entry holds the name), `NOT_YOURS` (with `author` and `admission`), `FOLDER_ABSENT`,
-  `ENTRY_ABSENT`, `NOT_REMOVED`. A batch refuses as a whole and lists every refusal by `index`. Another author's
+  `ENTRY_ABSENT`, `NOT_REMOVED`, `PATH_CHANGED`. A batch refuses as a whole and lists every refusal by `index`
+  (a move's source and destination refusals both). A `salt` the writer already used is MISUSE. Another author's
   entry at the name is not a refusal: the review says what this Lens will show (`visibleInLens`, `shownInstead`,
   `hiddenBy`, and `shownAfter` for the place an entry leaves). Invalid names (checkName) and media types throw MISUSE
   before any read.

@@ -37,7 +37,14 @@ import { checkName } from "../names/name.js";
 import { bindingKey, positionKey, recordFromHash, recordId, subjectId } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import type { Ctx, FileRef } from "./bytes.js";
-import type { EntryRef, EntryTarget, FolderRef } from "./folders.js";
+import {
+  decodeCreator,
+  type EntryRef,
+  type EntryTarget,
+  type FolderRef,
+  lookupAt,
+  subjectInfoCall,
+} from "./folders.js";
 import {
   askedMediaType,
   buildContent,
@@ -68,7 +75,9 @@ export interface EntryRefusal {
     /** You have no entry at this name (and no author in the Lens shows one). */
     | "ENTRY_ABSENT"
     /** Restore: your entry here is not removed. */
-    | "NOT_REMOVED";
+    | "NOT_REMOVED"
+    /** The destination path (`via`) no longer reaches the destination folder under this Lens: resolve it again. */
+    | "PATH_CHANGED";
   entry: EntryRef;
   /** NOT_YOURS: whose entry the Lens shows, and the admission that last set it (compare with Basis.admissions). */
   author?: PrincipalId;
@@ -148,6 +157,8 @@ interface PlaceState {
 interface Seen {
   places: Map<Hex, PlaceState>;
   records: Map<Hex, RecordInfo>;
+  /** For each subject asked about: whether it was already created. */
+  created: Map<Hex, boolean>;
 }
 
 const READ_CHUNK = 64; // limits.maxReadIds and the 64-principal cap
@@ -176,6 +187,7 @@ async function readSeen(
   principals: readonly PrincipalId[],
   places: readonly Place[],
   recordIds: readonly Hex[],
+  subjects: readonly Hex[] = [],
 ): Promise<Step<Seen>> {
   const d = ctx.efs.deployment;
   const uniquePlaces = [...new Map(places.map((p) => [p.position, p])).values()];
@@ -207,8 +219,10 @@ async function readSeen(
         args: [d.ledger, c],
       }),
     })),
+    ...subjects.map((x) => subjectInfoCall(ctx.efs, x)),
   ];
-  if (calls.length === 0) return { ok: true, value: { places: new Map(), records: new Map() } };
+  if (calls.length === 0)
+    return { ok: true, value: { places: new Map(), records: new Map(), created: new Map() } };
   ctx.requests += calls.length;
   const outs = await callsAt(s, basis.blockHash, calls);
   let k = 0;
@@ -291,7 +305,13 @@ async function readSeen(
         };
     }
   }
-  return { ok: true, value: { places: placesOut, records } };
+  const created = new Map<Hex, boolean>();
+  for (const x of subjects) {
+    const c = decodeCreator(outs[k++]);
+    if (!c.ok) return c;
+    created.set(lower(x), c.value !== null);
+  }
+  return { ok: true, value: { places: placesOut, records, created } };
 }
 
 /** What this Lens shows at a place if your head there were `mine` (BOUND, MASKED or RELEASED), or as it is now. */
@@ -622,9 +642,21 @@ export async function planCreateFile(
   const revision = lower(recordId(types.root, rootBody)) as RecordId;
   const nameId = nameRecord(types, place);
   return atOneBasis(efs, o, async (ctx, s, basis) => {
-    const r = await readSeen(ctx, s, basis, me, principals, [place], [place.folder, nameId, file]);
+    const r = await readSeen(
+      ctx,
+      s,
+      basis,
+      me,
+      principals,
+      [place],
+      [place.folder, nameId],
+      [file],
+    );
     if (!r.ok) return r;
     const seen = r.value;
+    // CREATE refuses a salt this writer already used: say so now, never as a revert.
+    if (seen.created.get(file))
+      throw misuse("this salt was already used by this writer: pass a new one", { salt });
     const st = seen.places.get(place.position) as PlaceState;
     const refused: EntryRefusal[] = [];
     if (!isFolder(types, seen.records.get(place.folder)))
@@ -754,9 +786,20 @@ export async function planCreateFolder(
   const directory = lower(recordId(types.directory, dirBody)) as RecordId;
   const nameId = nameRecord(types, place);
   return atOneBasis(efs, o, async (ctx, s, basis) => {
-    const r = await readSeen(ctx, s, basis, me, principals, [place], [place.folder, nameId]);
+    const r = await readSeen(
+      ctx,
+      s,
+      basis,
+      me,
+      principals,
+      [place],
+      [place.folder, nameId],
+      [subject],
+    );
     if (!r.ok) return r;
     const seen = r.value;
+    if (seen.created.get(subject))
+      throw misuse("this salt was already used by this writer: pass a new one", { salt });
     const st = seen.places.get(place.position) as PlaceState;
     const refused: EntryRefusal[] = [];
     if (!isFolder(types, seen.records.get(place.folder)))
@@ -817,6 +860,95 @@ export async function planCreateFolder(
   });
 }
 
+// ---- destination paths (the only check against moving a folder below itself: there are no parent pointers)
+
+/**
+ * A destination's path: a folder you name (`from`, the start of your view, such as a home) and the names below it,
+ * as you resolved them. The planner resolves it again itself at the planning block, under the same Lens, so a
+ * stale or made-up path cannot get past it; the path must end at the destination folder.
+ */
+export interface DestinationPath {
+  from: FolderRef;
+  segments: readonly string[];
+}
+type Via = { from: Hex; names: Uint8Array[] };
+const viaOf = (v: DestinationPath | undefined, index: number): Via | undefined => {
+  if (v === undefined) return undefined;
+  const from = folderOf(v.from);
+  if (!Array.isArray(v.segments)) throw misuse("`via.segments` is a list of names", { index });
+  const names = v.segments.map((n, j) => {
+    const c = checkName(n);
+    if (c.status !== "VALID")
+      throw misuse(
+        `not a files-name/2 name in \`via\`: ${c.status === "INVALID" ? c.rule : c.status}`,
+        {
+          index,
+          segment: j,
+        },
+      );
+    return c.bytes;
+  });
+  return { from, names };
+};
+
+/** The folders on a destination path (from first), resolved under the Lens at the basis; null when it no longer reaches `to`. */
+async function pathFolders(
+  ctx: Ctx,
+  s: Session,
+  basis: Basis,
+  principals: readonly PrincipalId[],
+  via: Via,
+  to: Hex,
+): Promise<Step<Hex[] | null>> {
+  const folders: Hex[] = [via.from];
+  let at: FolderRef = { kind: "folder", directory: via.from as RecordId };
+  for (const name of via.names) {
+    const r = await lookupAt(ctx, s, basis, principals, at, name, false, true);
+    if (!r.ok) return r;
+    const v = r.value;
+    if (v.status === "UNKNOWN") return { ok: false, retryElsewhere: true, reason: v.reason };
+    if (v.status !== "PRESENT" || v.selected.target?.kind !== "folder")
+      return { ok: true, value: null };
+    at = v.selected.target;
+    folders.push(lower(at.directory));
+  }
+  return { ok: true, value: folders[folders.length - 1] === to ? folders : null };
+}
+
+/**
+ * Refuse (MISUSE, INTO_ITSELF) a batch whose folder moves or restores would put a folder inside itself: each one's
+ * destination ancestry, followed through the batch's other folder placements, must not reach the folder itself.
+ */
+function refuseCycles(
+  placed: readonly { index: number; target: Hex; to: Hex; folders: readonly Hex[] }[],
+): void {
+  const at = new Map(placed.map((f) => [f.target, f]));
+  for (const f of placed) {
+    if (f.folders.includes(f.target) || f.to === f.target)
+      throw misuse("a folder cannot be placed inside itself or below itself (under this Lens)", {
+        index: f.index,
+        code: "INTO_ITSELF",
+      });
+    const seen = new Set<Hex>();
+    const queue: Hex[] = [...f.folders];
+    while (queue.length > 0) {
+      const x = queue.pop() as Hex;
+      if (x === f.target)
+        throw misuse(
+          "these changes would put a folder inside itself (through another one in the batch)",
+          {
+            index: f.index,
+            code: "INTO_ITSELF",
+          },
+        );
+      if (seen.has(x)) continue;
+      seen.add(x);
+      const g = at.get(x);
+      if (g) queue.push(...g.folders);
+    }
+  }
+}
+
 // ---- move and rename
 
 export interface MoveInput {
@@ -826,11 +958,12 @@ export interface MoveInput {
     folder?: FolderRef;
     name?: string;
     /**
-     * Required when the entry is a folder: the folders on the destination's path, as resolvePath returned them
-     * (`chain.map((s) => s.target)` plus the destination), so a folder is never moved into itself or below itself
-     * under this Lens. There are no parent pointers, so this path is the only check there is.
+     * Required when the entry is a folder (MISUSE without it): the destination's path from a folder you name, which
+     * the planner resolves again at the planning block and which must end at the destination. A folder is never
+     * moved into itself or below itself on that path, under this Lens. There are no parent pointers, so this path is
+     * the only check there is: name the start of your view (such as a home) as `from`.
      */
-    via?: readonly FolderRef[];
+    via?: DestinationPath;
   };
 }
 export interface MoveEntriesInput {
@@ -869,8 +1002,7 @@ export async function planMoveEntries(
     const to = placeOf(m.to.folder ?? m.from.folder, m.to.name ?? m.from.name, i);
     if (from.position === to.position)
       throw misuse("a move needs a new folder or a new name", { index: i });
-    if (m.to.via !== undefined) for (const v of m.to.via) folderOf(v);
-    return { from, to, via: m.to.via?.map((v) => lower(v.directory)) };
+    return { from, to, via: viaOf(m.to.via, i) };
   });
   const sources = new Set<Hex>();
   const dests = new Set<Hex>();
@@ -890,32 +1022,40 @@ export async function planMoveEntries(
     const items: MoveReviewItem[] = [];
     const units: Unit[] = [];
     const namesPublished = new Set<Hex>();
+    const folderMoves: { index: number; target: Hex; to: Hex; folders: readonly Hex[] }[] = [];
     let records = 0;
     for (const [i, m] of moves.entries()) {
       const from = seen.places.get(m.from.position) as PlaceState;
       const to = seen.places.get(m.to.position) as PlaceState;
-      if (headState(from.mine.state) !== "BOUND") {
-        refused.push(notMine(principals, from, me, i, m.from));
-        continue;
-      }
+      // Every refusal for this move is listed, the source's and the destination's.
+      const mine = headState(from.mine.state) === "BOUND";
+      if (!mine) refused.push(notMine(principals, from, me, i, m.from));
       if (!isFolder(types, seen.records.get(m.to.folder)))
         refused.push({ index: i, code: "FOLDER_ABSENT", entry: entryOf(m.to) });
       if (headState(to.mine.state) === "BOUND")
         refused.push({ index: i, code: "NAME_TAKEN_MINE", entry: entryOf(m.to) });
+      if (!mine) continue;
       const target = targetOf(from.mine);
       if (target.kind === "folder") {
         if (!m.via)
           throw misuse(
-            "moving a folder needs `to.via`: the destination's folders, from resolvePath",
+            "moving a folder needs `to.via`: the destination's path from a folder you name",
             {
               index: i,
             },
           );
-        if (m.to.folder === target.directory || m.via.includes(target.directory))
-          throw misuse("a folder cannot be moved into itself or below itself (under this Lens)", {
-            index: i,
-            code: "INTO_ITSELF",
-          });
+        const folders = await pathFolders(ctx, s, basis, principals, m.via, m.to.folder);
+        if (!folders.ok) return folders;
+        if (folders.value === null) {
+          refused.push({ index: i, code: "PATH_CHANGED", entry: entryOf(m.to) });
+          continue;
+        }
+        folderMoves.push({
+          index: i,
+          target: target.directory,
+          to: m.to.folder,
+          folders: folders.value,
+        });
       }
       if (refused.some((x) => x.index === i)) continue;
       const nameId = nameRecord(types, m.to);
@@ -974,6 +1114,9 @@ export async function planMoveEntries(
         ...viewAfterBind(principals, to, me),
       });
     }
+    // Within one batch, a folder's new place can sit below another folder the same batch moves (a into b and b into
+    // a would leave both reachable only by link): refuseCycles follows each destination through the others.
+    refuseCycles(folderMoves);
     if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
     return {
       ok: true,
@@ -1088,7 +1231,12 @@ export async function planRemoveEntries(
 }
 
 export interface RestoreEntriesInput {
-  entries: readonly EntryRef[];
+  /**
+   * `via` is required when the entry restored is a folder, as for planMoveEntries: the path to the entry's folder
+   * from a folder you name, so a restore never puts a folder below itself (the tree may have changed since it was
+   * removed).
+   */
+  entries: readonly (EntryRef & { via?: DestinationPath })[];
   lens?: Lens;
 }
 export interface RestoreReviewItem extends LensView {
@@ -1120,6 +1268,7 @@ export async function planRestoreEntries(
   const places = input.entries.map((e, i) => placeOf(e.folder, e.name, i));
   if (new Set(places.map((p) => p.position)).size !== places.length)
     throw misuse("the same entry is listed twice");
+  const vias = input.entries.map((e, i) => viaOf(e.via, i));
   const d = efs.deployment;
   return atOneBasis(efs, o, async (ctx, s, basis) => {
     const r = await readSeen(ctx, s, basis, me, principals, places, []);
@@ -1128,6 +1277,7 @@ export async function planRestoreEntries(
     const refused: EntryRefusal[] = [];
     const items: RestoreReviewItem[] = [];
     const units: Unit[] = [];
+    const restoredFolders: { index: number; target: Hex; to: Hex; folders: readonly Hex[] }[] = [];
     for (const [i, p] of places.entries()) {
       const st = seen.places.get(p.position) as PlaceState;
       const state = headState(st.mine.state);
@@ -1189,6 +1339,28 @@ export async function planRestoreEntries(
         continue;
       }
       const target = targetOf(prior);
+      if (target.kind === "folder") {
+        const via = vias[i];
+        if (!via)
+          throw misuse(
+            "restoring a folder needs `via`: the path to its folder from a folder you name",
+            {
+              index: i,
+            },
+          );
+        const folders = await pathFolders(ctx, s, basis, principals, via, p.folder);
+        if (!folders.ok) return folders;
+        if (folders.value === null) {
+          refused.push({ index: i, code: "PATH_CHANGED", entry: entryOf(p) });
+          continue;
+        }
+        restoredFolders.push({
+          index: i,
+          target: target.directory,
+          to: p.folder,
+          folders: folders.value,
+        });
+      }
       const args = effectArgs(p, { target: lower(prior.target) });
       units.push({
         effect: (stage, part, parts) => ({
@@ -1210,6 +1382,7 @@ export async function planRestoreEntries(
       });
       items.push({ entry: entryOf(p), target, ...viewAfterBind(principals, st, me) });
     }
+    refuseCycles(restoredFolders);
     if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
     return {
       ok: true,
