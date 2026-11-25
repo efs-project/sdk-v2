@@ -60,6 +60,7 @@ import {
   randomSalt,
   tooManyBytes,
 } from "./plan.js";
+import { lastBoundTarget } from "./removed.js";
 
 // ---- shared shapes
 
@@ -1319,9 +1320,6 @@ export interface RestoreReview extends FolderReviewBase {
   entries: readonly RestoreReviewItem[];
 }
 
-/** History hops walked back to the last bound target (each removal is one hop; a few is plenty). */
-const RESTORE_HOPS = 8;
-
 /**
  * Plan putting your removed entries back (released or hidden), each to the target it had before. If another
  * author's entry now shows at that name, the review says so (shownInstead): yours is restored beside it.
@@ -1339,7 +1337,6 @@ export async function planRestoreEntries(
   if (new Set(places.map((p) => p.position)).size !== places.length)
     throw misuse("the same entry is listed twice");
   const vias = input.entries.map((e, i) => viaOf(e.via, i));
-  const d = efs.deployment;
   return atOneBasis(efs, o, async (ctx, s, basis) => {
     const r = await readSeen(ctx, s, basis, me, principals, places, []);
     if (!r.ok) return r;
@@ -1359,69 +1356,10 @@ export async function planRestoreEntries(
         refused.push({ index: i, code: "ENTRY_ABSENT", entry: entryOf(p) });
         continue;
       }
-      // Walk the binding's history back to its last bound version: that is the target to restore.
-      const key = bindingKey(me, p.position);
-      let asOf = BigInt(st.mine.prevAdmission);
-      let prior: RawHead | undefined;
-      for (let hop = 0; hop < RESTORE_HOPS && asOf > 0n; hop++) {
-        ctx.requests += 1;
-        const [out] = await callsAt(s, basis.blockHash, [
-          {
-            to: d.readers.ledgerViews,
-            data: encodeFunctionData({
-              abi: ledgerViewsAbi,
-              functionName: "historyAt",
-              args: [d.ledger, key, asOf, RESTORE_HOPS],
-            }),
-          },
-        ]);
-        if (!out?.ok) return failed(out);
-        let found: number;
-        let h: RawHead;
-        try {
-          [found, h] = decodeFunctionResult({
-            abi: ledgerViewsAbi,
-            functionName: "historyAt",
-            data: out.result as Hex,
-          }) as unknown as [number, RawHead];
-        } catch {
-          return bad("historyAt");
-        }
-        if (found !== 3)
-          // History.FOUND
-          return {
-            ok: false,
-            retryElsewhere: true,
-            reason: reason(
-              "NOT_YET_DECIDABLE",
-              "transient",
-              "the entry's history could not be read back",
-            ),
-          };
-        if (headState(h.state) === "BOUND") {
-          prior = h;
-          break;
-        }
-        asOf = BigInt(h.prevAdmission);
-      }
-      if (!prior) {
-        // Never a guessed target. History still to walk: the SDK can't say what was there, so UNKNOWN.
-        if (asOf > 0n)
-          return {
-            ok: false,
-            retryElsewhere: false,
-            reason: reason(
-              "LIMIT_EXCEEDED",
-              "never",
-              `the entry's last target is more than ${RESTORE_HOPS} versions back`,
-            ),
-          };
-        // The walk reached the binding's first version and none was bound: you never placed anything here (a hide
-        // of another author's entry), so there is nothing of yours to put back.
-        refused.push({ index: i, code: "ENTRY_ABSENT", entry: entryOf(p) });
-        continue;
-      }
-      const target = targetOf(prior);
+      // The target to restore: the binding's last bound version, from its history (the same walk listRemoved shows).
+      const last = await lastBoundTarget(ctx, s, basis, bindingKey(me, p.position), st.mine);
+      if (!last.ok) return last;
+      const target = last.value;
       if (target.kind === "folder") {
         const via = vias[i];
         if (!via)
@@ -1444,7 +1382,8 @@ export async function planRestoreEntries(
           folders: folders.value,
         });
       }
-      const args = effectArgs(p, { target: lower(prior.target) });
+      const targetWord = target.kind === "folder" ? target.directory : target.subject;
+      const args = effectArgs(p, { target: targetWord });
       units.push({
         effect: (stage, part, parts) => ({
           code: "files.restore",
@@ -1457,7 +1396,7 @@ export async function planRestoreEntries(
             purpose: PURPOSES.folder,
             subject: p.folder,
             role: p.role,
-            target: lower(prior.target),
+            target: targetWord,
             expectedRevision: BigInt(st.mine.revision),
           }),
         ],
