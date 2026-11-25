@@ -45,7 +45,11 @@ export function createEfs(config: EfsConfig): Efs;
 
 export interface EfsConfig {
   /** Ordered. A logical read is pinned to ONE endpoint and ONE basis; on failure it restarts on the next
-   *  endpoint at a fresh basis and records the attempt. Results are never stitched across endpoints. */
+   *  endpoint at a fresh basis and records the attempt. Results are never stitched across endpoints.
+   *  Trust model: every reply is checked for its shape, its consistency with the rest of the read and the ledger's
+   *  rules, and a reply that fails a check fails over to the next endpoint. A well-formed lie (an answer that passes
+   *  every check, such as a false "this id is a created file" with a matching "no HEAD") is out of scope without
+   *  proofs or a quorum across endpoints, which 0.1 does not do: the first endpoint that answers consistently wins. */
   rpcs: readonly RpcEndpoint[];
   /** efs-deployment.json, the object (fetched by the app; the SDK does no network I/O at import time). */
   deployment: DeploymentManifest;
@@ -848,9 +852,11 @@ object link's id is, in one batched read: a folder record is `FOLDER { folder, o
 INVALID. The kind is fixed by the id, so the answer never changes. The kind read carries the file's HEAD read in the
 same batch (discarded unless the id is a file), and `open` is read at that basis on that endpoint with every openFile
 check, so a file link costs the round trips of openFile alone. The kind decides routing, so once an endpoint has read
-it, a HEAD or revision read that then fails on every endpoint still answers `FILE` with `open` UNKNOWN ("couldn't load,
-retry" on the file's own pane). The whole answer is UNKNOWN only when the kind itself can't be read, or endpoints
-disagree on it. `efs.lens.place({ reader, owner, base })` builds a place's
+it and its HEAD or revision read then failed the way a healthy endpoint can (unreachable, a JSON-RPC error, or a
+different basis), a read that fails on every endpoint still answers `FILE` with `open` UNKNOWN ("couldn't load, retry"
+on the file's own pane). An endpoint whose reply failed validation in that read is not consistent, and its kind is
+dropped. The whole answer is UNKNOWN when no consistent endpoint read the kind, or when endpoints disagree on it.
+`efs.lens.place({ reader, owner, base })` builds a place's
 Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out), then `base`, each once.
 
 **Reads** (`@efs/sdk/files`, all at one block):

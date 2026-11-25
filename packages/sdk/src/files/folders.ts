@@ -14,6 +14,7 @@
 import { decodeFunctionResult, encodeFunctionData, keccak256 } from "viem";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
+import type { RpcOutcome } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import {
@@ -1456,7 +1457,8 @@ export type ObjectOpen =
    * A created subject: a file, with the principal that created it, and the file opened under the Lens (`open`: its
    * HEAD may still be ABSENT_PROVEN under this Lens, which is "no author in your Lens has a HEAD", not "no file").
    * `open` is read at this answer's basis, its HEAD in the same batch as the kind, with every openFile check. When
-   * that read fails on every endpoint after the kind was read, the answer is still FILE, with `open` UNKNOWN.
+   * that read fails on every endpoint after a consistent endpoint read the kind (its own failure unreachable, a
+   * JSON-RPC error or BASIS_STALE, never a reply that failed validation), the answer is still FILE, `open` UNKNOWN.
    */
   | {
       kind: "efs.object";
@@ -1486,6 +1488,24 @@ export type ObjectOpen =
  * subject is a FILE (then opened under the Lens); else ABSENT_PROVEN. The kind is fixed by the id itself (a folder's
  * id is its record, which only its creator may publish), so the answer never changes after the fact.
  */
+/** A session that notes whether any call it carried failed at the transport (unreachable or a JSON-RPC error). */
+function watchCalls(s: Session): { session: Session; callFailed: () => boolean } {
+  let failedCall = false;
+  const note = (o: RpcOutcome) => {
+    if (!o.ok) failedCall = true;
+    return o;
+  };
+  return {
+    session: {
+      port: s.port,
+      chainId: s.chainId,
+      send: async (requests) => (await s.send(requests)).map(note),
+      request: async (method, params) => note(await s.request(method, params)),
+    },
+    callFailed: () => failedCall,
+  };
+}
+
 export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<ObjectOpen> {
   const none: Evidence = { attempts: [], requests: 0 };
   if (!/^0x[0-9a-fA-F]{64}$/.test(id ?? ""))
@@ -1513,9 +1533,9 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
     | { kind: "file"; creator: PrincipalId; open: RevisionOpen }
     | { kind: "absent" }
     | { kind: "other"; typeId: Hex };
-  // The file kind as an endpoint read it, kept across failover: when every endpoint then fails the HEAD or revision
-  // read, the answer is still FILE (routing needs the kind) with its open UNKNOWN. Endpoints that disagree on the
-  // creator leave nothing kept, and the whole answer is UNKNOWN.
+  // The file kind as a consistent endpoint read it, kept across failover: when every endpoint then fails the HEAD or
+  // revision read, the answer is still FILE (routing needs the kind) with its open UNKNOWN. Endpoints that disagree on
+  // the creator leave nothing kept, and the whole answer is UNKNOWN.
   let fileKind: { creator: PrincipalId } | "conflict" | null = null;
   const keepFile = (creator: PrincipalId) => {
     if (fileKind === null) fileKind = { creator };
@@ -1555,14 +1575,25 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
       const c = decodeCreator(sub);
       if (!c.ok) return c;
       if (!c.value) return { ok: true, value: { kind: "absent" } };
-      keepFile(c.value);
+      const creator = c.value;
+      // The kind is kept for the fallback only when this endpoint's open failed the way a healthy endpoint can
+      // (unreachable, a JSON-RPC error, a different basis). An endpoint whose reply failed validation in this step is
+      // not consistent, and its kind is dropped.
+      const fail = (
+        f: { ok: false; retryElsewhere: boolean; reason: Reason },
+        transport: boolean,
+      ) => {
+        if (transport || f.reason.code === "BASIS_STALE") keepFile(creator);
+        return f;
+      };
       // A created subject: its file, opened from the batched HEAD at this basis on this endpoint (every openFile check,
       // the HEAD law included, runs in openSelected).
       const sel = decodeHead(head);
-      if (!sel.ok) return sel;
-      const open = await openSelected(ctx, s, basis, target, sel.value);
-      if (!open.ok) return open;
-      return { ok: true, value: { kind: "file", creator: c.value, open: open.value } };
+      if (!sel.ok) return fail(sel, !head?.ok);
+      const watched = watchCalls(s);
+      const open = await openSelected(ctx, watched.session, basis, target, sel.value);
+      if (!open.ok) return fail(open, watched.callFailed());
+      return { ok: true, value: { kind: "file", creator, open: open.value } };
     },
     o,
   );

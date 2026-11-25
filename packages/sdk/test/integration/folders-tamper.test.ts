@@ -245,6 +245,45 @@ describe("openObject when the file's open fails on every endpoint (fixture)", ()
     ]);
   });
 
+  // Only a failure a healthy endpoint can have keeps the kind; a reply that failed validation drops it.
+  const malformed: Edit = () => "0x1234" as Hex;
+  const RECORD = sel(ledgerReadsAbi, "record");
+  const staleHead: Edit = (result) => {
+    const [q, selection] = decodeFunctionResult({
+      abi: lensReaderAbi,
+      functionName: "resolve",
+      data: result,
+    }) as unknown as [Record<string, unknown>, unknown];
+    return encodeFunctionResult({
+      abi: lensReaderAbi,
+      functionName: "resolve",
+      result: [{ ...q, status: 11 }, selection] as never, // BASIS_STALE
+    }) as Hex;
+  };
+  const only = (edits: Record<Hex, Edit>) =>
+    createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: tampered(edits) });
+
+  it("a malformed HEAD on the only endpoint: UNKNOWN (an endpoint caught sending a bad reply is not consistent)", async () => {
+    expect((await openObject(only({ [RESOLVE]: malformed }), readme)).status).toBe("UNKNOWN");
+  });
+
+  it("a malformed HEAD on one endpoint and a HEAD error on the other: the healthy one's kind is kept", async () => {
+    const { efs } = twoEndpoints({ [RESOLVE]: malformed }, headDown);
+    const o = await openObject(efs, readme);
+    expect(o.status === "FILE" && o.open.status).toBe("UNKNOWN");
+  });
+
+  it("a HEAD read at a different basis (BASIS_STALE) everywhere keeps the kind: FILE, open UNKNOWN", async () => {
+    const o = await openObject(only({ [RESOLVE]: staleHead }), readme);
+    expect(o.status === "FILE" && o.open).toMatchObject({ status: "UNKNOWN" });
+  });
+
+  it("the revision read: a JSON-RPC error keeps the kind, a malformed reply drops it", async () => {
+    const erring = await openObject(only({ [RECORD]: failWith }), readme);
+    expect(erring.status === "FILE" && erring.open.status).toBe("UNKNOWN");
+    expect((await openObject(only({ [RECORD]: malformed }), readme)).status).toBe("UNKNOWN");
+  });
+
   it("the kind itself can't be read anywhere: the whole answer is UNKNOWN", async () => {
     const down: Record<Hex, Edit> = { [RECORDS]: failWith, [RESOLVE]: failWith };
     const { efs } = twoEndpoints(down, down);
