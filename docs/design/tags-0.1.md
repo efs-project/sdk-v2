@@ -241,8 +241,14 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   - tag planners and reads as this document describes; the number is 16-bit (−65,536..65,535, MISUSE outside);
     registration strictly before the tag; address targets refused only for HEAD and FOLDER, at plan time as on chain
     (allowed for TAG, other purposes not judged);
-  - restore's `alsoPlaced` switched to the FOLDER-keyed backlink family, with a test that tags don't change it;
-  - the index codehash in the index pin, if the deployment file carries it;
+  - **backlinks are one list per (purpose, target)**, at `Keys.backlinkList(purpose, target)` (contracts step 3a,
+    planning 0dc8708). No chain read spans every kind of link. So restore's `alsoPlaced` reads the FOLDER list,
+    with a test that tags don't change it. Synonym gathering (section 5.3) reads the "same as" list, and any
+    "everything pointing at this" read names the purposes it wants, one read each, and says which it read;
+  - the pin probe checks the index and reads-contract codehashes that the deployment file now carries (step 3a),
+    beside today's five;
+  - interface ids now commit to their functions (a new hot id, `0xf37d24d0…`). The SDK pins none today. Any
+    check the re-vendor adds takes them from the release, never typed by hand;
   - **removed entries (listRemoved, planRestoreEntries).** Today's walk (`lastBoundTarget`) relies on UNBIND needing
     a BOUND head and RELEASE a BOUND or MASKED one: a removed entry's last bound version is then at most two versions
     back, so its target is always known and any other history is an endpoint fault (page-level UNKNOWN). The tag
