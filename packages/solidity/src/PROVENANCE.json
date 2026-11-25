@@ -3,34 +3,34 @@
   "note": "Copied byte for byte from efs-project/contracts-v2 at `commit` by tools/solidity.mjs. Do not edit.",
   "contracts": {
     "repo": "https://github.com/efs-project/contracts-v2",
-    "commit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3"
+    "commit": "b645b61c371ad41c01b5ba6a0c0a1f2a6baa333e"
   },
   "files": {
-    "interfaces/Actions.sol": "5c503f6aacc86841f2f8c900b5d76e2f818016b09fe2e176bd0f1cd1f82307be",
-    "interfaces/Errors.sol": "85fc31ed22d638a3ff25aa500c171f246168b911adc05a99eb16ec6bdcbd8285",
-    "interfaces/IAcceptor.sol": "81d1fdcc3e1955e19ea037107032dd510058ece7efb5b0ad39b914a1e8f3980e",
-    "interfaces/IBitmapStore.sol": "6d5525a5ad4865503abadb50ac5b246ba36788a65e6e73d911aac3cf0100e2cd",
+    "interfaces/Actions.sol": "ea28464813d5d9cfe42b58bd8a6d5e0619b8674abc66f7bfa664ee1707c2c9b0",
+    "interfaces/Errors.sol": "1521280231897f311901e477cd00d20ed11543a352115fb77da98e3c35a7b894",
+    "interfaces/IAcceptor.sol": "7d6949f47c4a6213d8953aba8371f5bea1e07d98bde065550822ead75fd3d7e0",
+    "interfaces/IBitmapStore.sol": "7566811f7e49d4088a5bc76d75f68a50f85aa4b1b21203f64fd825e46639afd8",
     "interfaces/IIndexHook.sol": "fcd1409fc84c60c4bc255bdf028965ad0bf54f27fa2b91d45f51f7a646d93632",
     "interfaces/IIndexReads.sol": "89c95f309b880e9b32e1a6687e18fd97cdf2aeaf824c4cfe3d528b5627e5c428",
     "interfaces/IKeysView.sol": "6d5d5cca58611904ccc27df0657757edf15f24ac7a9a19188f969d239f30b29f",
     "interfaces/ILedger.sol": "d6340748855349bae4b47623f291d7817d6d728d575d3c2a1601e2810d2a0458",
     "interfaces/ILedgerCommitments.sol": "c68f5f990320187ca0a6d30a417dd250e3c9188022cb938918769b9843120dc4",
     "interfaces/ILedgerControl.sol": "30c58e8e4682bfedcda8ecd83ee4e2811cb185060fcc9a976051541a8c5f02e6",
-    "interfaces/ILedgerHot.sol": "6fb4292dababd29edc203044fabce266af2596ffc15622b070b63e15b8ba2647",
+    "interfaces/ILedgerHot.sol": "942ddc580e8440329042b7166e9d8ef2ac53d20f4f932ae6c35c41ad803de779",
     "interfaces/ILedgerReads.sol": "7ee3e358afce66694166f0a59c786c65b4e6e01369b031ce1828af62a4d2606f",
     "interfaces/ILedgerViews.sol": "04acf582915ec566cd4bc5fa9bc2f9f278e2feae06f9fdb02ff5136ba40874cb",
-    "interfaces/IPostingStore.sol": "e3cdf4a5d9c2ed3b83310742eae92762a1905fdc8d79bc3cc2c88cfce6eab473",
+    "interfaces/IPostingStore.sol": "be0adc5213eae601f6630120eee57e13dadc96391ea56518074042b78ac71c02",
     "interfaces/IRealmController.sol": "66f309053ea3b5bbe85da1b9643c5ccb6f7f5130a9d75ac4458a2bec0e0be8b0",
     "interfaces/IRealmIndex.sol": "64e4e6eb8c0cb40489e214d3440ddb22ca7d2fcaa695c0a73a312db3af0bc977",
     "interfaces/ITypeRegistry.sol": "121036fa1f5433eaedd1a0c4105f156c8b3ca5aee90f21499dad3fa01ab71403",
     "interfaces/IWeb3Gateway.sol": "7fdbf781f32df3fa09aaa04f6790c3623e01eba96a26ab35388857dcff0f22ce",
-    "interfaces/Index.sol": "bc636f9785b917410cdfaf58421a418ddf339744624fafd7328fc8f3e860354c",
-    "interfaces/Limits.sol": "90c4a1d9276272cdfb312036fe22efff0f6ae27f70167cff2fdc7d49423e8586",
+    "interfaces/Index.sol": "db9179566cc7304731527fc8a881130f31449f24d8043e3c5bccbb7b085ab2f0",
+    "interfaces/Limits.sol": "4ab19a41966a5eb3fd386852ae973fbde3b401c22385553f354bb8db0f0a65dc",
     "interfaces/Readers.sol": "8165b01329bb3be6d469800cff00fe35852663439d5786474e9ca9778f360519",
-    "interfaces/Results.sol": "0d44cc07ac912d484eb42579fda117b618ec25730756fde3810a8da589624649",
+    "interfaces/Results.sol": "7c2d00946fb9f082ef07e5c23cd9284060f51ae151fdddb742c9f840c364bf5e",
     "interfaces/Views.sol": "15c1279e351358f246ada93c37ee0d588cf2039d6b29a774869cfc1a071720b8",
-    "lib/Keys.sol": "62c90f6fde0c6c0673e8dd6f4cff67670dbb38f8a8e22717e4007243b2133e6e",
-    "lib/EfsNative.sol": "2c960a82c62e02ee6b6f47081aaacc36d9555bbf1d1d9f97c3a034d83522c39a",
-    "lib/EfsFiles.sol": "d43fb4911cc8f14df651ddab58621f5c30a373ea6b85b6ea75961e3ffe64500c"
+    "lib/Keys.sol": "a3b8b5f6c92c3e567ed5378453672ec6579ff30d88a862b990d8c082bcfc648f",
+    "lib/EfsNative.sol": "804e64325f5f06b2568a0a9476d0aa16c4f01915d4546650754632406a2a89b4",
+    "lib/EfsFiles.sol": "7c2a3e981b39889e6e5c1745bfa765e049dc7cf4c71265cb789e46762bc7cdbc"
   }
 }

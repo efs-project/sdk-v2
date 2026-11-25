@@ -9,7 +9,7 @@ import { type CallOpts, EfsFault, type Reason, reason } from "../core/errors.js"
 import type { Hex } from "../core/hex.js";
 import { setTimer } from "../core/platform.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
-import { estimate, TX_GAS_CAP } from "./send.js";
+import { estimate, txGasCapOf } from "./send.js";
 import type { Plan } from "./types.js";
 
 export type BatchSendResult =
@@ -89,14 +89,15 @@ export async function sendPlansAsBatch(
             status: "STALE",
             reasons: [`simulation reverts with ${est.revert.error}`],
           };
-        if ("gas" in est && est.gas > TX_GAS_CAP)
+        const cap = txGasCapOf(efs.deployment);
+        if ("gas" in est && est.gas > cap)
           return {
             kind: "efs.sendBatch",
             status: "NOT_SENT",
             reason: reason(
               "OVER_TX_GAS_CAP",
               "after-replan",
-              `the first part needs ~${est.gas} gas, over ${TX_GAS_CAP}`,
+              `the first part needs ~${est.gas} gas, over ${cap}`,
             ),
           };
         let chainId: number;

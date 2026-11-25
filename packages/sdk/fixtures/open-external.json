@@ -1,14 +1,14 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
+  "contractsCommit": "b645b61c371ad41c01b5ba6a0c0a1f2a6baa333e",
   "case": "open-external",
   "note": "openFile on a files-external/1 file with a web3:// locator (docs/remote.txt)",
   "result": {
     "kind": "efs.open",
     "status": "PRESENT",
     "file": {
-      "file": "0x10497e88273558e6d1e06f88a1ccb808c0444d9d2e118753c5db8768fe7603cf",
-      "revision": "0x2a39d93932af3c784fa93f845da47b659af219e0aa76146ee4b93ebe0c451c1d",
+      "file": "0xf9ad02bbc5ce96d4893b1357b259e0321d7ae7b0418a38f43ec323106dc88385",
+      "revision": "0x2938e512bcc75a4e8653dc8ae77abbdc2986fe9de144b7ffbd5f5f0e7291fa77",
       "author": "0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
       "size": {
         "$efs:bigint": "51"
@@ -19,7 +19,7 @@
         {
           "scheme": "web3",
           "uri": "web3://0x0000000000000000000000000000000000000000:31337/remote.txt",
-          "descriptor": "0xbebdec82588dd761cb3ea49ddce676515aef574714dec0e202c27e143ebde727"
+          "descriptor": "0x78541dd36e01b180e0eb36d60f107b99f71a42342cc96f8d433c178b24883c9b"
         }
       ]
     },
@@ -28,8 +28,8 @@
       "blockNumber": {
         "$efs:bigint": "62"
       },
-      "blockHash": "0x63b16af1b71e8f4d2c01778f3dbf85ad1e933b381a935ffc97e9848d3256f835",
-      "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
+      "blockHash": "0xb2f86e0cfcaa6177250fa2d13f8f89e4a39941afa687dc5d50eadac2fab578f0",
+      "executionSet": "0x5440a17bac803bdcd97568ccffe1d4f3becb0b28ccafaa63932f651fd2be9d44",
       "endpoint": "local fixture"
     },
     "evidence": {

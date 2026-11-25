@@ -11,6 +11,7 @@ import { type Address, type Hex, lower } from "../core/hex.js";
 import { errorAbi } from "../generated/abis.js";
 import { ERROR_CATALOG } from "../generated/errors.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
+import { txGasCapOf } from "./split.js";
 import type { Plan, SendResult } from "./types.js";
 
 /** A viem LocalAccount satisfies this structurally; the SDK holds no private-key code. */
@@ -86,11 +87,8 @@ export async function estimate(
   return r.ok ? r.value : { unknown: r.reason.detail ?? r.reason.code };
 }
 
-/**
- * The per-transaction gas cap (EIP-7825, 2^24). A chain fact: the deployment document will carry it
- * (efs-deployment.chain.txGasCap); until then this default applies.
- */
-export const TX_GAS_CAP = 16_777_216n;
+export { TX_GAS_CAP, txGasCapOf } from "./split.js";
+
 /** Gas to aim for per publication when splitting (contracts' guidance: about 14M, headroom under the cap). */
 const SPLIT_TARGET = 14_000_000n;
 const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
@@ -135,7 +133,7 @@ export async function sendPlan(
         };
       // 25% headroom over the estimate, but never a limit above the per-transaction cap (EIP-7825): a node refuses
       // a transaction by its gas LIMIT, not by the gas it would use.
-      const cap = TX_GAS_CAP;
+      const cap = txGasCapOf(efs.deployment);
       if ("gas" in est && est.gas > cap) {
         // Too big for one atomic transaction: not a stale plan. Nothing is sent; split, then send each part.
         const suggestedParts = Number((est.gas + SPLIT_TARGET - 1n) / SPLIT_TARGET);

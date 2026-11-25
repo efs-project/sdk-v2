@@ -33,13 +33,23 @@ export type { JournalView, SequenceOpts, SequencePartInput, SequenceProgress } f
 export { openJournal } from "./sequence.js";
 export type {
   BatchLimits,
+  BindRow,
+  GasConstants,
   GasModel,
+  GasPlan,
   PlannedAction,
   SplitOptions,
   SplitPart,
   SplitResult,
 } from "./split.js";
-export { actionGas, publicationGas, splitPublications } from "./split.js";
+export {
+  actionGas,
+  gasPlanFor,
+  publicationGas,
+  splitPublications,
+  TX_GAS_CAP,
+  txGasCapOf,
+} from "./split.js";
 export type {
   ActionData,
   EffectView,
