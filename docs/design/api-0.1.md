@@ -197,7 +197,7 @@ export type ReasonCode =
   | "NOT_VERIFIED_DEPLOYMENT" | "UNSUPPORTED_PROFILE" | "GATEWAY_UNAVAILABLE" | "DIGEST_MISMATCH"
   | "POLICY_BLOCKED" | "INVALID_RESUME_TOKEN" | "TOO_LARGE" | "CHAIN_MISMATCH"
   | "JOURNAL_UNAVAILABLE" | "OVER_TX_GAS_CAP" | "STALE" | "WALLET_MISMATCH" | "USER_REJECTED" | "BUSY"
-  | "NOT_YET_DECIDABLE"
+  | "NOT_YET_DECIDABLE" | "REORGED_DROPPED"
   | (string & Record<never, never>);    // open union
 ```
 
@@ -205,6 +205,10 @@ export type ReasonCode =
 Continue). **after-reconcile:** settle from the ledger first, then try again. **after-replan:** this plan cannot go
 as it stands; plan again from fresh state, and for a save abandon the old sequence. Continue never helps here, even
 when the save is PARTIAL. **never:** nothing will.
+
+**The SDK never sends again on its own.** Continue (`resume`), Send again and every other retry is always the
+person's click. A wallet decline is `USER_REJECTED` with `retry: "transient"`: the plan is still good, and they may
+approve it next time. Map by `code` first, then use `retry` for codes the UI does not name.
 
 ## 4. Names, paths, links
 
@@ -692,6 +696,16 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   plan's, nothing is sent and the journal is untouched: NOT_SENT with reason WALLET_MISMATCH (`retry: "transient"`,
   `reason.wallet` = expected vs actual). Remaining parts are never sent under another account. Switch the wallet
   back, then `resume(id)`.
+- **A throw is never "nothing was saved":** every fault thrown out of `runSequence` or `resume` is an `EfsFault`
+  with plain properties `sequenceId?`, `mayHaveSent` and `sequenceMayHaveSent`. `mayHaveSent` means this call may have
+  broadcast something: it wrote a part's write-ahead record before the throw (e.g. IndexedDB went away while the
+  person was in the wallet app, or the caller aborted after the wallet sent). `sequenceMayHaveSent` means some part
+  of this save may be on chain, from this call or an earlier one, and is true when the record could not be read.
+  `sequenceId` is there once the record exists (always for resume). When either flag is true, say "may have been
+  saved — checking" and `reconcileSequence(sequenceId)` once the cause is fixed: the ledger decides, and nothing is
+  sent twice. Journal failures up to and including the write-ahead write are not thrown: they return NOT_SENT
+  JOURNAL_UNAVAILABLE. A non-EfsFault error is rethrown as INVARIANT with the original as `cause`.
+- **Each part keeps its `deadlineSeconds`:** it is applied each time the part is planned, including on resume.
 - **The other calls:** `pendingSequences()` lists open saves (the "2 of 5 saved — Continue" state).
   `reconcileSequence(id)` settles from the ledger and never prompts, so it is safe on every app start.
   `resume(id)` continues, and is the only sequence call that may prompt. `abandon(id)` stops offering to continue:
@@ -704,9 +718,15 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   a COMPLETE sequence stays in `pendingSequences` until it is final. Client vocabulary: "Saved · confirming" for
   COMPLETE with `final: false`, then "Saved".
 - **Reorgs:** if a re-check no longer finds the admission at the latest block, reconcile answers UNKNOWN with
-  reason REORGED. The attempt goes back to SUBMISSION_POSSIBLE, and a COMPLETE sequence becomes IN_FLIGHT. Sending
-  the same plan again is safe (AlreadyAdmitted if the original is re-included) and is the user's choice, never an
-  automatic prompt: "This save was undone by the network — Send again".
+  reason REORGED. The attempt goes back to SUBMISSION_POSSIBLE, and a COMPLETE sequence becomes IN_FLIGHT. The
+  part remembers the reorg, so every later progress for that save (`reconcileSequence`, `pendingSequences`,
+  `resume`) carries the reason:
+  - **REORGED** (`retry: "after-reconcile"`): the part is in flight again and may be re-included. Wait: "This save
+    was undone by the network — checking". `resume` sends nothing while it is in flight.
+  - **REORGED_DROPPED** (`retry: "transient"`): a finalized block past the plan's deadline proves it was not
+    committed. Offer "This save was undone by the network — Send again"; `resume` re-plans and sends that part, and
+    only when the person clicks.
+  The reason clears when the part commits again (re-included) or is sent again.
 - **Unreadable finalized block:** if the finalized-block read fails (an endpoint without the "finalized" tag, or a
   finalized block from before the deployment), COMMITTED at latest is still decided, with `final: false`, and
   NOT_COMMITTED_PROVEN still requires a successful finalized read.
@@ -758,8 +778,13 @@ type EditPlanResult =
 ```ts
 export interface EfsFault extends Error {
   name: "EfsFault";
-  code: "MISUSE" | "ABORTED" | "LIMIT" | "INVARIANT" | (string & Record<never, never>);
+  code: "MISUSE" | "ABORTED" | "LIMIT" | "INVARIANT" | "JOURNAL_UNAVAILABLE" | "STREAM_FAILED"
+    | (string & Record<never, never>);
   details?: Readonly<Record<string, unknown>>;
+  // Set on every fault out of runSequence / resume (see "A throw is never 'nothing was saved'"), else undefined:
+  sequenceId?: Hex;
+  mayHaveSent?: boolean;          // this call may have broadcast something
+  sequenceMayHaveSent?: boolean;  // some part of the save may be on chain (true when its record is unreadable)
 }
 ```
 Nothing else throws. Transport and provider failures, missing data, wallet refusals and data-dependent limits (`LIMIT_EXCEEDED`, `TOO_LARGE`) all come back as result values. `LIMIT` is thrown only for a bad caller argument, e.g. `limit: 1000` on a page. `ABORTED` is the caller's own AbortSignal.

@@ -10,7 +10,14 @@
 //     chain stay there whatever happens next (an abandoned upload leaves chunks that never appear as a file).
 import { keccak256 } from "viem";
 import type { Efs } from "../client.js";
-import { type CallOpts, EfsFault, type Reason, type RevertInfo, reason } from "../core/errors.js";
+import {
+  type CallOpts,
+  EfsFault,
+  type Reason,
+  type RevertInfo,
+  reason,
+  type SequenceFault,
+} from "../core/errors.js";
 import type { Address, Hex } from "../core/hex.js";
 import { toJson } from "../core/json.js";
 import { setTimer, utf8Encode } from "../core/platform.js";
@@ -102,6 +109,59 @@ const sleep = (ms: number) =>
   });
 
 /** The wallet-free part: settle sequences from the ledger and describe them. Needs no account. */
+/**
+ * Why a save is open because of a reorg, from the record: REORGED while the undone part is in flight again (it may be
+ * re-included; wait), REORGED_DROPPED once it is proven not committed (sending it again is the person's choice).
+ */
+function reorgReason(r: SequenceRecord): Reason | undefined {
+  const p = r.parts.find((x) => x.reorged && !x.committed);
+  if (!p) return undefined;
+  return p.planId
+    ? reason(
+        "REORGED",
+        "after-reconcile",
+        "a committed part was undone by a reorg; it may be re-included",
+      )
+    : reason(
+        "REORGED_DROPPED",
+        "transient",
+        "a part undone by a reorg is proven not committed: sending it again is the person's choice",
+      );
+}
+
+/** Some part of the save may be on chain: committed, or planned and past its write-ahead (in flight). */
+const recordMayHaveSent = (r: SequenceRecord): boolean =>
+  r.parts.some((p) => p.committed === true || p.planId !== undefined);
+
+/** A journal that reports each write-ahead record (SUBMISSION_POSSIBLE) once it is durable. */
+function watchWriteAhead(j: Journal, mark: () => void): Journal {
+  return {
+    durable: j.durable,
+    put: async (record) => {
+      await j.put(record);
+      if (record.stage === "SUBMISSION_POSSIBLE") mark();
+    },
+    get: (planId) => j.get(planId),
+    unresolved: (lock) => j.unresolved(lock),
+    putSequence: (record) => j.putSequence(record),
+    getSequence: (id) => j.getSequence(id),
+    openSequences: (lock) => j.openSequences(lock),
+    withLock: (lock, wait, fn) => j.withLock(lock, wait, fn),
+  };
+}
+
+/** Rethrow out of runSequence/resume as an EfsFault that says whether the save may have gone out. */
+function sequenceFault(e: unknown, at: SequenceFault): EfsFault {
+  if (e instanceof EfsFault)
+    return new EfsFault(e.code, e.message, {
+      cause: e,
+      sequence: at,
+      ...(e.details ? { details: { ...e.details } } : {}),
+    });
+  const message = e instanceof Error ? e.message : String(e);
+  return new EfsFault("INVARIANT", `unexpected error: ${message}`, { cause: e, sequence: at });
+}
+
 function sequenceCore(efs: Efs, journal: Journal) {
   const derive = (r: SequenceRecord): SequenceState => {
     if (r.state === "ABANDONED") return "ABANDONED";
@@ -139,6 +199,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
     const index = r.parts.findIndex((p) => !p.committed);
     const part = r.parts[index];
     const known = stage ?? (part && !part.planId ? "NOT_PLANNED" : undefined);
+    const why = extra.reason ?? reorgReason(r);
     return {
       kind: "efs.sequence",
       sequenceId: r.sequenceId,
@@ -157,7 +218,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
           }
         : {}),
       ...(extra.mode ? { mode: extra.mode } : {}),
-      ...(extra.reason ? { reason: extra.reason } : {}),
+      ...(why ? { reason: why } : {}),
     };
   };
 
@@ -196,6 +257,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
           continue;
         }
         if (attempt.stage === "NOT_COMMITTED_PROVEN") {
+          if (p.committed) p.reorged = true; // it was committed here: a reorg dropped it
           delete p.planId;
           delete p.committed;
           continue;
@@ -203,6 +265,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
         if (attempt.stage === "COMMITTED" && attempt.final !== false) {
           p.committed = true;
           p.final = true;
+          delete p.reorged;
           if (attempt.publication !== undefined) p.publication = attempt.publication;
           continue;
         }
@@ -210,13 +273,18 @@ function sequenceCore(efs: Efs, journal: Journal) {
         if (rec.outcome === "COMMITTED") {
           p.committed = true;
           p.final = rec.final === true;
+          delete p.reorged;
           if (rec.publication !== undefined) p.publication = rec.publication;
         } else if (rec.outcome === "NOT_COMMITTED_PROVEN") {
+          // A part that was committed here, or already seen reorged, is proven dropped (REORGED_DROPPED): sending it
+          // again is the person's call.
+          if (p.committed) p.reorged = true;
           delete p.planId;
           delete p.committed;
         } else {
           // Not decided, or reorged out after a COMMITTED: in flight again (sending it again is the user's
-          // choice, never automatic).
+          // choice, never automatic). A reorg is remembered on the part, so every later progress says REORGED.
+          if (rec.reason?.code === "REORGED") p.reorged = true;
           delete p.committed;
           p.final = false;
           open = true;
@@ -285,8 +353,15 @@ export function sequenceOps(d: Deps) {
   };
 
   /** Send what is left: as one EIP-5792 request when the wallet runs it atomically, else part by part. */
-  const advance = async (r0: SequenceRecord, o: SequenceOpts): Promise<SequenceProgress> => {
+  const advance = async (
+    r0: SequenceRecord,
+    o: SequenceOpts,
+    call: { sent: boolean },
+  ): Promise<SequenceProgress> => {
     const settleMs = o.settleMs ?? 60_000;
+    const sendJournal = watchWriteAhead(journal, () => {
+      call.sent = true;
+    });
     let r = await reconcileParts(r0, o, 0);
     committedSince(o, r0, r);
     if (r.state === "IN_FLIGHT" || r.state === "COMPLETE" || r.state === "ABANDONED")
@@ -308,12 +383,13 @@ export function sequenceOps(d: Deps) {
       const parts = r.parts.map((p) => ({ ...p }));
       remaining.forEach(({ i }, k) => {
         (parts[i] as SequencePart).planId = (planned.plans[k] as Plan).id;
+        delete (parts[i] as SequencePart).reorged; // sent again: a new attempt, not the reorged one
       });
       r = await save({ ...r, parts }, "sending the remaining parts as one wallet request");
       const asked = remaining.map(({ i }) => i);
       const sent = await sendPlansAsBatch(
         efs,
-        journal,
+        sendJournal,
         a.provider,
         planned.plans,
         asking(o, r, asked, "batch"),
@@ -347,8 +423,15 @@ export function sequenceOps(d: Deps) {
         return progress(r, { mode: "sequential", reason: planned.reason });
       const parts = r.parts.map((p) => ({ ...p }));
       (parts[i] as SequencePart).planId = planned.plan.id;
+      delete (parts[i] as SequencePart).reorged; // sent again: a new attempt, not the reorged one
       r = await save({ ...r, parts }, `sending part ${i + 1} of ${r.parts.length}`);
-      const sent = await sendPlan(efs, journal, a, planned.plan, asking(o, r, [i], "sequential"));
+      const sent = await sendPlan(
+        efs,
+        sendJournal,
+        a,
+        planned.plan,
+        asking(o, r, [i], "sequential"),
+      );
       // Bounded by settleMs, like the batch wait: when it runs out the part stays SUBMITTED (in flight, journaled),
       // never failed; reconcile settles it later from the ledger.
       if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o, settleMs);
@@ -392,36 +475,73 @@ export function sequenceOps(d: Deps) {
       parts: readonly SequencePartInput[],
       o: SequenceOpts = {},
     ): Promise<SequenceProgress> {
-      if (parts.length === 0) throw new EfsFault("MISUSE", "runSequence needs at least one part");
-      const dep = efs.deployment;
-      const seed = toJson({
-        account: d.account,
-        chainId: dep.chainId,
-        ledger: dep.ledger,
-        at: Date.now(),
-        r: randomHex(),
-        parts,
-      });
-      const r: SequenceRecord = {
-        schema: "efs-sdk-sequence/1",
-        sequenceId: keccak256(utf8Encode(seed)),
-        lock: d.lock,
-        chainId: dep.chainId,
-        realmId: dep.realmId,
-        ledger: dep.ledger,
-        account: d.account,
-        parts: parts.map((p) => ({ actions: p.actions, bodies: p.bodies, effects: p.effects })),
-        state: "NOT_STARTED",
-        history: [{ state: "NOT_STARTED", at: Date.now() }],
-      };
-      await journal.putSequence(r);
-      return advance(r, o);
+      // Every throw from here says where the save stood (EfsFault.mayHaveSent and co.): never "nothing saved".
+      const call = { sent: false };
+      let stored: Hex | undefined;
+      try {
+        if (parts.length === 0) throw new EfsFault("MISUSE", "runSequence needs at least one part");
+        const dep = efs.deployment;
+        const seed = toJson({
+          account: d.account,
+          chainId: dep.chainId,
+          ledger: dep.ledger,
+          at: Date.now(),
+          r: randomHex(),
+          parts,
+        });
+        const r: SequenceRecord = {
+          schema: "efs-sdk-sequence/1",
+          sequenceId: keccak256(utf8Encode(seed)),
+          lock: d.lock,
+          chainId: dep.chainId,
+          realmId: dep.realmId,
+          ledger: dep.ledger,
+          account: d.account,
+          // Each part keeps its own deadline window: it is planned (and re-planned on resume) just before it is sent.
+          parts: parts.map((p) => ({
+            actions: p.actions,
+            bodies: p.bodies,
+            effects: p.effects,
+            ...(p.deadlineSeconds !== undefined ? { deadlineSeconds: p.deadlineSeconds } : {}),
+          })),
+          state: "NOT_STARTED",
+          history: [{ state: "NOT_STARTED", at: Date.now() }],
+        };
+        await journal.putSequence(r);
+        stored = r.sequenceId;
+        return await advance(r, o, call);
+      } catch (e) {
+        throw sequenceFault(e, {
+          ...(stored ? { sequenceId: stored } : {}),
+          mayHaveSent: call.sent,
+          sequenceMayHaveSent: call.sent,
+        });
+      }
     },
     /** Continue a sequence (settling any in-flight part first). The only call that may prompt. */
     async resume(sequenceId: Hex, o: SequenceOpts = {}): Promise<SequenceProgress> {
-      const r = await load(sequenceId);
-      if (r.state === "COMPLETE" || r.state === "ABANDONED") return progress(r);
-      return advance(r, o);
+      const call = { sent: false };
+      // What the record said before this call: undefined while it has not been read (unknown, so maybe sent).
+      let before: boolean | undefined;
+      let absent = false;
+      try {
+        const r = await journal.getSequence(sequenceId);
+        if (!r) {
+          absent = true;
+          throw new EfsFault("MISUSE", `no sequence ${sequenceId} in this journal`);
+        }
+        before = recordMayHaveSent(r); // read before the lock check: another account's save may be on chain too
+        if (r.lock !== d.lock)
+          throw new EfsFault("MISUSE", "that sequence belongs to another account or deployment");
+        if (r.state === "COMPLETE" || r.state === "ABANDONED") return await progress(r);
+        return await advance(r, o, call);
+      } catch (e) {
+        throw sequenceFault(e, {
+          sequenceId,
+          mayHaveSent: call.sent,
+          sequenceMayHaveSent: call.sent || (before ?? !absent),
+        });
+      }
     },
     /** Settle a sequence from the ledger alone. Never prompts; safe on every app start. */
     async reconcileSequence(sequenceId: Hex, o: SequenceOpts = {}): Promise<SequenceProgress> {
@@ -455,6 +575,7 @@ const partInput = (p: SequencePart): SequencePartInput => ({
   actions: p.actions,
   bodies: p.bodies,
   effects: p.effects,
+  ...(p.deadlineSeconds !== undefined ? { deadlineSeconds: p.deadlineSeconds } : {}),
 });
 
 /** Sequences without a wallet: settle and list them before anyone connects (resume still needs the writer). */

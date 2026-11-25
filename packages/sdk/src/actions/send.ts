@@ -263,7 +263,7 @@ export async function sendPlan(
               kind: "efs.send",
               status: "NOT_SENT",
               planId: plan.id,
-              reason: reason("USER_REJECTED", "never", "the wallet refused the request"),
+              reason: reason("USER_REJECTED", "transient", "the wallet refused the request"),
             };
           }
           return {

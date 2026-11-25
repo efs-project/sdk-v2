@@ -48,6 +48,8 @@ export interface SequencePart {
   actions: readonly ActionData[];
   bodies: readonly Hex[];
   effects: readonly EffectView[];
+  /** The part's own deadline window (PlanInput.deadlineSeconds), applied each time it is planned. */
+  deadlineSeconds?: number;
   /** The plan sent (or about to be sent) for this part; a part is planned just before it is sent. */
   planId?: Hex;
   /** True once the ledger admitted this part's plan. */
@@ -55,6 +57,11 @@ export interface SequencePart {
   /** True once that admission is at a finalized block. */
   final?: boolean;
   publication?: bigint;
+  /**
+   * True while this part is uncommitted because a reorg undid its admission: in flight again while `planId` is
+   * set (REORGED), proven dropped once it is not (REORGED_DROPPED). Cleared when it commits or is planned again.
+   */
+  reorged?: true;
 }
 
 export interface SequenceRecord {

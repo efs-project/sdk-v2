@@ -161,7 +161,7 @@ export async function sendPlansAsBatch(
             return {
               kind: "efs.sendBatch",
               status: "NOT_SENT",
-              reason: reason("USER_REJECTED", "never", "the wallet refused the request"),
+              reason: reason("USER_REJECTED", "transient", "the wallet refused the request"),
             };
           }
           return {

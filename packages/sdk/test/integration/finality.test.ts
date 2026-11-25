@@ -237,19 +237,66 @@ describe("finality (fixture)", () => {
     const done = await w.runSequence(parts);
     expect(done.state).toBe("COMPLETE");
     knobs.forget = true;
-    expect(await openJournal(efs, { journal }).reconcileSequence(done.sequenceId)).toMatchObject({
+    // "This save was undone by the network": the progress says REORGED (wait: it may be re-included), on every read.
+    const reorged = {
       state: "IN_FLIGHT",
       final: false,
-    });
+      reason: { code: "REORGED", retry: "after-reconcile" },
+    };
+    expect(await openJournal(efs, { journal }).reconcileSequence(done.sequenceId)).toMatchObject(
+      reorged,
+    );
+    expect(await openJournal(efs, { journal }).pendingSequences()).toMatchObject([reorged]);
+    // Continue while it may still be re-included sends nothing: re-sending is never automatic.
+    const nonce = await rpc("eth_getTransactionCount", [heidi.address, "pending"]);
+    expect(await w.resume(done.sequenceId)).toMatchObject(reorged);
+    expect(await rpc("eth_getTransactionCount", [heidi.address, "pending"])).toBe(nonce);
     const other = await createWriter(efs, {
       authorizer: { kind: "local", profile: "direct", account: ivan },
       journal,
     });
     await expect(other.resume(done.sequenceId)).rejects.toThrow(/another account/);
     knobs.forget = false;
-    expect(await openJournal(efs, { journal }).reconcileSequence(done.sequenceId)).toMatchObject({
-      state: "COMPLETE",
+    const back = await openJournal(efs, { journal }).reconcileSequence(done.sequenceId);
+    expect(back).toMatchObject({ state: "COMPLETE" });
+    expect(back.reason).toBeUndefined(); // re-included: the reorg is over
+  });
+
+  it("a reorged part proven not committed says REORGED_DROPPED; it is never sent again by itself", async () => {
+    const { knobs, efs } = steered();
+    const journal = memoryJournal();
+    const w = await createWriter(efs, {
+      authorizer: { kind: "local", profile: "direct", account: heidi },
+      journal,
     });
+    const recipe = putInline(
+      efs,
+      w.principal,
+      docs,
+      "dropped.txt",
+      new Uint8Array([9]),
+      salt("dropped"),
+    );
+    const done = await w.runSequence([{ ...recipe, deadlineSeconds: 5 }]);
+    expect(done.state).toBe("COMPLETE");
+    knobs.forget = true;
+    const view = openJournal(efs, { journal });
+    expect(await view.reconcileSequence(done.sequenceId)).toMatchObject({
+      state: "IN_FLIGHT",
+      reason: { code: "REORGED" },
+    });
+    const nonce = await rpc("eth_getTransactionCount", [heidi.address, "pending"]);
+    knobs.noFinality = false;
+    await rpc("evm_increaseTime", [60]);
+    await rpc("anvil_mine", ["0x50"]); // a finalized block past the 5 s deadline, still without the admission
+    const dropped = {
+      state: "NOT_STARTED",
+      committed: 0,
+      reason: { code: "REORGED_DROPPED", retry: "transient" }, // "Send again" is offered; it is the person's click
+    };
+    expect(await view.reconcileSequence(done.sequenceId)).toMatchObject(dropped);
+    expect(await view.pendingSequences()).toMatchObject([dropped]);
+    expect(await rpc("eth_getTransactionCount", [heidi.address, "pending"])).toBe(nonce);
   });
 
   it("an UNKNOWN at the finalized block (no ledger there) is never evidence that a plan missed its deadline", async () => {

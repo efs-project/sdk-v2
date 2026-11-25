@@ -20,6 +20,7 @@ export type {
   Reason,
   ReasonCode,
   RevertInfo,
+  SequenceFault,
   WalletMismatch,
 } from "./core/errors.js";
 export { EfsFault } from "./core/errors.js";

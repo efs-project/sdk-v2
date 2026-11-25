@@ -7,12 +7,14 @@ import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
 import {
   createWriter,
+  type Journal,
   memoryJournal,
   type SequenceEvent,
   type SequenceProgress,
 } from "../../src/actions/index.ts";
 import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
+import { EfsFault } from "../../src/core/errors.ts";
 import type { Hex } from "../../src/core/hex.ts";
 import { putInline } from "./recipes.ts";
 
@@ -54,6 +56,8 @@ function wallet(
     dead?: boolean;
     switchAfterFirstSend?: Hex;
     holdFirst?: boolean;
+    /** Runs once the first send has gone out (e.g. the journal dies, or the person aborts). */
+    afterFirstSend?: () => void;
   } = {},
 ) {
   const w = {
@@ -76,6 +80,7 @@ function wallet(
         const hash = await rpc(method, params as unknown[]);
         if (k.loseFirst && w.sends === 1) throw new Error("connection lost");
         if (k.switchAfterFirstSend && w.sends === 1) w.account = k.switchAfterFirstSend;
+        if (w.sends === 1) k.afterFirstSend?.();
         return hash;
       }
       if (method === "wallet_getCapabilities") {
@@ -96,6 +101,7 @@ function wallet(
           for (let t = 0; t < 100 && !(await rpc("eth_getTransactionReceipt", [hash])); t++)
             await new Promise((r) => setTimeout(r, 20));
         }
+        if (w.batches === 1) k.afterFirstSend?.(); // every call above has gone out
         return { id: `batch-${w.batches}` };
       }
       if (method === "wallet_getCallsStatus") return { status: 200 };
@@ -171,7 +177,7 @@ describe("runSequence (fixture)", () => {
       state: "PARTIAL",
       total: 3,
       committed: 1,
-      reason: { code: "USER_REJECTED" },
+      reason: { code: "USER_REJECTED", retry: "transient" }, // the plan is still good: Continue is the person's call
     });
     expect(r.current).toMatchObject({ index: 1, stage: "NOT_PLANNED" }); // the refused part is planned again later
     // "Reload": a new writer over the same journal sees "1 of 3 saved — Continue".
@@ -350,6 +356,156 @@ describe("runSequence (fixture)", () => {
     });
     expect(slow.sends).toBe(2);
     expect(Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]))).toBe(before + 2);
+  });
+
+  it("the journal dies after the wallet sent: the fault says it may have gone out; a later reconcile commits once", async () => {
+    const inner = memoryJournal();
+    let broken = false;
+    const gone = <T>(f: () => Promise<T>): Promise<T> =>
+      broken ? Promise.reject(new EfsFault("JOURNAL_UNAVAILABLE", "IndexedDB went away")) : f();
+    const flaky: Journal = {
+      durable: inner.durable,
+      put: (r) => gone(() => inner.put(r)),
+      get: (id) => gone(() => inner.get(id)),
+      unresolved: (l) => gone(() => inner.unresolved(l)),
+      putSequence: (r) => gone(() => inner.putSequence(r)),
+      getSequence: (id) => gone(() => inner.getSequence(id)),
+      openSequences: (l) => gone(() => inner.openSequences(l)),
+      withLock: (l, wait, fn) => inner.withLock(l, wait, fn),
+    };
+    // e.g. WebKit drops IndexedDB while the person is in the wallet app; the transaction still commits.
+    const dying = wallet(ERIN, {
+      afterFirstSend: () => {
+        broken = true;
+      },
+    });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: dying, account: ERIN },
+      journal: flaky,
+    });
+    const before = Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]));
+    const fault = await w.runSequence(parts(w.principal, "seq-journal-dies", 1)).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(fault).toBeInstanceOf(EfsFault);
+    const f = fault as EfsFault;
+    expect(f.code).toBe("JOURNAL_UNAVAILABLE");
+    expect(f).toMatchObject({ mayHaveSent: true, sequenceMayHaveSent: true });
+    expect(f.sequenceId).toMatch(/^0x[0-9a-f]{64}$/);
+    // The journal comes back (the next visit): settling from the ledger finds the one transaction, sends nothing.
+    broken = false;
+    const id = f.sequenceId as Hex;
+    expect(await w.reconcileSequence(id)).toMatchObject({ state: "COMPLETE", committed: 1 });
+    expect(await w.resume(id)).toMatchObject({ state: "COMPLETE", committed: 1 });
+    expect(dying.sends).toBe(1);
+    expect(Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]))).toBe(before + 1);
+  });
+
+  it("an abort after the wallet sent: the fault says it may have gone out; a later reconcile commits once", async () => {
+    const ctl = new AbortController();
+    const aborting = wallet(ERIN, { afterFirstSend: () => ctl.abort() });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: aborting, account: ERIN },
+      journal: memoryJournal(),
+    });
+    const before = Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]));
+    const fault = await w
+      .runSequence(parts(w.principal, "seq-abort", 2), { signal: ctl.signal })
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+    expect(fault).toBeInstanceOf(EfsFault);
+    const f = fault as EfsFault;
+    expect(f.code).toBe("ABORTED");
+    expect(f).toMatchObject({ mayHaveSent: true, sequenceMayHaveSent: true });
+    const id = f.sequenceId as Hex;
+    expect(id).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(aborting.sends).toBe(1); // part 2 was never asked for
+    // Until the transaction is mined, settling says IN_FLIGHT (unknown is not absence); a later visit finds it.
+    const [sent] = (await w.pending()) as { txHash?: Hex }[];
+    for (let t = 0; t < 200 && !(await rpc("eth_getTransactionReceipt", [sent?.txHash])); t++)
+      await new Promise((res) => setTimeout(res, 20));
+    expect(await w.reconcileSequence(id)).toMatchObject({ state: "PARTIAL", committed: 1 });
+    expect(await w.resume(id, { pollMs: 50 })).toMatchObject({ state: "COMPLETE", committed: 2 });
+    expect(aborting.sends).toBe(2);
+    expect(Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]))).toBe(before + 2);
+  });
+
+  it("the journal dies after an atomic batch went out: the fault says it may have gone out; reconcile commits it", async () => {
+    const inner = memoryJournal();
+    let broken = false;
+    const gone = <T>(f: () => Promise<T>): Promise<T> =>
+      broken ? Promise.reject(new EfsFault("JOURNAL_UNAVAILABLE", "IndexedDB went away")) : f();
+    const flaky: Journal = {
+      durable: inner.durable,
+      put: (r) => gone(() => inner.put(r)),
+      get: (id) => gone(() => inner.get(id)),
+      unresolved: (l) => gone(() => inner.unresolved(l)),
+      putSequence: (r) => gone(() => inner.putSequence(r)),
+      getSequence: (id) => gone(() => inner.getSequence(id)),
+      openSequences: (l) => gone(() => inner.openSequences(l)),
+      withLock: (l, wait, fn) => inner.withLock(l, wait, fn),
+    };
+    const batching = wallet(ERIN, {
+      atomic5792: true,
+      afterFirstSend: () => {
+        broken = true;
+      },
+    });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: batching, account: ERIN },
+      journal: flaky,
+    });
+    const fault = await w.runSequence(parts(w.principal, "seq-batch-dies")).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(fault).toBeInstanceOf(EfsFault);
+    const f = fault as EfsFault;
+    expect(f.code).toBe("JOURNAL_UNAVAILABLE");
+    expect(f).toMatchObject({ mayHaveSent: true, sequenceMayHaveSent: true });
+    broken = false;
+    const id = f.sequenceId as Hex;
+    expect(await w.reconcileSequence(id)).toMatchObject({ state: "COMPLETE", committed: 3 });
+    expect([batching.batches, batching.sends]).toEqual([1, 0]);
+  });
+
+  it("a local account aborted after its write-ahead record: the fault says it may have gone out", async () => {
+    const ctl = new AbortController();
+    const inner = memoryJournal();
+    // The caller aborts the moment the write-ahead record is down, just before the SDK broadcasts.
+    const journal: Journal = {
+      durable: inner.durable,
+      put: async (r) => {
+        await inner.put(r);
+        if (r.stage === "SUBMISSION_POSSIBLE") ctl.abort();
+      },
+      get: (id) => inner.get(id),
+      unresolved: (l) => inner.unresolved(l),
+      putSequence: (r) => inner.putSequence(r),
+      getSequence: (id) => inner.getSequence(id),
+      openSequences: (l) => inner.openSequences(l),
+      withLock: (l, wait, fn) => inner.withLock(l, wait, fn),
+    };
+    const w = await createWriter(efs, {
+      authorizer: { kind: "local", profile: "direct", account: dave },
+      journal,
+    });
+    const fault = await w
+      .runSequence(parts(w.principal, "seq-local-abort", 1), { signal: ctl.signal })
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+    expect(fault).toBeInstanceOf(EfsFault);
+    const f = fault as EfsFault;
+    expect(f.code).toBe("ABORTED");
+    expect(f).toMatchObject({ mayHaveSent: true, sequenceMayHaveSent: true });
+    // Whether or not it reached the node, the save is never listed as unsent: it is settled from the ledger.
+    const settled = await w.reconcileSequence(f.sequenceId as Hex);
+    expect(["IN_FLIGHT", "COMPLETE"]).toContain(settled.state);
   });
 
   it("settling and listing never touch the wallet", async () => {
