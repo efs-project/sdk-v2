@@ -866,8 +866,11 @@ SDK's contract tests. An app records its own flows with `recordingFetch` and `re
 `@efs/fixture`, and re-records whenever its call order changes.
 
 **A live chain (`@efs/fixture`, Node only):** a second private tarball, packed from the same commit as `@efs/sdk`,
-for live-chain tests such as the client's required e2e job. `startFixtureChain({ anvilPath?, port?, ttlSeconds?,
-home? })` → `{ rpcUrl, chainId, deployment, deploymentPath, accounts: { fixture, unlocked }, seed, contracts, stop() }`.
+for live-chain tests such as the client's required e2e job and a dev chain. `startFixtureChain({ anvilPath?, port?,
+ttlSeconds?, home?, chainId?, name? })` → `{ name, rpcUrl, chainId, deployment, deploymentPath, accounts: { fixture,
+unlocked }, seed, contracts, stop() }`. `chainId` defaults to 31337 (what the recorded transcripts use); another id
+builds the deployment for that chain (its realm, domain and activation carry it). `stopFixtureChain({ name, home })`
+stops a chain left running under a sticky name (no-op when none), signalling only the anvil its lease names.
 - **What it runs:** the contracts' own fixture tool, from the lock-verified snapshot it carries (`contracts/`, with
   `contracts/PROVENANCE.json`). That means anvil (osaka, with the EIP-7825 cap enforced), the genesis deployment, the
   Files Types and the seed. It needs `anvil` on PATH (or `anvilPath`) and `perl` (the ttl watchdog).
