@@ -13,7 +13,15 @@ export type { Attempt, Basis, BasisPolicy } from "./chain/pool.js";
 export type { Eip1193Like, FetchLike, RequestEvent, RpcEndpoint } from "./chain/rpc.js";
 export type { Capabilities, Efs, EfsConfig, GatewayConfig, Lens, LensTools } from "./client.js";
 export { createEfs } from "./client.js";
-export type { AbortSignalLike, CallOpts, FaultCode, Reason, ReasonCode } from "./core/errors.js";
+export type {
+  AbortSignalLike,
+  CallOpts,
+  FaultCode,
+  Reason,
+  ReasonCode,
+  RevertInfo,
+  WalletMismatch,
+} from "./core/errors.js";
 export { EfsFault } from "./core/errors.js";
 export type { Address, Hex, PrincipalId, RecordId, SubjectId, TypeId } from "./core/hex.js";
 export { fromJson, toJson } from "./core/json.js";

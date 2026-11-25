@@ -178,7 +178,7 @@ describe("write lifecycle (fixture)", () => {
     expect(done.final).toBe(true);
   });
 
-  it("a wallet refusal is NOT_SENT; a wallet on the wrong chain or account is STALE", async () => {
+  it("a wallet refusal is NOT_SENT; a wallet on the wrong chain or account is NOT_SENT WALLET_MISMATCH", async () => {
     const refusing = await createWriter(efs, {
       authorizer: { kind: "eip1193", profile: "direct", provider: wallet(BOB, { refuse: true }) },
       journal: memoryJournal(),
@@ -187,11 +187,40 @@ describe("write lifecycle (fixture)", () => {
     const p1 = await refusing.planActions(r1);
     if (p1.status !== "PLANNED") throw new Error(p1.status);
     expect((await refusing.send(p1.plan)).status).toBe("NOT_SENT");
+    const onMainnet = wallet(BOB, { chainId: "0x1" });
     const wrongChain = await createWriter(efs, {
-      authorizer: { kind: "eip1193", profile: "direct", provider: wallet(BOB, { chainId: "0x1" }) },
+      authorizer: { kind: "eip1193", profile: "direct", provider: onMainnet },
       journal: memoryJournal(),
     });
-    expect((await wrongChain.send(p1.plan)).status).toBe("STALE");
+    // Nothing is sent and the reason says exactly what to switch back to: the same plan can go once it is.
+    expect(await wrongChain.send(p1.plan)).toMatchObject({
+      status: "NOT_SENT",
+      reason: {
+        code: "WALLET_MISMATCH",
+        retry: "transient",
+        wallet: {
+          expected: { chainId: 31337, account: BOB },
+          actual: { chainId: 1, account: BOB },
+        },
+      },
+    });
+    const ALICE_ADDR = alice.address.toLowerCase() as Hex;
+    const otherAccount = wallet(ALICE_ADDR);
+    const wrongAccount = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: otherAccount, account: BOB },
+      journal: memoryJournal(),
+    });
+    expect(await wrongAccount.send(p1.plan)).toMatchObject({
+      status: "NOT_SENT",
+      reason: {
+        code: "WALLET_MISMATCH",
+        wallet: {
+          expected: { chainId: 31337, account: BOB },
+          actual: { chainId: 31337, account: ALICE_ADDR },
+        },
+      },
+    });
+    expect([onMainnet.sent, otherAccount.sent]).toEqual([0, 0]);
   });
 
   it("two concurrent sends for one account: the second is BUSY", async () => {
