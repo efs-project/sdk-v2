@@ -935,13 +935,16 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
 - `resolvePath(efs, { from, segments }, { lens?, maxSegments? })` → `PRESENT { target, entry, chain }` |
   `ABSENT_PROVEN` / `MASKED { segment, chain }` | `NOT_A_FOLDER { segment }` | `INVALID { segment?, rule? }` |
   `UNKNOWN`. A `from` (or a lookupEntry folder) that is not a files-directory/1 record is INVALID, never
-  ABSENT_PROVEN. Each segment follows the Lens's choice, with its author in `chain`. No depth limit: a path costs one
+  ABSENT_PROVEN. Each segment follows the Lens's choice, with its author in `chain`. Every folder on the way
+  carries its creator (`owner`, on each step's `folder` and on a folder `target`), read with the record that proves
+  it is a folder, at no extra request. No depth limit: a path costs one
   round trip per segment, so object links are the fast (and rename-proof) way to open a file; a path is a lookup that
   a rename or move can break.
 - `openPath(efs, link, { reader?, base?, maxSegments? })` → resolvePath's answers, `INVALID` when the link's id is
   not a folder (a file included), or openObject's `ABSENT_PROVEN` (`kind: "efs.object"`) when nothing has the id.
-  The Lens is the link's own when it carries one, else the reader, then the folder's creator, then `base`.
-  `evidence` covers both reads.
+  The Lens is the link's own when it carries one, else the reader, then the folder's creator, then `base`, and every
+  answer for the names returns it as `lens`, so the entry opens under the Lens it was chosen in. `evidence` covers
+  both reads.
 - Each reply is cross-checked: the folder must be a files-directory/1 record, the heads' selection must be the Lens
   law's, the page and Lens readers must agree on every row, and COMPLETE must hold locally.
 
