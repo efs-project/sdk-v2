@@ -9,7 +9,8 @@
 // name's files-name/2 record, a files-directory/1 parent and a created subject or a directory record as target):
 //   create file    CREATE(salt), the root revision (inline, or chunks under a descriptor), the name record if new,
 //                  BIND(HEAD, file → root), BIND(FOLDER, parent, name → file)
-//   create folder  CREATE(salt), PUBLISH(files-directory/1), the name record if new, BIND(FOLDER, parent, name → it)
+//   create folder  PUBLISH(files-directory/1 (writer, salt)), the name record if new, BIND(FOLDER, parent, name → it).
+//                  No CREATE: a folder is its record, which only its creator may publish (never REUSE another's)
 //   move / rename  the new name record if new, RELEASE(FOLDER, from), BIND(FOLDER, to → target): one publication
 //   remove         RELEASE(FOLDER, at): the Lens falls through to the next author's entry. With hide: UNBIND, a
 //                  mask: nothing shows there for a reader who ranks you above the entry's author
@@ -414,7 +415,7 @@ const entryOf = (p: Place): EntryRef => ({
 });
 const nameRecord = (types: Types, p: Place): Hex => lower(recordFromHash(types.name, p.role));
 const isFolder = (types: Types, r: RecordInfo | undefined): boolean =>
-  !!r && r.present && r.typeId === types.directory && r.length === 32;
+  !!r && r.present && r.typeId === types.directory && r.length === 64;
 const TARGET_RECORD = FILES.targetKind.RECORD;
 const targetOf = (h: RawHead): EntryTarget =>
   h.targetKind === TARGET_RECORD
@@ -603,6 +604,7 @@ const ROOT_HEADER_BYTES = 64;
 const checkSalt = (salt: Hex | undefined): Hex => {
   if (salt === undefined) return randomSalt();
   if (!/^0x[0-9a-fA-F]{64}$/.test(salt)) throw misuse("salt is 32 bytes of hex");
+  if (/^0x0{64}$/.test(salt)) throw misuse("salt must not be zero"); // the folder rule refuses a zero salt
   return lower(salt);
 };
 
@@ -757,7 +759,7 @@ export interface CreateFolderInput {
   folder: FolderRef;
   name: string;
   lens?: Lens;
-  /** The CREATE salt (default: 32 random bytes); the new folder's subject is subjectId(writer, salt). */
+  /** The folder record's salt (default: 32 random bytes, never zero); its id is recordId(files-directory/1, (writer, salt)). */
   salt?: Hex;
 }
 export interface CreateFolderReview extends FolderReviewBase, LensView {
@@ -765,8 +767,8 @@ export interface CreateFolderReview extends FolderReviewBase, LensView {
   /** The parent. */
   folder: FolderRef;
   name: string;
-  /** The new folder (its object link is its subject). */
-  created: FolderRef & { subject: SubjectId };
+  /** The new folder: its directory record id is its permanent link, and the writer is its owner. */
+  created: FolderRef & { owner: PrincipalId };
 }
 
 /** Plan a new, empty folder `name` in `folder`. One publication; the name rules are planCreateFile's. */
@@ -781,8 +783,8 @@ export async function planCreateFolder(
   const salt = checkSalt(input.salt);
   const me = lower(writer.principal) as PrincipalId;
   const principals = lensPrincipals(efs, input.lens);
-  const subject = lower(subjectId(me, salt)) as SubjectId;
-  const dirBody = encode.directory(subject);
+  // A folder is its record: (creator, salt), published only by its creator. No CREATE, no subject.
+  const dirBody = encode.directory(me, salt);
   const directory = lower(recordId(types.directory, dirBody)) as RecordId;
   const nameId = nameRecord(types, place);
   return atOneBasis(efs, o, async (ctx, s, basis) => {
@@ -793,12 +795,11 @@ export async function planCreateFolder(
       me,
       principals,
       [place],
-      [place.folder, nameId],
-      [subject],
+      [place.folder, nameId, directory],
     );
     if (!r.ok) return r;
     const seen = r.value;
-    if (seen.created.get(subject))
+    if ((seen.records.get(directory) as RecordInfo).present)
       throw misuse("this salt was already used by this writer: pass a new one", { salt });
     const st = seen.places.get(place.position) as PlaceState;
     const refused: EntryRefusal[] = [];
@@ -810,7 +811,6 @@ export async function planCreateFolder(
     const nameExists = (seen.records.get(nameId) as RecordInfo).present;
     const row = freshFolderBindRow(st.mine, true);
     const actions: PlannedAction[] = [
-      plain({ kind: ACTION.CREATE, salt }, { group: 1 }),
       publish(types.directory, dirBody, "files-directory/1", 1),
       ...(nameExists ? [] : [publish(types.name, place.nameBytes, "files-name/2", 1)]),
       plain(
@@ -825,7 +825,7 @@ export async function planCreateFolder(
         { group: 1, ...(row ? { bindRow: row } : {}) },
       ),
     ];
-    const args = effectArgs(place, { directory, subject });
+    const args = effectArgs(place, { directory });
     const units: Unit[] = [
       {
         effect: (stage, part, parts) => ({
@@ -849,7 +849,7 @@ export async function planCreateFolder(
             ...base,
             folder: entryOf(place).folder,
             name: place.name,
-            created: { kind: "folder", directory, subject },
+            created: { kind: "folder", directory, owner: me },
             ...viewAfterBind(principals, st, me),
           }),
           me,

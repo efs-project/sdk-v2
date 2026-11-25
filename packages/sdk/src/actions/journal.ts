@@ -87,8 +87,8 @@ export type SequenceEffect =
     }
   /** A new file `name` in `folder` (a files-directory/1 record id): the file's subject and first revision. */
   | { kind: "files.create"; folder: Hex; name: string; file: Hex; revision: Hex }
-  /** A new folder `name` in `folder`: its directory record id and the subject that minted it. */
-  | { kind: "files.createFolder"; folder: Hex; name: string; directory: Hex; subject: Hex }
+  /** A new folder `name` in `folder`: its directory record id (its permanent link). */
+  | { kind: "files.createFolder"; folder: Hex; name: string; directory: Hex }
   /** Entries moved or renamed: each from (folder, name) to (toFolder, toName), and what it points at. */
   | {
       kind: "files.move";

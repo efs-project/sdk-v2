@@ -70,11 +70,12 @@ export type {
   FolderRef,
   FolderRow,
   ListFolderOpts,
+  ObjectOpen,
   PathResolution,
   PathStep,
   ResolvePathOpts,
 } from "./folders.js";
-export { folderOf, listFolder, lookupEntry, resolvePath } from "./folders.js";
+export { listFolder, lookupEntry, openObject, resolvePath } from "./folders.js";
 export type { MediaTypeCheck } from "./media.js";
 export { MAX_MEDIA_TYPE_BYTES, normalizeMediaType } from "./media.js";
 export type { FileChunks, StreamFailure, StreamOpts } from "./stream.js";

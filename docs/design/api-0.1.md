@@ -819,13 +819,17 @@ type EditPlanResult =
 
 ### Folders (0.1)
 
-A folder is a `files-directory/1` record (`FolderRef { kind: "folder", directory, subject?, owner? }`). Its entries
+A folder is a `files-directory/1` record (`FolderRef { kind: "folder", directory, owner? }`): its body is
+`(creatorPrincipal, salt)` and only its creator may publish it, so its id is its permanent link and names one folder
+of one owner forever (never REUSE another principal's folder record: the chain refuses it). Its entries
 are FOLDER bindings, one per author: `(FOLDER, directory, keccak(name)) → target`, where the target is a file
 subject or another folder's directory record. The Lens decides which author's entry a name shows (the first author
 in Lens order with a bound entry; an earlier author's mask hides the name). Every read and planner takes the parent
 explicitly: there is no default root, and no link format names one (the Realm's shared root is a stand-in parent in
-fixtures; folder paths will live under an address once homes land). `folderOf(efs, subject)` makes a FolderRef from
-the subject that minted it (its object link), with no read. `efs.lens.place({ reader, owner, base })` builds a place's
+fixtures; folder paths will live under an address once homes land). `openObject(efs, id, { lens? })` says what an
+object link's id is, in one batched read: a folder record is `FOLDER { folder, owner }`, a created subject is
+`FILE { file, creator, open }` (opened under the Lens), anything else `ABSENT_PROVEN`; a record of another Type is
+INVALID. The kind is fixed by the id, so the answer never changes. `efs.lens.place({ reader, owner, base })` builds a place's
 Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out), then `base`, each once.
 
 **Reads** (`@efs/sdk/files`, all at one block):
@@ -863,8 +867,9 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
 **Writes** (each `PLANNED { parts, review }` for `runSequence` | `REFUSED { refused }` | `TOO_LARGE` | `UNKNOWN`):
 - `planCreateFile(efs, w, { folder, name, content, mediaType?, lens?, salt? })`: CREATE, the root revision (inline,
   or chunks under a descriptor; a declared type means a descriptor), the name record if new, BIND(HEAD), BIND(FOLDER).
-- `planCreateFolder(efs, w, { folder, name, lens?, salt? })`: CREATE, files-directory/1, the name if new,
-  BIND(FOLDER). `review.created` is the new FolderRef with its subject.
+- `planCreateFolder(efs, w, { folder, name, lens?, salt? })`: PUBLISH(files-directory/1 (writer, salt)), the name
+  if new, BIND(FOLDER). No CREATE. The salt is random and never zero; a reused one is MISUSE. `review.created` is the
+  new FolderRef with its owner.
 - `planMoveEntries(efs, w, { moves: [{ from, to: { folder?, name?, via? } }], lens? })`: rename (a new name) and move
   (a new folder). Each move RELEASEs the old place (the Lens falls through to the next author there) and BINDs the new
   one, atomically in one publication; links to the file or folder keep working. Moving a folder needs

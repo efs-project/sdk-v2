@@ -9,9 +9,9 @@ import { EfsFault } from "../../src/core/errors.ts";
 import type { Hex, PrincipalId, RecordId, SubjectId } from "../../src/core/hex.ts";
 import {
   type FolderRef,
-  folderOf,
   listFolder,
   lookupEntry,
+  openObject,
   resolvePath,
 } from "../../src/files/folders.ts";
 
@@ -20,17 +20,13 @@ const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
   root: { directoryRecordId: RecordId; principalId: PrincipalId };
   seed: {
-    folder: { name: string; directoryRecordId: RecordId; subjectId: SubjectId };
+    folder: { name: string; directoryRecordId: RecordId };
     files: SeedFile[];
   };
 };
 const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
 const root: FolderRef = { kind: "folder", directory: deployment.root.directoryRecordId };
-const docs: FolderRef = {
-  kind: "folder",
-  directory: deployment.seed.folder.directoryRecordId,
-  subject: deployment.seed.folder.subjectId,
-};
+const docs: FolderRef = { kind: "folder", directory: deployment.seed.folder.directoryRecordId };
 const t = (deployment as unknown as { typeIds: Record<string, Hex> }).typeIds;
 const seeder = deployment.root.principalId;
 const seeded = (name: string): SeedFile =>
@@ -187,19 +183,41 @@ describe("folder reads (fixture)", () => {
     });
   });
 
-  it("a folder is named by its subject (its object link) with no read, and a non-folder is never an empty folder", async () => {
-    expect(folderOf(efs, deployment.seed.folder.subjectId)).toEqual(docs);
-    const looked = await lookupEntry(efs, { folder: root, name: "docs" });
-    expect(looked.status === "PRESENT" && looked.selected.target).toEqual(docs);
+  it("openObject tells a folder's id from a file's, with who created each, and a non-folder is never an empty folder", async () => {
     const readme = seeded("readme.txt");
-    // A subject that minted a file, not a folder: no files-directory/1 record exists for it.
-    expect(await listFolder(efs, folderOf(efs, readme.subjectId))).toMatchObject({
+    expect(await openObject(efs, docs.directory)).toMatchObject({
+      status: "FOLDER",
+      folder: { kind: "folder", directory: docs.directory, owner: seeder },
+    });
+    const file = await openObject(efs, readme.subjectId);
+    expect(file).toMatchObject({
+      status: "FILE",
+      file: { kind: "file", subject: readme.subjectId },
+      creator: seeder,
+      open: { status: "PRESENT", file: { revision: readme.headRecordId } },
+    });
+    // A revision record is a record of another Type: not an object (it has its own ~efs/v link).
+    expect(await openObject(efs, readme.headRecordId)).toMatchObject({ status: "INVALID" });
+    expect(await openObject(efs, `0x${"9e".repeat(32)}` as RecordId)).toMatchObject({
       status: "ABSENT_PROVEN",
     });
-    // A record that exists but is a file revision, not a folder.
+    // Listing what isn't a folder: no such record, or a record of another Type.
+    expect(
+      await listFolder(efs, { kind: "folder", directory: `0x${"9e".repeat(32)}` as RecordId }),
+    ).toMatchObject({
+      status: "ABSENT_PROVEN",
+    });
     expect(await listFolder(efs, { kind: "folder", directory: readme.headRecordId })).toMatchObject(
-      { status: "INVALID", reason: { code: "UNSUPPORTED_PROFILE" } },
+      {
+        status: "INVALID",
+        reason: { code: "UNSUPPORTED_PROFILE" },
+      },
     );
+    const looked = await lookupEntry(efs, { folder: root, name: "docs" });
+    expect(looked.status === "PRESENT" && looked.selected.target).toEqual({
+      ...docs,
+      owner: seeder,
+    });
   });
 
   it("an author outside the Lens is not shown, and a Lens of nobody is refused", async () => {

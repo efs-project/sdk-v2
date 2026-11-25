@@ -166,7 +166,8 @@ export const encode = {
     cat(enc(parent, file, FORM.inline), bytes),
   childContent: (parent: Hex, file: Hex, descriptor: Hex): Uint8Array =>
     enc(parent, file, FORM.content, descriptor),
-  directory: (seed: Hex): Uint8Array => enc(seed),
+  /** files-directory/1: abi.encode(creatorPrincipal, salt), 64 bytes; only its creator may publish it. */
+  directory: (creator: Hex, salt: Hex): Uint8Array => enc(creator, salt),
   chunk: (payload: Uint8Array): Uint8Array => cat(hexToBytes(sha256(payload)), payload),
   span: (left: Hex, right: Hex, length: bigint): Uint8Array => enc(left, right, length),
   /**
