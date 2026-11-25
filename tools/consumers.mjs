@@ -80,6 +80,10 @@ try {
     ok(
       "folders (create, list, rename, remove, restore and route a link, every step asserted, on a live fixture chain)",
     );
+    dirs.push(npmConsumer("tags"));
+    ok(
+      "tags (a home, a tag, a label and the names people see, every step asserted, on a live fixture chain)",
+    );
   }
   if (only.has("foundry")) {
     const dir = freshCopy("smoke-foundry");

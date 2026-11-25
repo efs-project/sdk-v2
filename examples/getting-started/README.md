@@ -78,4 +78,14 @@ Create, rename and move (`planMoveEntries`), remove (`planRemoveEntries`: it rel
 that name shows; `hide: true` masks it) and restore (`planRestoreEntries`). Every plan is reviewed and sent with
 `runSequence`, like an edit. A walkthrough CI runs on a live chain is in [`examples/folders`](../folders/README.md).
 
+## 7. Homes, tags and names
+
+```js
+const home = await openHome(efs, address, { reader }); // your address as a parent; home.lens: reader, then its owner
+await planTag(efs, writer, { topic: ["notes"], targets: [file] }); // words as the chain admits them: fold first
+const page = await topicItems(efs, ["notes"], { view: "mine", lens }); // finished only when the chain says so
+const name = await topicName(efs, ["notes"], { lens, langs: ["en"] }); // a label, else the word itself
+```
+A walkthrough CI runs on a live chain, with what trips people up, is in [`examples/tags`](../tags/README.md).
+
 More: [`docs/design/api-0.1.md`](../../docs/design/api-0.1.md), the full API and every reason code.

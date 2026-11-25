@@ -15,5 +15,7 @@ At S0 all four are `smoke` placeholders (see `LIMITATIONS.md`):
 | `smoke-foundry` | A Foundry project compiles against the Solidity release archive using the documented remapping |
 | `smoke-fixture` | The two tarballs start a fixture chain, pin it, edit the seeded `readme.txt` and read it back (`--only fixture`, needs `anvil`) |
 | `getting-started` | The getting-started guide, every step asserted: pin, read, a declined then completed edit, a lost wallet answer recovered after a reload, and the copy rule for each outcome (`--only fixture`) |
+| `folders` | Folders, every step asserted: create, list, rename, remove, restore, and route a link (`--only fixture`) |
+| `tags` | Homes, tags and names, every step asserted: a file in your home, a tag, a label, and the names a person sees (`--only fixture`) |
 
 Real examples replace these as SDK features land.
