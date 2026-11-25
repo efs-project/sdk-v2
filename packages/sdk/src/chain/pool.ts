@@ -17,6 +17,8 @@ export interface Basis {
   chainId: number;
   blockNumber: bigint;
   blockHash: Hex;
+  /** The basis block's timestamp (unix seconds). Absent in results recorded before 0.1 carried it. */
+  timestamp?: bigint;
   /** Execution set from describe() at this basis; "0x" until the deployment pin reads it. */
   executionSet: Hex;
   /** Label or origin of the endpoint that served this basis. Never a URL. */

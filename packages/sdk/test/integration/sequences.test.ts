@@ -2,7 +2,7 @@
 // Resumable split saves on a real chain: COMPLETE is the only success, PARTIAL resumes after a reload, settling
 // never needs the wallet, and an atomic EIP-5792 wallet takes every part under one approval.
 import { readFileSync } from "node:fs";
-import { keccak256, toHex } from "viem";
+import { getAbiItem, keccak256, toFunctionSelector, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
 import {
@@ -16,6 +16,7 @@ import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import { EfsFault } from "../../src/core/errors.ts";
 import type { Hex } from "../../src/core/hex.ts";
+import { ledgerReadsAbi } from "../../src/generated/abis.ts";
 import { putInline } from "./recipes.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -338,7 +339,9 @@ describe("runSequence (fixture)", () => {
       committed: 0,
       reason: { code: "NOT_YET_DECIDABLE", retry: "after-reconcile" },
     });
-    expect(r.current).toMatchObject({ index: 0, stage: "SUBMITTED" });
+    expect(r.current).toMatchObject({ index: 0, stage: "SUBMITTED", pastDeadline: false });
+    expect(typeof r.current?.deadline).toBe("bigint");
+    expect(r.current?.checkedAt?.timestamp).toBeLessThanOrEqual(r.current?.deadline as bigint);
     expect(slow.sends).toBe(1); // part 2 waits for part 1: nothing else was sent
     // Unknown is not absence: settling from the ledger alone keeps it in flight, and lists it.
     expect(await w.reconcileSequence(r.sequenceId)).toMatchObject({
@@ -570,12 +573,19 @@ describe("runSequence (fixture)", () => {
     });
     const [recipe] = parts(w.principal, "seq-expired", 1);
     if (!recipe) throw new Error("no part");
-    const r = await w.runSequence([{ ...recipe, deadlineSeconds: 5 }], {
+    const r = await w.runSequence([{ ...recipe, deadlineSeconds: 30 }], {
       settleMs: 200,
       pollMs: 50,
     });
-    expect(r).toMatchObject({ state: "IN_FLIGHT", committed: 0 });
+    expect(r).toMatchObject({ state: "IN_FLIGHT", committed: 0, current: { pastDeadline: false } });
     await rpc("evm_increaseTime", [60]);
+    await rpc("evm_mine");
+    // The latest block is past the deadline but no finalized one is yet: still in flight, pastDeadline true (a hold
+    // can be released; nothing is proven yet).
+    const late = await w.reconcileSequence(r.sequenceId);
+    expect(late).toMatchObject({ state: "IN_FLIGHT", current: { index: 0, pastDeadline: true } });
+    expect(late.current?.checkedAt?.timestamp).toBeGreaterThan(late.current?.deadline as bigint);
+    expect(late.reason?.code).not.toBe("EXPIRED");
     await rpc("anvil_mine", ["0x50"]); // anvil finalizes 64 blocks behind: a finalized block past the deadline
     const expired = {
       state: "NOT_STARTED",
@@ -607,6 +617,51 @@ describe("runSequence (fixture)", () => {
     expect(again).toMatchObject({ state: "COMPLETE", committed: 1 });
     expect(again.reason).toBeUndefined();
     expect(slow.sends).toBe(2);
+  });
+
+  it("a reconcile whose ledger read fails never judges pastDeadline: it keeps the last real judgement", async () => {
+    // An endpoint whose publicationAt reads fail while `broken`: the pin still verifies, so reconcile has a basis.
+    const selector = toFunctionSelector(getAbiItem({ abi: ledgerReadsAbi, name: "publicationAt" }));
+    let broken = false;
+    const failing = (async (url: string, init: { body?: string }) => {
+      const res = await fetch(url, init as RequestInit);
+      if (!broken) return res;
+      type Req = { id: number; method: string; params: [{ data?: string }, unknown] };
+      const body = JSON.parse(init.body ?? "null") as Req | Req[];
+      const bad = new Set(
+        (Array.isArray(body) ? body : [body])
+          .filter((r) => r.method === "eth_call" && r.params[0]?.data?.startsWith(selector))
+          .map((r) => r.id),
+      );
+      const text = await res.text();
+      const parsed = JSON.parse(text) as { id: number }[] | { id: number };
+      const fix = (x: { id: number }) =>
+        bad.has(x.id)
+          ? { jsonrpc: "2.0", id: x.id, error: { code: -32000, message: "header not found" } }
+          : x;
+      const out = Array.isArray(parsed) ? parsed.map(fix) : fix(parsed);
+      return new Response(JSON.stringify(out), { status: 200, headers: res.headers });
+    }) as unknown as typeof fetch;
+    const flaky = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: failing as never });
+    const slow = wallet(ERIN, { holdFirst: true }); // signed, never broadcast: never committed
+    const w = await createWriter(flaky, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: slow, account: ERIN },
+      journal: memoryJournal(),
+    });
+    const [recipe] = parts(w.principal, "seq-read-fails", 1);
+    if (!recipe) throw new Error("no part");
+    const r = await w.runSequence([{ ...recipe, deadlineSeconds: 30 }], {
+      settleMs: 200,
+      pollMs: 50,
+    });
+    expect(r.current).toMatchObject({ pastDeadline: false });
+    await rpc("evm_increaseTime", [60]);
+    await rpc("evm_mine");
+    broken = true; // the latest block is past the deadline, but this endpoint cannot read the admission there
+    const blind = await w.reconcileSequence(r.sequenceId);
+    expect(blind.current).toMatchObject({ pastDeadline: false, checkedAt: r.current?.checkedAt });
+    broken = false;
+    expect((await w.reconcileSequence(r.sequenceId)).current).toMatchObject({ pastDeadline: true });
   });
 
   it("settling and listing never touch the wallet", async () => {

@@ -102,11 +102,12 @@ describe("faults out of runSequence and resume", () => {
     expect(where(f)).toEqual({ sequenceId: id, mayHaveSent: false, sequenceMayHaveSent: true });
   });
 
-  it("resume of a save that is not in the journal: MISUSE, nothing of it on chain", async () => {
+  it("resume of a save that is not in the journal: MISUSE, and absence proves nothing (it may have gone out)", async () => {
+    // Cleared, or written to another journal: a missing record is never "nothing of it on chain".
     const id = `0x${"22".repeat(32)}` as Hex;
     const f = await caught((await writerWith(memoryJournal())).resume(id));
     expect(f.code).toBe("MISUSE");
-    expect(where(f)).toEqual({ sequenceId: id, mayHaveSent: false, sequenceMayHaveSent: false });
+    expect(where(f)).toEqual({ sequenceId: id, mayHaveSent: false, sequenceMayHaveSent: true });
   });
 
   it("resume of a save with a committed part, failing before it sends: this call sent nothing, the save did", async () => {

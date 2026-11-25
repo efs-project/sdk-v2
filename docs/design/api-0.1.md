@@ -124,6 +124,7 @@ export interface Basis {
   chainId: number;
   blockNumber: bigint;
   blockHash: Hex;
+  timestamp?: bigint;       // the block's time (unix seconds); absent in results recorded before 0.1 carried it
   executionSet: Hex;        // from describe()
   /** The endpoint's LABEL, or its origin only when no label was given. A raw URL never appears in a result,
    *  cache, journal or export: URLs often carry API keys. */
@@ -702,7 +703,9 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   broadcast something: it wrote a part's write-ahead record before the throw (e.g. IndexedDB went away while the
   person was in the wallet app, or the caller aborted after the wallet sent). `sequenceMayHaveSent` means some part
   of this save may be on chain, from this call or an earlier one, and is true when the record could not be read.
-  `sequenceId` is there once the record exists (always for resume). When either flag is true, say "may have been
+  `sequenceId` is there once the record exists (always for resume). A missing record (cleared, or written to
+  another journal) proves nothing either: `sequenceMayHaveSent` is false only when the record was read and shows no
+  part ever past its write-ahead. When either flag is true, say "may have been
   saved — checking" and `reconcileSequence(sequenceId)` once the cause is fixed: the ledger decides, and nothing is
   sent twice. Journal failures up to and including the write-ahead write are not thrown: they return NOT_SENT
   JOURNAL_UNAVAILABLE. A non-EfsFault error is rethrown as INVARIANT with the original as `cause`.
@@ -718,6 +721,12 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   deadline, or its nonce finalized for another plan) without a reorg, is NOT_STARTED or PARTIAL with reason EXPIRED
   (`retry: "transient"`), never a bare "not sent": "This save didn't go through — Send again" (resume, the
   person's click). It clears when the part is planned again.
+- **`current.deadline`, `current.checkedAt`, `current.pastDeadline`:** for a planned part, its plan's deadline
+  (unix seconds, bigint), the latest block the last reconcile read (`{ blockNumber, timestamp }`), and whether that
+  block is past the deadline with the part not committed there. Judged at the latest block, not a finalized one: a
+  reorg could in principle still bring back an inclusion from before the deadline, so it is a reason to release a
+  hold, never "not saved". EXPIRED, which waits for a finalized block past the deadline, is the proof. All three
+  come from the sequence record, with no journal or chain read of their own.
 - **`effect`:** `SequenceProgress.effect` names what the save is for, `{ kind: "files.edit", file, revision }` when
   its parts carry one file edit (planEditFile's `files.edit` effect). It is stored when runSequence starts, so
   `pendingSequences` names the file after a reload ("readme.txt: Partially saved") and a client can hold new saves

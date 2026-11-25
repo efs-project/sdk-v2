@@ -77,7 +77,22 @@ export interface SequenceProgress {
   total: number;
   committed: number;
   /** The first part not yet committed: its index, plan and attempt stage (absent when COMPLETE). */
-  current?: { index: number; planId?: Hex; stage?: AttemptStage | "NOT_PLANNED" };
+  current?: {
+    index: number;
+    planId?: Hex;
+    stage?: AttemptStage | "NOT_PLANNED";
+    /** The current plan's deadline (unix seconds); absent until the part is planned. */
+    deadline?: bigint;
+    /** The latest block the last reconcile of this part read. */
+    checkedAt?: { blockNumber: bigint; timestamp: bigint };
+    /**
+     * True when that block is past `deadline` and the part was not committed there: on this chain it can no longer
+     * be admitted. Judged at the latest block, not a finalized one, so a reorg could in principle still bring back
+     * an inclusion from before the deadline; EXPIRED (which waits for finality) is the proof. Release a hold on it,
+     * never say "not saved".
+     */
+    pastDeadline?: boolean;
+  };
   /** How the last step went out: one wallet request for all remaining parts, or part by part. */
   mode?: "batch" | "sequential";
   /** Why the save stopped (when it did not reach COMPLETE). */
@@ -248,6 +263,11 @@ function sequenceCore(efs: Efs, journal: Journal) {
               index,
               ...(part.planId ? { planId: part.planId } : {}),
               ...(known ? { stage: known } : {}),
+              ...(part.planId && part.deadline !== undefined ? { deadline: part.deadline } : {}),
+              ...(part.planId && part.checkedAt ? { checkedAt: part.checkedAt } : {}),
+              ...(part.planId && part.deadline !== undefined && part.checkedAt
+                ? { pastDeadline: part.checkedAt.timestamp > part.deadline }
+                : {}),
             },
           }
         : {}),
@@ -308,6 +328,15 @@ function sequenceCore(efs: Efs, journal: Journal) {
           continue;
         }
         const rec = await reconcileAttempt(efs, journal, p.planId, o);
+        // checkedAt (and so pastDeadline) only from a reconcile that read the admission at its basis: a decided
+        // outcome, NOT_YET_DECIDABLE or REORGED. A failed read also carries its basis, but proves nothing about that
+        // block, so it leaves the last judgement as it was (fail closed: no false "not committed there").
+        const readAtBasis =
+          rec.outcome !== "UNKNOWN" ||
+          rec.reason?.code === "NOT_YET_DECIDABLE" ||
+          rec.reason?.code === "REORGED";
+        if (readAtBasis && rec.basis?.timestamp !== undefined)
+          p.checkedAt = { blockNumber: rec.basis.blockNumber, timestamp: rec.basis.timestamp };
         if (rec.outcome === "COMMITTED") {
           p.committed = true;
           p.final = rec.final === true;
@@ -423,6 +452,8 @@ export function sequenceOps(d: Deps) {
       const parts = r.parts.map((p) => ({ ...p }));
       remaining.forEach(({ i }, k) => {
         (parts[i] as SequencePart).planId = (planned.plans[k] as Plan).id;
+        (parts[i] as SequencePart).deadline = (planned.plans[k] as Plan).deadline;
+        delete (parts[i] as SequencePart).checkedAt;
         delete (parts[i] as SequencePart).reorged; // sent again: a new attempt, not the reorged one
         delete (parts[i] as SequencePart).expired;
       });
@@ -464,6 +495,8 @@ export function sequenceOps(d: Deps) {
         return progress(r, { mode: "sequential", reason: planned.reason });
       const parts = r.parts.map((p) => ({ ...p }));
       (parts[i] as SequencePart).planId = planned.plan.id;
+      (parts[i] as SequencePart).deadline = planned.plan.deadline;
+      delete (parts[i] as SequencePart).checkedAt;
       delete (parts[i] as SequencePart).reorged; // sent again: a new attempt, not the reorged one
       delete (parts[i] as SequencePart).expired;
       r = await save({ ...r, parts }, `sending part ${i + 1} of ${r.parts.length}`);
@@ -565,15 +598,12 @@ export function sequenceOps(d: Deps) {
     /** Continue a sequence (settling any in-flight part first). The only call that may prompt. */
     async resume(sequenceId: Hex, o: SequenceOpts = {}): Promise<SequenceProgress> {
       const call = { sent: false };
-      // What the record said before this call: undefined while it has not been read (unknown, so maybe sent).
+      // What the record said before this call. Undefined while it has not been read: missing (cleared, or in another
+      // journal) or unreadable proves nothing, so the save may have gone out.
       let before: boolean | undefined;
-      let absent = false;
       try {
         const r = await journal.getSequence(sequenceId);
-        if (!r) {
-          absent = true;
-          throw new EfsFault("MISUSE", `no sequence ${sequenceId} in this journal`);
-        }
+        if (!r) throw new EfsFault("MISUSE", `no sequence ${sequenceId} in this journal`);
         before = recordMayHaveSent(r); // read before the lock check: another account's save may be on chain too
         if (r.lock !== d.lock)
           throw new EfsFault("MISUSE", "that sequence belongs to another account or deployment");
@@ -583,7 +613,7 @@ export function sequenceOps(d: Deps) {
         throw sequenceFault(e, {
           sequenceId,
           mayHaveSent: call.sent,
-          sequenceMayHaveSent: call.sent || (before ?? !absent),
+          sequenceMayHaveSent: call.sent || (before ?? true),
         });
       }
     },

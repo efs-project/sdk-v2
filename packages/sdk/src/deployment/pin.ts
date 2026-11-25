@@ -200,6 +200,7 @@ export async function pinDeployment(
         chainId: d.chainId,
         blockNumber: block.value.number,
         blockHash: block.value.hash,
+        timestamp: block.value.timestamp,
         executionSet: lower(described.executionSet),
         endpoint: s.port.label,
       };
