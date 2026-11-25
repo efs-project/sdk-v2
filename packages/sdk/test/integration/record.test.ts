@@ -14,6 +14,7 @@ import type { Hex, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { toJson } from "../../src/core/json.ts";
 import { type OpenedFile, openFile, readBytes, readRange } from "../../src/files/bytes.ts";
 import { planEditFile } from "../../src/files/edit.ts";
+import { openObject } from "../../src/files/folders.ts";
 import { PROTOCOL_INPUTS } from "../../src/generated/inputs.ts";
 import { type RpcTranscript, recordingFetch, recordingProvider } from "../../src/testing/index.ts";
 import { putExternal, putInline } from "./recipes.ts";
@@ -303,7 +304,7 @@ describe.runIf(RECORD)("record RPC transcripts", () => {
     writeFileSync(join(RPC_OUT, `${name}.json`), `${JSON.stringify(t, null, 2)}\n`);
   };
 
-  it("records the deployment document and four transcripts", async () => {
+  it("records the deployment document and the read transcripts", async () => {
     mkdirSync(RPC_OUT, { recursive: true });
     writeFileSync(join(RPC_OUT, "deployment.json"), readFileSync(fixture.deployment, "utf8"));
     const inline = subject("readme.txt");
@@ -342,6 +343,44 @@ describe.runIf(RECORD)("record RPC transcripts", () => {
         expect((await openFile(efs, { kind: "file", subject: absent })).status).toBe(
           "ABSENT_PROVEN",
         );
+      },
+    );
+    // An object link, routed as a client does: openFile first (PRESENT proves a file), openObject only when it isn't.
+    const folderId = (deployment as unknown as { seed: { folder: { directoryRecordId: Hex } } })
+      .seed.folder.directoryRecordId;
+    await record(
+      "open-object-folder",
+      "an object link to a folder (docs/), routed as a client does: openFile → not PRESENT, then openObject → FOLDER " +
+        "with its owner",
+      { object: folderId },
+      async (efs, steps) => {
+        steps.push(
+          "openFile(efs, { kind: 'file', subject: ids.object })  // not PRESENT",
+          "openObject(efs, ids.object)  // FOLDER",
+        );
+        expect(
+          (await openFile(efs, { kind: "file", subject: folderId as unknown as SubjectId })).status,
+        ).not.toBe("PRESENT");
+        const o = await openObject(efs, folderId);
+        if (o.status !== "FOLDER") throw new Error(o.status);
+        expect(o.folder.directory).toBe(folderId.toLowerCase());
+      },
+    );
+    const nothing = keccak256(toHex("no such object"));
+    await record(
+      "open-object-absent",
+      "an object link to an id nobody created or published, routed as a client does: openFile → ABSENT_PROVEN, " +
+        "then openObject → ABSENT_PROVEN",
+      { object: nothing },
+      async (efs, steps) => {
+        steps.push(
+          "openFile(efs, { kind: 'file', subject: ids.object })  // ABSENT_PROVEN",
+          "openObject(efs, ids.object)  // ABSENT_PROVEN",
+        );
+        expect((await openFile(efs, { kind: "file", subject: nothing as SubjectId })).status).toBe(
+          "ABSENT_PROVEN",
+        );
+        expect((await openObject(efs, nothing)).status).toBe("ABSENT_PROVEN");
       },
     );
     await record(

@@ -15,6 +15,7 @@ import { createEfs } from "../src/client.ts";
 import type { RecordId, SubjectId } from "../src/core/hex.ts";
 import { openFile, readBytes, readRange } from "../src/files/bytes.ts";
 import { planEditFile } from "../src/files/edit.ts";
+import { openObject } from "../src/files/folders.ts";
 import {
   createRpcReplay,
   type RpcTranscript,
@@ -44,6 +45,8 @@ describe("RPC transcript replay", () => {
         "open-absent",
         "open-external-https",
         "open-inline",
+        "open-object-absent",
+        "open-object-folder",
         "open-span",
         "pin-verified",
       ].map((n) => `${n}.json`),
@@ -74,6 +77,29 @@ describe("RPC transcript replay", () => {
     expect(
       (await openFile(efs, { kind: "file", subject: t.ids["file"] as SubjectId })).status,
     ).toBe("ABSENT_PROVEN");
+    expect(replay.misses).toEqual([]);
+  });
+
+  it("open-object-folder: openFile is not PRESENT, then openObject → FOLDER with its owner", async () => {
+    const t = load("open-object-folder");
+    const { efs, replay } = client(t);
+    const id = t.ids["object"] as RecordId;
+    expect(
+      (await openFile(efs, { kind: "file", subject: id as unknown as SubjectId })).status,
+    ).not.toBe("PRESENT");
+    const o = await openObject(efs, id);
+    if (o.status !== "FOLDER") throw new Error(o.status);
+    expect(o.folder.directory).toBe(id.toLowerCase());
+    expect(o.folder.owner).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(replay.misses).toEqual([]);
+  });
+
+  it("open-object-absent: openFile and openObject are both ABSENT_PROVEN", async () => {
+    const t = load("open-object-absent");
+    const { efs, replay } = client(t);
+    const id = t.ids["object"] as SubjectId;
+    expect((await openFile(efs, { kind: "file", subject: id })).status).toBe("ABSENT_PROVEN");
+    expect((await openObject(efs, id)).status).toBe("ABSENT_PROVEN");
     expect(replay.misses).toEqual([]);
   });
 
