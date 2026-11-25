@@ -62,6 +62,11 @@ export interface DeploymentInfo {
   };
   /** The Realm's shared root folder: its files-directory/1 record and the principal that created it. */
   root: { directoryRecordId: RecordId; principalId: PrincipalId };
+  /**
+   * The index families the SDK reads, as the deployment recorded them (the live generation's address is read from
+   * the ledger at each basis). `backlinkFamily`: bindings by target (kind 5, universe TARGET), null when absent.
+   */
+  index: { backlinkFamily: Hex | null };
   defaultLens: readonly PrincipalId[];
   typeIds: Readonly<Record<string, Hex>>;
   limits: ProtocolLimits;
@@ -86,6 +91,24 @@ const SPAN_CHUNK_BYTES = 8160;
 const ROOT_HEADER_BYTES = 64;
 
 /** Validate an efs-deployment/1 document. Pure; no network. */
+/** The backlink family's id (kind 5 over the TARGET universe), or null when the document names none. */
+function backlinkFamily(index: unknown): Hex | null {
+  const families = (obj(index) ?? {})["families"];
+  if (!Array.isArray(families)) return null;
+  for (const f of families) {
+    const o = obj(f);
+    if (
+      o &&
+      o["kind"] === 5 &&
+      o["universe"] === 4 &&
+      typeof o["familyId"] === "string" &&
+      /^0x[0-9a-fA-F]{64}$/.test(o["familyId"])
+    )
+      return (o["familyId"] as string).toLowerCase() as Hex;
+  }
+  return null;
+}
+
 export function validateDeploymentManifest(input: unknown): ManifestCheck {
   const problems: string[] = [];
   const d = obj(input);
@@ -183,6 +206,7 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       directoryRecordId: word("root.directoryRecordId", root["directoryRecordId"]) as RecordId,
       principalId: word("root.principalId", root["principalId"]) as PrincipalId,
     },
+    index: { backlinkFamily: backlinkFamily(d["index"]) },
     defaultLens: defaultLens.map((p, i) => word(`defaultLensPrincipals[${i}]`, p) as PrincipalId),
     typeIds: typeIdOut,
     limits: {
