@@ -72,10 +72,9 @@ export interface HomeLink {
  * has no named link of its own). It is its own kind, never an object link with names, so a router that only opens
  * objects can't open the folder in place of the entry the link names.
  *
- * The string can't say whether the id is a folder, so the reader decides: `openObject(folder)`, then on FOLDER
- * `resolvePath({ from: open.folder, segments: names })` under `lens`, or else under
- * `efs.lens.place({ reader, owner: open.folder.owner })` (the reader, then the folder's creator). Any other answer,
- * a file included, makes the link INVALID: a file has no names below it.
+ * The string can't say whether the id is a folder, so the reader decides: open it with `openPath` (`@efs/sdk/files`),
+ * which reads the id's kind, then the names under `lens`, or else under the reader then the folder's creator. Any id
+ * that is not a folder, a file included, makes the link INVALID: a file has no names below it.
  */
 export interface PathLink {
   kind: "path";
