@@ -3,11 +3,12 @@
 // from their own scope list (no Lens), paged, COMPLETE only for a whole scan, and restorable straight from the list.
 // Uses anvil's public development mnemonic, index 15 (no other test file uses it).
 import { readFileSync } from "node:fs";
+import { decodeFunctionResult, encodeFunctionResult } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
-import type { PrincipalId, RecordId } from "../../src/core/hex.ts";
+import type { Hex, PrincipalId, RecordId } from "../../src/core/hex.ts";
 import {
   planCreateFile,
   planCreateFolder,
@@ -16,6 +17,8 @@ import {
 } from "../../src/files/entries.ts";
 import type { FolderRef } from "../../src/files/folders.ts";
 import { listRemoved, type RemovedRow } from "../../src/files/removed.ts";
+import { ledgerViewsAbi } from "../../src/generated/abis.ts";
+import { type Edit, sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -32,6 +35,32 @@ let w: Awaited<ReturnType<typeof createWriter>>;
 let me: PrincipalId;
 let folder: FolderRef;
 const files: Record<string, { kind: "file"; subject: string }> = {};
+
+/** The fixture behind a fetch whose historyAt replies are rewritten by `f` (History code, head). */
+const historyEdited = (f: (found: number, head: Record<string, unknown>) => [number, unknown]) => {
+  const edit: Edit = (result) => {
+    const [found, head] = decodeFunctionResult({
+      abi: ledgerViewsAbi,
+      functionName: "historyAt",
+      data: result,
+    }) as unknown as [number, Record<string, unknown>];
+    return encodeFunctionResult({
+      abi: ledgerViewsAbi,
+      functionName: "historyAt",
+      result: f(found, head) as never,
+    }) as Hex;
+  };
+  return createEfs({
+    rpcs: [fixture.rpcUrl],
+    deployment,
+    fetch: tampered({ [sel(ledgerViewsAbi, "historyAt")]: edit }),
+  });
+};
+const rowOf = async (e: ReturnType<typeof createEfs>, name: string) => {
+  const page = await listRemoved(e, { folder, author: me });
+  if (page.status !== "PRESENT") throw new Error(page.status);
+  return page.rows.find((r) => r.name === name);
+};
 
 const run = async (planned: Promise<{ status: string } & Record<string, unknown>>) => {
   const p = (await planned) as {
@@ -136,6 +165,31 @@ describe("listRemoved (fixture)", () => {
       directory: deployment.seed.files[0]?.headRecordId as RecordId,
     };
     expect((await listRemoved(efs, { folder: revision, author: me })).status).toBe("INVALID");
+  });
+
+  // A row whose last target the history can't give (target null) must never become a restore of a guessed target.
+  it("history that can't be read back: the row stays, target null, and restore is UNKNOWN", async () => {
+    const lost = historyEdited((_found, head) => [2, head]); // History.NONE
+    expect(await rowOf(lost, "p1.txt")).toMatchObject({ state: "RELEASED", target: null });
+    const planned = await planRestoreEntries(lost, w, { entries: [{ folder, name: "p1.txt" }] });
+    expect(planned).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "NOT_YET_DECIDABLE", retry: "transient" },
+    });
+    // The same entry on an honest endpoint restores to its real target.
+    const honest = await planRestoreEntries(efs, w, { entries: [{ folder, name: "p1.txt" }] });
+    expect(honest.status).toBe("PLANNED");
+  });
+
+  it("history deeper than the walk: the row stays, target null, and restore is UNKNOWN (LIMIT_EXCEEDED)", async () => {
+    // Every version reads as released, each pointing at one more before it: no bound version within the hop limit.
+    const deep = historyEdited((_found, head) => [3, { ...head, state: 3, prevAdmission: 1n }]);
+    expect(await rowOf(deep, "p1.txt")).toMatchObject({ state: "RELEASED", target: null });
+    const planned = await planRestoreEntries(deep, w, { entries: [{ folder, name: "p1.txt" }] });
+    expect(planned).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "LIMIT_EXCEEDED", retry: "never" },
+    });
   });
 
   it("restores straight from the list", async () => {

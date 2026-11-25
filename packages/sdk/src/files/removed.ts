@@ -30,7 +30,11 @@ export interface RemovedRow {
   position: Hex;
   /** RELEASED: removed (the next author's entry shows there). MASKED: removed with hide. */
   state: "RELEASED" | "MASKED";
-  /** The target the entry had before it was removed, from its history; null when the history can't say. */
+  /**
+   * The target the entry had before it was removed, from its history; null when the history can't say. Show such a
+   * row ("can't restore this one right now"), never hide it: planRestoreEntries answers UNKNOWN for it (or ENTRY_ABSENT
+   * when the author never bound anything there), never a guessed target.
+   */
   target: EntryTarget | null;
   /** The binding's revision now (what a restore's compare-and-swap expects). */
   revision: bigint;

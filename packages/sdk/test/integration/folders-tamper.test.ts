@@ -3,16 +3,16 @@
 // a fetch that rewrites chosen eth_call results. Coverage is never overstated, an empty page is never "empty" unless
 // COMPLETE, a reply that contradicts itself is refused, and a failed read is UNKNOWN, never absence.
 import { readFileSync } from "node:fs";
-import { decodeFunctionResult, encodeFunctionResult, getAbiItem, toFunctionSelector } from "viem";
+import { decodeFunctionResult, encodeFunctionResult } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
-import type { FetchLike } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Hex, RecordId } from "../../src/core/hex.ts";
 import { planRemoveEntries } from "../../src/files/entries.ts";
 import { type FolderRef, listFolder, lookupEntry, resolvePath } from "../../src/files/folders.ts";
 import { filesPageReaderAbi, ledgerViewsAbi, lensReaderAbi } from "../../src/generated/abis.ts";
+import { type Edit, sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -29,40 +29,6 @@ const carl = mnemonicToAccount("test test test test test test test test test tes
   addressIndex: 12,
 });
 
-type Edit = (result: Hex) => Hex | { error: { code: number; message: string } };
-const sel = (abi: readonly unknown[], name: string): Hex =>
-  toFunctionSelector(getAbiItem({ abi: abi as never, name } as never) as never) as Hex;
-
-/** A fetch to the fixture whose eth_call replies for the given selectors pass through `edit`. */
-function tampered(edits: Record<Hex, Edit>): FetchLike {
-  return async (url, init) => {
-    const res = await fetch(url, init as RequestInit);
-    const sent = JSON.parse(init.body ?? "null");
-    const reqs = Array.isArray(sent) ? sent : [sent];
-    const got = JSON.parse(await res.text());
-    const outs = Array.isArray(got) ? got : [got];
-    for (const r of reqs) {
-      if (r?.method !== "eth_call") continue;
-      const edit = edits[String(r.params?.[0]?.data ?? "").slice(0, 10) as Hex];
-      const item = outs.find((o: { id: number }) => o.id === r.id);
-      if (!edit || !item || typeof item.result !== "string") continue;
-      const e = edit(item.result as Hex);
-      if (typeof e === "string") item.result = e;
-      else {
-        delete item.result;
-        item.error = e.error;
-      }
-    }
-    const body = JSON.stringify(Array.isArray(got) ? outs : outs[0]);
-    return {
-      ok: true,
-      status: 200,
-      headers: res.headers,
-      text: async () => body,
-      arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer,
-    };
-  };
-}
 const efsWith = (edits: Record<Hex, Edit>) =>
   createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: tampered(edits) });
 
