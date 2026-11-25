@@ -35,6 +35,9 @@ library Keys {
     bytes32 internal constant DOM_TYPE = keccak256("efs/type/1");
     // Role-scope key: keccak256(abi.encode(DOM_ROLE_SCOPE, principal, purpose, role)) — the index family 16 key
     bytes32 internal constant DOM_ROLE_SCOPE = keccak256("efs/vk/role-scope/1");
+    // Scope-below key: keccak256(abi.encode(DOM_SCOPE_BELOW, principal, purpose, ancestor)) — the index family 19 key:
+    // one list per (author, purpose, proper ancestor of the topic a first statement is made on)
+    bytes32 internal constant DOM_SCOPE_BELOW = keccak256("efs/vk/scope-below/1");
     // Realm origin: keccak256(abi.encode(DOM_REALM_ORIGIN, genesisChainId, coreAddress, realmSalt)) — the one
     // identity input that names a chain and an address; it qualifies contract principals (design §1.2 row 12)
     bytes32 internal constant DOM_REALM_ORIGIN = keccak256("efs/realm-origin/1");
@@ -57,7 +60,7 @@ library Keys {
     // revisionOrdinal, executionProfileId, capabilities, acceptedChainId, limitsProfileId))
     bytes32 internal constant DOM_EXECUTION_SET = keccak256("efs/execution-set/1");
 
-    // Posting-list kinds. 2, 3, 6, 7, 9 are reserved (never minted).
+    // Posting-list kinds. 2, 3, 9 are reserved (never minted).
     uint8 internal constant KIND_BY_TYPE = 1;
     uint8 internal constant KIND_BY_AUTHOR = 4;
     uint8 internal constant KIND_BACKLINK = 5;
@@ -68,6 +71,11 @@ library Keys {
     uint8 internal constant KIND_UNIQUE_BY_TYPE = 13;
     uint8 internal constant KIND_SCALAR = 14;
     uint8 internal constant KIND_DIGEST = 15;
+    uint8 internal constant KIND_PLACE = 6;
+    uint8 internal constant KIND_PLACE_BELOW = 7;
+    uint8 internal constant KIND_SCOPE_BELOW = 19;
+    uint8 internal constant KIND_POSITION_AUTHORS = 20;
+    uint8 internal constant KIND_ROLE_PLACES = 21;
 
     /// Key principal id: the left-padded address. The same key names the same principal on every Realm.
     function principal(address account) internal pure returns (bytes32) {
@@ -103,6 +111,15 @@ library Keys {
         returns (bytes32)
     {
         return keccak256(abi.encode(DOM_ROLE_SCOPE, principalId, purpose, role));
+    }
+
+    /// Scope-below value key (index family 19): one list per (author, purpose, ancestor topic).
+    function scopeBelow(bytes32 principalId, bytes32 purpose, bytes32 ancestor)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(DOM_SCOPE_BELOW, principalId, purpose, ancestor));
     }
 
     /// Realm origin: fixed at genesis; the only id that names a chain and an address.
@@ -206,8 +223,10 @@ library Keys {
         return posting(bytes32(0), KIND_BY_AUTHOR, 0, principalId);
     }
 
-    function backlinkList(bytes32 target) internal pure returns (bytes32) {
-        return posting(bytes32(0), KIND_BACKLINK, 0, target);
+    /// Family 5 is keyed by (purpose, target), the purpose in the key's first word: a file's folder placements and
+    /// its tags are two lists with two live counts (design §10.2).
+    function backlinkList(bytes32 purpose, bytes32 target) internal pure returns (bytes32) {
+        return posting(purpose, KIND_BACKLINK, 0, target);
     }
 
     function historyList(bytes32 bindingKey) internal pure returns (bytes32) {
@@ -244,5 +263,44 @@ library Keys {
 
     function digestList(bytes32 algorithm, bytes32 value) internal pure returns (bytes32) {
         return posting(bytes32(0), KIND_DIGEST, 0, keccak256(abi.encode(algorithm, value)));
+    }
+
+    /// Family 6 (`place`), keyed by (purpose, subject), the purpose in the key's first word as in family 5: one
+    /// entry per filing, by anyone — the first statement at a fresh position (either sign) and every later author's
+    /// first yes — in order of filing, so a position may appear more than once (design §10.2). `count` = filings;
+    /// `live` = distinct positions ever stated at the place, an "about" count that includes positions nobody says
+    /// yes to now (not the number of rows an Everyone view returns).
+    function placeList(bytes32 purpose, bytes32 subjectKey) internal pure returns (bytes32) {
+        return posting(purpose, KIND_PLACE, 0, subjectKey);
+    }
+
+    /// Family 7 (`place-below`), keyed by (purpose, ancestor): one entry per filing (as family 6) at any topic below
+    /// `ancestor`, by anyone (generation 1 writes it for TAG only); `count` = filings, `live` = distinct positions
+    /// ever stated below it (the same "about" count as family 6).
+    function placeBelowList(bytes32 purpose, bytes32 ancestor) internal pure returns (bytes32) {
+        return posting(purpose, KIND_PLACE_BELOW, 0, ancestor);
+    }
+
+    /// Family 19 (`scope-below`), keyed by (author, purpose, ancestor): one entry per first statement of the author
+    /// on any topic below `ancestor` (generation 1 writes it for TAG only).
+    function scopeBelowList(bytes32 principalId, bytes32 purpose, bytes32 ancestor)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return posting(bytes32(0), KIND_SCOPE_BELOW, 0, scopeBelow(principalId, purpose, ancestor));
+    }
+
+    /// Family 20 (`position-authors`), keyed by the position id: one entry per author's first statement there
+    /// (either sign). `count` = the authors who ever stated there; `live` = the authors whose head there is BOUND now
+    /// (a counter the index moves on a first yes, a mask or release of a BOUND head and a restore; design §10.2).
+    function positionAuthorsList(bytes32 positionKey) internal pure returns (bytes32) {
+        return posting(bytes32(0), KIND_POSITION_AUTHORS, 0, positionKey);
+    }
+
+    /// Family 21 (`role-places`), keyed by (purpose, role), the purpose in the key's first word: one entry per
+    /// distinct position with that role, whatever its subject (for a tag the role is the thing tagged).
+    function rolePlacesList(bytes32 purpose, bytes32 role) internal pure returns (bytes32) {
+        return posting(purpose, KIND_ROLE_PLACES, 0, role);
     }
 }

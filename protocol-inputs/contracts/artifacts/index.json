@@ -1,8 +1,8 @@
 {
   "schema": "efs-artifacts-index/1",
-  "layoutId": "0x9d4ccbe1ae4334a5bb9aeed2d233ce33a92dbde2df0e4437297fca2e06529deb",
-  "hotAbiId": "0x68a7724bb4fb83d63bb8fc75f650d8502abd055f74e41efc3d1ed4391b481a99",
-  "hotAbiIdString": "efs/ledger-hot/1",
+  "layoutId": "0xc59a1669be13ef347b3e85757f16896d2f324b1bdbc062719a24496e7173b212",
+  "hotAbiId": "0xf37d24d0ced96ce84fa2a8dd011fc0594eec8f33e3212c27762b76fc9e469856",
+  "hotAbiIdString": "efs/ledger-hot/2",
   "units": [
     "LedgerIngress",
     "LedgerApply",
@@ -18,6 +18,7 @@
     "RealmController",
     "PostingStore",
     "BitmapStore",
+    "IndexReads",
     "RealmIndex",
     "FilesFinalValidator",
     "FilesRootRule",
@@ -34,9 +35,16 @@
     "ProxyAdmin",
     "LensReader",
     "FilesPageReader",
+    "TopicMineReader",
+    "TopicEveryoneReader",
+    "TopicLookupReader",
     "FilesSpanRule",
     "KeysView",
-    "EfsWeb3Gateway"
+    "EfsWeb3Content",
+    "EfsWeb3Gateway",
+    "TopicWordRule",
+    "TopicRule",
+    "TextRule"
   ],
   "manifest": "release/release.json",
   "note": "each <Unit>.json is efs-artifact/1; a fixture deploys from this directory with `efs-fixture up --artifacts artifacts [--plan deploy/plan.json]`"

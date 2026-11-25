@@ -154,6 +154,8 @@
       "type": "object",
       "required": [
         "address",
+        "runtimeCodehash",
+        "reads",
         "generation",
         "manifestHash",
         "indexObligations",
@@ -162,7 +164,21 @@
         "units",
         "digestSpecs",
         "workModel"
-      ]
+      ],
+      "properties": {
+        "runtimeCodehash": { "type": "string", "description": "keccak256 of the generation's runtime code (its immutables name the reads contract and its codehash)" },
+        "reads": {
+          "type": "object",
+          "required": ["address", "runtimeCodehash"],
+          "description": "the generation's IndexReads: its manifest and every read the generation forwards (design §10.1)"
+        },
+        "workModel": {
+          "type": "object",
+          "description": "the generation's IIndexReads.workModel(): every field of src/interfaces/Index.sol WorkModel (formula 2); verify compares it with the chain and with the gas model's floor",
+          "required": ["formulaVersion", "freshPerPublication", "rwPerPublication", "freshPerPublishFresh", "freshPerPublishExisting", "rwPerPublish", "freshPerBindFresh", "rwPerBind", "rwPerBindLater", "freshPerRef", "freshPerDigestSpec", "computeBase", "computePerAction", "computePerHookEffect", "finalComputeBase", "finalComputePerBind", "finalComputePerPublish"],
+          "additionalProperties": { "type": "integer" }
+        }
+      }
     },
     "typeIds": {
       "type": "object",
@@ -195,6 +211,9 @@
         "readerDirectory",
         "lensReader",
         "filesPageReader",
+        "topicMineReader",
+        "topicEveryoneReader",
+        "topicLookupReader",
         "web3Gateway",
         "listed"
       ],
@@ -208,11 +227,20 @@
             "rootDirectory",
             "urlBase",
             "seedUrl",
-            "ledger"
+            "ledger",
+            "content"
           ],
           "properties": {
             "resolveMode": {
               "const": "5219"
+            },
+            "content": {
+              "type": "object",
+              "description": "The EfsWeb3Content the gateway reaches by STATICCALL: its address and runtime codehash, as the gateway's CONTENT / CONTENT_CODEHASH immutables record them.",
+              "required": [
+                "address",
+                "runtimeCodehash"
+              ]
             }
           }
         },
@@ -243,9 +271,47 @@
             "childType"
           ]
         },
+        "topicMineReader": {
+          "type": "object",
+          "required": [
+            "address",
+            "runtimeCodehash",
+            "kind",
+            "ledger",
+            "views",
+            "reads",
+            "layoutId"
+          ]
+        },
+        "topicEveryoneReader": {
+          "type": "object",
+          "required": [
+            "address",
+            "runtimeCodehash",
+            "kind",
+            "ledger",
+            "views",
+            "reads",
+            "layoutId"
+          ]
+        },
+        "topicLookupReader": {
+          "type": "object",
+          "required": [
+            "address",
+            "runtimeCodehash",
+            "kind",
+            "ledger",
+            "views",
+            "reads",
+            "layoutId",
+            "topicType",
+            "wordType"
+          ]
+        },
         "listed": {
           "type": "array",
-          "minItems": 2,
+          "minItems": 5,
           "items": {
             "type": "object",
             "required": [

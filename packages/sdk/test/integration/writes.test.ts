@@ -349,7 +349,7 @@ describe("write lifecycle (fixture)", () => {
       role: ZERO_WORD,
       target: ZERO_WORD,
       expectedRevision: 0n,
-      salt: ZERO_WORD,
+      saltOrStrength: ZERO_WORD,
     }));
     const w0 = wallet(BOB);
     const w = await createWriter(efs, {

@@ -6,7 +6,10 @@ import {Coverage} from "./Results.sol";
 import {DigestSpec, FamilyEntry, Unit, WorkModel} from "./Index.sol";
 
 /// @title IIndexReads — coverage and family reads of an index generation (design §5.11, §10.5)
-/// @notice Acceptors may read coverage and postings here (prefix-COMPLETE inside the publication).
+/// @notice Acceptors may read coverage and postings here (prefix-COMPLETE inside the publication). Every function is
+///         answered at the generation's address: `manifestHash`, `workModel`, `digestSpecCount`, `progress`,
+///         `ledger`, the two store getters and `readsContract` by the generation itself, the rest by its reads
+///         contract through the generation's fallback (`STATICCALL`, calldata unchanged; design §10.1).
 interface IIndexReads {
     function manifestHash() external view returns (bytes32);
 
@@ -24,6 +27,10 @@ interface IIndexReads {
         );
 
     function workModel() external view returns (WorkModel memory);
+
+    /// The `topic/1` and `topic-word/1` Type ids whose ancestors the topic lists (`scope-below`, `place-below`) walk;
+    /// both zero when the generation keeps no topic lists (their families are then `NOT_MAINTAINED`).
+    function topicTypes() external view returns (bytes32 topicTypeId, bytes32 topicWordTypeId);
 
     /// How many of the manifest's digest specs name `typeId`: the ingress charges `freshPerDigestSpec` for each
     /// when it quotes a fresh record of that Type (design §10.4).
@@ -86,4 +93,7 @@ interface IIndexReads {
     function bitmapStore() external view returns (address);
 
     function buildDelegate() external view returns (address);
+    /// The contract that answers this generation's forwarded reads and holds its manifest, and that contract's
+    /// codehash as the generation recorded it at construction; the manifest hash folds both.
+    function readsContract() external view returns (address reads, bytes32 codehash);
 }

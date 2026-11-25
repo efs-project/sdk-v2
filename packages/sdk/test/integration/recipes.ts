@@ -18,7 +18,7 @@ const blank: ActionData = {
   role: ZERO_WORD,
   target: ZERO_WORD,
   expectedRevision: 0n,
-  salt: ZERO_WORD,
+  saltOrStrength: ZERO_WORD,
 };
 const publish = (typeId: Hex, body: Uint8Array): { action: ActionData; body: Hex } => ({
   action: { ...blank, kind: ACTION.PUBLISH, typeId, bodyHashOrRecordId: keccak256(body) },
@@ -43,7 +43,7 @@ export function putInline(
   const rootBody = encode.rootInline(file, bytes);
   const nameBytes = new TextEncoder().encode(name);
   const steps = [
-    plain({ kind: ACTION.CREATE, salt }),
+    plain({ kind: ACTION.CREATE, saltOrStrength: salt }),
     publish(t["files-root/1"] as Hex, rootBody),
     publish(t["files-name/2"] as Hex, nameBytes),
     plain({
@@ -92,7 +92,7 @@ export function putExternal(
   const steps = [
     publish(t["files-bytes/1"] as Hex, sentinelBody),
     publish(t["files-external/1"] as Hex, externalBody),
-    plain({ kind: ACTION.CREATE, salt }),
+    plain({ kind: ACTION.CREATE, saltOrStrength: salt }),
     publish(t["files-root/1"] as Hex, rootBody),
     publish(t["files-name/2"] as Hex, nameBytes),
     plain({

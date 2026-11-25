@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 // The kernel's index floor on a real chain. Before it sends a publication's callbacks the kernel reserves a prefix
 // floor and a final reserve that its work model prices per action and per bind. A publication the gas model fits can
-// still need more visible gas than the cap allows, and eth_estimateGas then refuses it before signing. Big batches
-// (64 removes or moves) did exactly that on the fixture. Every part a planner makes must fit the budget with its
-// floor. One account of anvil's public development mnemonic (index 17, used by no other test file), funded here.
+// still need more visible gas than the cap allows, and eth_estimateGas then refuses it before signing: on the release
+// before the tag release (120,000 per bind), 64 removes or moves did exactly that. Every part a planner makes must fit
+// the budget with its floor (the planning rule). One account of anvil's public development mnemonic (index 17, used by
+// no other test file), funded here.
 import { readFileSync } from "node:fs";
 import { decodeFunctionResult, encodeFunctionData, hexToBytes } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
-import { kernelQuote } from "../../src/actions/split.ts";
+import { gasPlanFor, kernelQuote } from "../../src/actions/split.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Hex, PrincipalId, RecordId } from "../../src/core/hex.ts";
 import {
@@ -142,8 +143,11 @@ describe("the kernel floor (fixture)", () => {
       lens,
     });
     if (p.status !== "PLANNED") throw new Error(p.status);
-    const floor = efs.deployment.kernelFloor;
-    if (!floor) throw new Error("the fixture's deployment has no work model");
+    // The gas model's floor, which the planner uses; the deployment's own work model equals it (gasPlanFor checks).
+    const g = gasPlanFor(efs.deployment);
+    if (!g.ok) throw new Error(g.reason.code);
+    const floor = g.model.floor;
+    if (!floor) throw new Error("the gas model has no floor");
     for (const part of p.parts) {
       const reply = (await rpc("eth_call", [
         {
@@ -162,7 +166,9 @@ describe("the kernel floor (fixture)", () => {
         data: reply,
       }) as unknown as [number, number, number, number];
       // The kernel's helper prices every bind as a first statement, as the SDK does when it knows nothing better.
-      expect(kernelQuote(part.actions, floor, { everyBindFirst: true })).toEqual({
+      expect(
+        kernelQuote(part.actions, floor, { everyBindFirst: true, typeNames: g.typeNames }),
+      ).toEqual({
         prefixFloor,
         finalReserve,
         freshSlots,

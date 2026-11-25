@@ -68,17 +68,20 @@ type Describe = {
 const EMPTY_CODEHASH = "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470";
 
 /**
- * Initcode for a deployless eth_call (no `to`) that returns EXTCODEHASH of each address as consecutive words:
- * per address `PUSH20 addr; EXTCODEHASH; PUSH1 32*i; MSTORE`, then `PUSH1 32*n; PUSH1 0; RETURN`. It checks every
- * code hash on every pin for 32 bytes of response per contract, instead of downloading each contract's bytecode.
+ * Initcode for a deployless eth_call (no `to`) that returns EXTCODEHASH of each address as consecutive words after
+ * one zero word: per address `PUSH20 addr; EXTCODEHASH; PUSH2 32*(i+1); MSTORE`, then `PUSH2 32*(n+1); PUSH1 0;
+ * RETURN`. It checks every code hash on every pin for 32 bytes of response per contract, instead of downloading each
+ * contract's bytecode. The returned bytes are the "code" the creation would deploy, and EIP-3541 refuses code that
+ * starts with 0xEF: the zero word in front keeps a code hash that starts with 0xEF from failing the whole call.
  */
 export function codehashProbe(addresses: readonly Hex[]): Hex {
-  if (addresses.length > 7) throw new RangeError("at most 7 addresses per probe");
+  if (addresses.length > 64) throw new RangeError("at most 64 addresses per probe");
+  const push2 = (n: number) => `61${n.toString(16).padStart(4, "0")}`;
   let code = "";
   addresses.forEach((a, i) => {
-    code += `73${a.slice(2).toLowerCase()}3f60${(i * 32).toString(16).padStart(2, "0")}52`;
+    code += `73${a.slice(2).toLowerCase()}3f${push2((i + 1) * 32)}52`;
   });
-  code += `60${(addresses.length * 32).toString(16).padStart(2, "0")}6000f3`;
+  code += `${push2((addresses.length + 1) * 32)}6000f3`;
   return `0x${code}`;
 }
 
@@ -132,13 +135,29 @@ export async function pinDeployment(
         functionName: "describe",
         args: [d.ledger],
       });
-      const codeAddresses = [
-        d.ledgerImplementation,
-        d.readers.ledgerReads,
-        d.readers.ledgerViews,
-        d.readers.lens,
-        d.readers.filesPage,
+      // Every contract the SDK reads through, with the code hash the document recorded for it. The newer ones are
+      // checked whenever the document names them.
+      const pinned: { what: string; address: Hex; codehash: Hex }[] = [
+        {
+          what: "ledger implementation",
+          address: d.ledgerImplementation,
+          codehash: d.codehashes.ledgerImplementation,
+        },
+        { what: "LedgerReads", address: d.readers.ledgerReads, codehash: d.codehashes.ledgerReads },
+        { what: "LedgerViews", address: d.readers.ledgerViews, codehash: d.codehashes.ledgerViews },
+        { what: "LensReader", address: d.readers.lens, codehash: d.codehashes.lens },
+        { what: "FilesPageReader", address: d.readers.filesPage, codehash: d.codehashes.filesPage },
       ];
+      const optional: [string, Hex | null, Hex | null][] = [
+        ["index", d.index.address, d.codehashes.index],
+        ["IndexReads", d.index.reads, d.codehashes.indexReads],
+        ["TopicMineReader", d.readers.topicMine, d.codehashes.topicMine],
+        ["TopicEveryoneReader", d.readers.topicEveryone, d.codehashes.topicEveryone],
+        ["TopicLookupReader", d.readers.topicLookup, d.codehashes.topicLookup],
+      ];
+      for (const [what, address, codehash] of optional)
+        if (address && codehash) pinned.push({ what, address, codehash });
+      const codeAddresses = pinned.map((x) => x.address);
       requests += 1; // one batch envelope (3 calls)
       const outs = await s.send([
         { method: "eth_call", params: [{ to: d.readers.ledgerReads, data: describeCall }, at] },
@@ -181,21 +200,20 @@ export async function pinDeployment(
         described.ledgerImplCodehash,
       );
       const words = /^0x[0-9a-f]*$/i.test(String(probe)) ? String(probe).slice(2) : "";
-      if (words.length !== codeAddresses.length * 64)
+      if (words.length !== (codeAddresses.length + 1) * 64 || !/^0{64}/.test(words))
         return {
           ok: false,
           retryElsewhere: true,
           reason: reason("RPC_ERROR", "transient", "code hash probe returned the wrong length"),
         };
-      const hashes = codeAddresses.map((_, i) => {
-        const h = `0x${words.slice(i * 64, i * 64 + 64).toLowerCase()}`;
-        return /^0x0{64}$/.test(h) || h === EMPTY_CODEHASH ? "absent" : h;
+      pinned.forEach((x, i) => {
+        const h = `0x${words.slice((i + 1) * 64, (i + 2) * 64).toLowerCase()}`;
+        eq(
+          `code: ${x.what}`,
+          x.codehash,
+          /^0x0{64}$/.test(h) || h === EMPTY_CODEHASH ? "absent" : h,
+        );
       });
-      eq("code: ledger implementation", d.codehashes.ledgerImplementation, hashes[0] ?? "absent");
-      eq("code: LedgerReads", d.codehashes.ledgerReads, hashes[1] ?? "absent");
-      eq("code: LedgerViews", d.codehashes.ledgerViews, hashes[2] ?? "absent");
-      eq("code: LensReader", d.codehashes.lens, hashes[3] ?? "absent");
-      eq("code: FilesPageReader", d.codehashes.filesPage, hashes[4] ?? "absent");
       const basis: Basis = {
         chainId: d.chainId,
         blockNumber: block.value.number,

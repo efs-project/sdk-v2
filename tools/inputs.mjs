@@ -28,9 +28,14 @@ const SNAPSHOT = [
   "deploy/plan.json",
   "artifacts",
   "vectors/layout.json",
-  "test/vectors/ids.json",
-  // Media types (contracts C4): the encodings and the accepted/refused strings, the authority for the SDK codec.
-  "test/vectors/media.json",
+  // The release digest covers these together (contracts tools/RELEASE.md "What changes for a consumer"): the gas
+  // model (planning rule, kernel floor, tag-list terms, read bounds), the ABI snapshots, and every vector file (ids,
+  // media types, numbers, topics, and the planning rule's shared verdicts).
+  "gas/model.json",
+  "test/snapshots/abi",
+  "test/vectors",
+  // The planning rule's reference implementation (reads only gas/model.json): the SDK's planner is tested against it.
+  "tools/gas-plan.mjs",
   // The contracts-owned fixture (a library and CLI). Vendored so SDK integration tests start their own chains from
   // this snapshot (`up --artifacts protocol-inputs/contracts`) without a contracts checkout.
   "tools/efs-fixture.mjs",
@@ -43,6 +48,7 @@ const SNAPSHOT = [
   "src/lib/Keys.sol",
   "src/lib/EfsNative.sol",
   "src/lib/EfsFiles.sol",
+  "src/lib/EfsTopics.sol",
   "test/closure",
   "LICENSE",
 ];

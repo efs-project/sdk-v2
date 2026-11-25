@@ -13,7 +13,11 @@ export interface ActionData {
   role: Hex;
   target: Hex;
   expectedRevision: bigint;
-  salt: Hex;
+  /**
+   * CREATE: the creator's salt (nonzero). BIND: the binding's unsigned strength (0..65,535); UNBIND: its strength,
+   * the number being −1 − strength. Every other kind, RELEASE included: zero. (`Action.saltOrStrength`.)
+   */
+  saltOrStrength: Hex;
 }
 export { ACTION } from "../generated/constants.js";
 

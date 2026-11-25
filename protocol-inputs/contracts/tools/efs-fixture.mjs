@@ -33,7 +33,7 @@ import { concat as concatHex, createPublicClient, createWalletClient, custom, de
 import { privateKeyToAccount } from "viem/accounts";
 import {
   ADMIN_SLOT, DEFAULTS, FACTORY, FACTORY_RUNTIME, FIXTURE_KEY, IMPLEMENTATION_SLOT,
-  buildPlan, domainSeparator, executionSet, jsonable, keys, limitsProfileId, planDocument, root, toJSON, validate,
+  FLOOR_LIMIT_FIELDS, buildPlan, domainSeparator, executionSet, jsonable, keys, limitsProfileId, planDocument, priceMismatches, root, toJSON, validate,
 } from "./deploy-plan.mjs";
 import {
   DEFAULT_RANGES, EXIT, FixtureError, allocate, assertName, defaultName, gc as registryGc, instanceDir, leasePath, list as registryList,
@@ -362,7 +362,7 @@ function capabilitiesOf(plan, signer, chain) {
     externalLocations: plan.seed.files.some((f) => f.externalRecordId),
     keysView: !!plan.addresses.keysView,
     web3Gateway: !!plan.addresses.web3Gateway,
-    readers: [plan.readers.lens.kindLabel, plan.readers.filesPage.kindLabel],
+    readers: [plan.readers.lens.kindLabel, plan.readers.filesPage.kindLabel, plan.readers.topicMine.kindLabel, plan.readers.topicEveryone.kindLabel, plan.readers.topicLookup.kindLabel],
     signerCapable: signer.signerCapable,
     unlockedAccounts: signer.accounts,
     hardfork: chain.hardfork,
@@ -377,10 +377,10 @@ function upResult(lease, plan, { home, releaseWritten }) {
     rpcUrl: lease.url, host: lease.host, port: lease.port, chainId: lease.chainId, realmSalt: lease.realmSalt, realmId: plan.realm.realmId,
     pid: lease.pid, stateDir: lease.stateDir, deployment: lease.deployment, expected: lease.expected, journal: lease.journal, log: lease.log,
     ledger: a.ledgerProxy, registry: a.registryProxy, controller: a.controller,
-    readers: { ledgerReads: a.ledgerReads, ledgerViews: a.ledgerViews, readerDirectory: a.readerDirectory, lensReader: a.lensReader, filesPageReader: a.filesPageReader, keysView: a.keysView, web3Gateway: a.web3Gateway },
+    readers: { ledgerReads: a.ledgerReads, ledgerViews: a.ledgerViews, readerDirectory: a.readerDirectory, lensReader: a.lensReader, filesPageReader: a.filesPageReader, topicMineReader: a.topicMineReader, topicEveryoneReader: a.topicEveryoneReader, topicLookupReader: a.topicLookupReader, keysView: a.keysView, web3Gateway: a.web3Gateway, web3Content: a.web3Content },
     keysView: a.keysView,
     web3Gateway: a.web3Gateway,
-    web3Url: `${plan.gateway.urlBase}${plan.seed.principalId}/`,
+    web3Url: `${plan.gateway.urlBase}~efs/o/${plan.gateway.rootDirectory}/`,
     layoutId: plan.layoutId, root: plan.seed.root, seed: seedIds(plan), typeIds: Object.fromEntries(plan.profile.map((p) => [p.type, p.typeId])),
     signerCapable: lease.signerCapable, capabilities: lease.capabilities,
     ttl: lease.ttl, startedAt: lease.startedAt, expiresAt: lease.expiresAt,
@@ -430,7 +430,7 @@ async function deploy({ plan, rpc, pub, wallet, log }) {
     } else if (step.id === "G20") {
       if ((await read(pub, ledger, "LedgerCore", "revision")) === 0) await send(step, step.to, step.data);
       assert.equal(await read(pub, ledger, "LedgerCore", "executionSet"), plan.activation.expectedExecutionSet, "G20 executionSet");
-    } else if (step.id === "R3" || step.id === "R4") {
+    } else if (["R3", "R4", "R9", "R10", "R11"].includes(step.id)) {
       const [l, kind, reader] = step.args;
       const listed = await read(pub, step.to, "ReaderDirectory", "readers", [l, kind, 0, 16]);
       if (!listed[0].some((x) => x.toLowerCase() === reader.toLowerCase())) await send(step, step.to, step.data);
@@ -549,7 +549,7 @@ async function deploymentDocument({ plan, planHash, pub, url, factoryMethod, jou
       registry: await proxy(a.registryProxy, a.registryAdmin, a.registryImpl, g18.creates[1].initializer),
     },
     contracts,
-    index: { address: a.index, generation: Number(d.indexGeneration), manifestHash: plan.index.manifestHash, indexObligations: plan.realm.indexObligations, stores: { posting: a.postingStore, bitmap: a.bitmapStore }, families: plan.index.families, units: plan.index.units, digestSpecs: plan.index.specs, workModel: plan.workModel },
+    index: { address: a.index, runtimeCodehash: plan.index.runtimeCodehash, reads: { address: a.indexReads, runtimeCodehash: plan.index.reads.runtimeCodehash }, generation: Number(d.indexGeneration), manifestHash: plan.index.manifestHash, indexObligations: plan.realm.indexObligations, stores: { posting: a.postingStore, bitmap: a.bitmapStore }, families: plan.index.families, units: plan.index.units, digestSpecs: plan.index.specs, workModel: plan.workModel },
     typeIds,
     profile: plan.profile.map(({ descriptor, declarationSig, ...p }) => p),
     privilegedRoles: { controllerOwner: account.address, ledgerProxyAdminOwner: a.controller, registryProxyAdminOwner: a.controller, steward: zeroAddress, noticePrincipal: plan.activation.noticePrincipal },
@@ -557,9 +557,13 @@ async function deploymentDocument({ plan, planHash, pub, url, factoryMethod, jou
       ledgerReads: a.ledgerReads, ledgerViews: a.ledgerViews, readerDirectory: a.readerDirectory, keysView: a.keysView,
       lensReader: { address: a.lensReader, runtimeCodehash: plan.readers.lens.runtimeCodehash, kind: plan.readers.lens.kind, kindLabel: plan.readers.lens.kindLabel, ledger: a.ledgerProxy, views: a.ledgerViews, reads: a.ledgerReads, layoutId: plan.layoutId, txHash: tx.R1?.txHash ?? null },
       filesPageReader: { address: a.filesPageReader, runtimeCodehash: plan.readers.filesPage.runtimeCodehash, kind: plan.readers.filesPage.kind, kindLabel: plan.readers.filesPage.kindLabel, ledger: a.ledgerProxy, views: a.ledgerViews, reads: a.ledgerReads, layoutId: plan.layoutId, nameType: typeIds["files-name/2"], rootType: typeIds["files-root/1"], childType: typeIds["files-child/1"], txHash: tx.R2?.txHash ?? null },
+      topicMineReader: { address: a.topicMineReader, runtimeCodehash: plan.readers.topicMine.runtimeCodehash, kind: plan.readers.topicMine.kind, kindLabel: plan.readers.topicMine.kindLabel, ledger: a.ledgerProxy, views: a.ledgerViews, reads: a.ledgerReads, layoutId: plan.layoutId, txHash: tx.R6?.txHash ?? null },
+      topicEveryoneReader: { address: a.topicEveryoneReader, runtimeCodehash: plan.readers.topicEveryone.runtimeCodehash, kind: plan.readers.topicEveryone.kind, kindLabel: plan.readers.topicEveryone.kindLabel, ledger: a.ledgerProxy, views: a.ledgerViews, reads: a.ledgerReads, layoutId: plan.layoutId, txHash: tx.R7?.txHash ?? null },
+      topicLookupReader: { address: a.topicLookupReader, runtimeCodehash: plan.readers.topicLookup.runtimeCodehash, kind: plan.readers.topicLookup.kind, kindLabel: plan.readers.topicLookup.kindLabel, ledger: a.ledgerProxy, views: a.ledgerViews, reads: a.ledgerReads, layoutId: plan.layoutId, topicType: typeIds["topic/1"], wordType: typeIds["topic-word/1"], txHash: tx.R8?.txHash ?? null },
       listed: await listedReaders(pub, plan),
-      // ERC-5219 over web3:// (docs/LARGE-FILES.md): `${urlBase}<principal>/<name>/…[?lens=<p>,<p>][&offset=<n>]`
-      web3Gateway: { ...plan.gateway, ledger: a.ledgerProxy, reads: a.ledgerReads, views: a.ledgerViews, layoutId: plan.layoutId, seedUrl: `${plan.gateway.urlBase}${plan.seed.principalId}/`, txHash: tx.R5?.txHash ?? null },
+      // ERC-5219 over web3:// (docs/LARGE-FILES.md): `${urlBase}0x<address>/<name>/…` (a home) or
+      // `${urlBase}~efs/o/<folder id>/<name>/…` (a folder by id; the seed's root: its creator is the default lens)
+      web3Gateway: { ...plan.gateway, ledger: a.ledgerProxy, reads: a.ledgerReads, views: a.ledgerViews, layoutId: plan.layoutId, seedUrl: `${plan.gateway.urlBase}~efs/o/${plan.gateway.rootDirectory}/`, txHash: tx.R5?.txHash ?? null },
     },
     seed: { ...seedIds(plan), transactions: plan.steps.filter((s) => s.kind === "EXECUTE").map((s) => ({ id: s.id, label: s.label, txHash: s.txHash ?? tx[s.id]?.txHash ?? null, publication: s.publication ?? tx[s.id]?.publication ?? null, actions: s.actions, bodies: s.bodies })) },
     root: plan.seed.root,
@@ -577,7 +581,7 @@ async function deploymentDocument({ plan, planHash, pub, url, factoryMethod, jou
 async function listedReaders(pub, plan) {
   const { read } = bind(plan);
   const out = [];
-  for (const r of [plan.readers.lens, plan.readers.filesPage]) {
+  for (const r of [plan.readers.lens, plan.readers.filesPage, plan.readers.topicMine, plan.readers.topicEveryone, plan.readers.topicLookup]) {
     const [readers, codehashes, layoutIds, physical] = await read(pub, plan.addresses.readerDirectory, "ReaderDirectory", "readers", [plan.addresses.ledgerProxy, r.kind, 0, 16]);
     readers.forEach((x, i) => out.push({ kind: r.kind, kindLabel: r.kindLabel, ordinal: i, reader: x, codehash: codehashes[i], layoutId: layoutIds[i], physicalProfile: physical[i] }));
   }
@@ -800,6 +804,9 @@ export async function verify(o = {}) {
 
   // 7. the index: manifest, readiness
   eq("index manifestHash", await read(pub, a.index, "RealmIndex", "manifestHash"), plan.index.manifestHash);
+  eq("index codehash", keccak256(await code(a.index)), plan.index.runtimeCodehash);
+  eq("index readsContract", await read(pub, a.index, "RealmIndex", "readsContract"), [a.indexReads, plan.index.reads.runtimeCodehash]);
+  eq("index reads codehash", keccak256(await code(a.indexReads)), plan.index.reads.runtimeCodehash);
   const rd = await read(pub, a.index, "RealmIndex", "replayReadiness");
   eq("index ready", rd.ready, true);
   eq("index families", rd.families, plan.index.families);
@@ -889,6 +896,32 @@ export async function verify(o = {}) {
   eq("keysView bindingKey", await read(pub, kv, "KeysView", "bindingKey", [exp.root.principalId, headPos]), readme.headKey);
   eq("keysView scopeKey", await read(pub, kv, "KeysView", "scopeKey", [exp.root.principalId, keccak256(toHex("efs/purpose/folder/1")), exp.folder.directoryRecordId]), exp.file.scopeKey);
   for (const spec of plan.index.specs) eq(`index digestSpecCount ${spec.typeId.slice(0, 10)}`, await read(pub, a.index, "RealmIndex", "digestSpecCount", [spec.typeId]), 1n);
+
+  // 9d. the index prices like the release: the work model the deployed index answers (workModel(), every field of the
+  // ABI's WorkModel, formulaVersion included) equals the deploy plan's and every gas-model floor's (release.json
+  // gasModel, and gas/model.json in a checkout; one index serves every schedule), and the Realm's floor prices
+  // (describe().limits) equal the floor.limits of the schedule that prices this chain. A planner sizes publications
+  // from those documents, so any difference would let it plan what the kernel refuses.
+  {
+    const wmChain = await read(pub, a.index, "RealmIndex", "workModel");
+    const wmFields = abiOf("RealmIndex").find((i) => i.name === "workModel").outputs[0].components.map((c) => c.name);
+    const relModel = JSON.parse(readFileSync(join(REL, "release.json"), "utf8")).gasModel;
+    const modelFile = join(plan.local.repoRoot, "gas/model.json");
+    const model = existsSync(modelFile) ? JSON.parse(readFileSync(modelFile, "utf8")) : null;
+    const wmSources = { "deploy plan workModel": plan.workModel, "efs-deployment.json index.workModel": dep.index?.workModel };
+    const floorSources = {};
+    for (const [s, sched] of Object.entries(relModel?.schedules ?? {})) wmSources[`release.json gasModel.schedules.${s}.floor.workModel`] = sched.floor?.workModel;
+    for (const [s, prof] of Object.entries(model?.profiles ?? {})) wmSources[`gas/model.json profiles.${s}.floor.workModel`] = prof.floor?.workModel;
+    const sched = HARDFORKS[hardfork]?.feeSchedule;
+    floorSources[`release.json gasModel.schedules.${sched}.floor.limits`] = relModel?.schedules?.[sched]?.floor?.limits;
+    if (model) floorSources[`gas/model.json profiles.${sched}.floor.limits`] = model.profiles?.[sched]?.floor?.limits;
+    const misses = [
+      ...priceMismatches("workModel", wmFields, wmChain, wmSources),
+      ...priceMismatches("floor.limits", FLOOR_LIMIT_FIELDS, d.limits, floorSources),
+    ];
+    checked.pricing = (checked.pricing ?? 0) + wmFields.length * Object.keys(wmSources).length + FLOOR_LIMIT_FIELDS.length * Object.keys(floorSources).length;
+    for (const m of misses) failures.push(`pricing ${m}`);
+  }
   eq("seed root-is-directory", (await read(pub, a.ledgerProxy, "LedgerCore", "recordHeader", [dep.root.directoryRecordId]))[0], dep.typeIds["files-directory/1"]);
 
   // 9b. the readers: immutables, the directory listing, and one page of the seeded folder
@@ -901,8 +934,13 @@ export async function verify(o = {}) {
   for (const [fn, value] of [["LEDGER", a.ledgerProxy], ["VIEWS", a.ledgerViews], ["READS", a.ledgerReads], ["LAYOUT", plan.layoutId], ["NAME_TYPE", dep.typeIds["files-name/2"]], ["ROOT_TYPE", dep.typeIds["files-root/1"]], ["CHILD_TYPE", dep.typeIds["files-child/1"]]]) {
     eq(`readers page.${fn}`, await read(pub, pageR, "FilesPageReader", fn), value);
   }
+  for (const [r, name, extra] of [[a.topicMineReader, "TopicMineReader", []], [a.topicEveryoneReader, "TopicEveryoneReader", []], [a.topicLookupReader, "TopicLookupReader", [["TOPIC_TYPE", dep.typeIds["topic/1"]], ["WORD_TYPE", dep.typeIds["topic-word/1"]]]]]) {
+    for (const [fn, value] of [["LEDGER", a.ledgerProxy], ["VIEWS", a.ledgerViews], ["READS", a.ledgerReads], ["LAYOUT", plan.layoutId], ...extra]) {
+      eq(`readers ${name}.${fn}`, await read(pub, r, name, fn), value);
+    }
+  }
   const physical = keccak256(toHex("efs/index-layout/1:stores:inline-singleton:five-u48:live-bits-in-head"));
-  for (const r of [plan.readers.lens, plan.readers.filesPage]) {
+  for (const r of [plan.readers.lens, plan.readers.filesPage, plan.readers.topicMine, plan.readers.topicEveryone, plan.readers.topicLookup]) {
     const [readers, codehashes, layoutIds, profiles] = await read(pub, a.readerDirectory, "ReaderDirectory", "readers", [a.ledgerProxy, r.kind, 0, 16]);
     eq(`readers directory ${r.kindLabel}`, [readers, codehashes, layoutIds, profiles], [[r.address], [r.runtimeCodehash], [plan.layoutId], [physical]]);
     eq(`readers deployment ${r.kindLabel}`, dep.readers.listed.find((x) => x.kind === r.kind)?.reader, r.address);
@@ -919,10 +957,17 @@ export async function verify(o = {}) {
   const gw = a.web3Gateway;
   eq("gateway deployment", [dep.readers.web3Gateway?.address, dep.readers.web3Gateway?.rootDirectory], [gw, exp.root.directoryRecordId]);
   eq("gateway resolveMode", await read(pub, gw, "EfsWeb3Gateway", "resolveMode"), pad(toHex("5219"), { dir: "right", size: 32 }));
-  for (const [fn, value] of [["ledger", a.ledgerProxy], ["READS", a.ledgerReads], ["VIEWS", a.ledgerViews], ["PAGER", pageR], ["layoutId", plan.layoutId], ["ROOT_DIRECTORY", exp.root.directoryRecordId],
-    ["DIRECTORY_TYPE", dep.typeIds["files-directory/1"]], ["NAME_TYPE", dep.typeIds["files-name/2"]], ["ROOT_TYPE", dep.typeIds["files-root/1"]], ["CHILD_TYPE", dep.typeIds["files-child/1"]],
-    ["CONTENT_TYPE", dep.typeIds["files-content/1"]], ["EXTERNAL_TYPE", dep.typeIds["files-external/1"]], ["BYTES_TYPE", dep.typeIds["files-bytes/1"]], ["SPAN_TYPE", dep.typeIds["files-span/1"]]]) {
+  // the entry point names its content server by address and codehash; both are the plan's and the deployment's
+  const gwc = a.web3Content;
+  eq("gateway content deployment", [dep.readers.web3Gateway?.content?.address, dep.readers.web3Gateway?.content?.runtimeCodehash], [gwc, plan.gateway.content.runtimeCodehash]);
+  eq("gateway content codehash", keccak256(await pub.getCode({ address: gwc })), plan.gateway.content.runtimeCodehash);
+  for (const [fn, value] of [["ledger", a.ledgerProxy], ["READS", a.ledgerReads], ["VIEWS", a.ledgerViews], ["PAGER", pageR], ["CONTENT", gwc], ["CONTENT_CODEHASH", plan.gateway.content.runtimeCodehash],
+    ["layoutId", plan.layoutId], ["ROOT_DIRECTORY", exp.root.directoryRecordId], ["DIRECTORY_TYPE", dep.typeIds["files-directory/1"]]]) {
     eq(`gateway ${fn}`, await read(pub, gw, "EfsWeb3Gateway", fn), value);
+  }
+  for (const [fn, value] of [["ledger", a.ledgerProxy], ["READS", a.ledgerReads], ["layoutId", plan.layoutId], ["ROOT_TYPE", dep.typeIds["files-root/1"]], ["CHILD_TYPE", dep.typeIds["files-child/1"]],
+    ["CONTENT_TYPE", dep.typeIds["files-content/1"]], ["EXTERNAL_TYPE", dep.typeIds["files-external/1"]], ["BYTES_TYPE", dep.typeIds["files-bytes/1"]], ["SPAN_TYPE", dep.typeIds["files-span/1"]]]) {
+    eq(`gateway content ${fn}`, await read(pub, gwc, "EfsWeb3Content", fn), value);
   }
   // what a web3:// client does with a URL path: split, percent-decode, call request(); the body is bytes, not UTF-8
   const web3Get = async (path) => {
@@ -934,11 +979,12 @@ export async function verify(o = {}) {
     return { status, body, headers: Object.fromEntries(headers.map((h) => [h.key.toLowerCase(), h.value])) };
   };
   const [gwReadme, gwBig, gwRemote] = exp.files;
-  const base = `/${exp.root.principalId}/docs`;
+  // the seed's root by its folder id; its default lens is its creator, the fixture principal
+  const base = `/~efs/o/${exp.root.directoryRecordId}/docs`;
   const one = await web3Get(`${base}/${gwReadme.name}`);
   // readme.txt is inline (no descriptor, no media type): Content-Type from the extension, no nosniff
   eq("gateway readme", [one.status, sha256(one.body), size(one.body), one.headers["content-type"], one.headers["x-efs-record"], one.headers["x-content-type-options"] ?? null], [200, gwReadme.sha256, gwReadme.length, "text/plain; charset=utf-8", gwReadme.headRecordId, null]);
-  eq("gateway readme by account", (await web3Get(`/${dep.actors.fixturePrincipal}/docs/${gwReadme.name}`)).body, one.body);
+  eq("gateway readme by lens", (await web3Get(`${base}/${gwReadme.name}?lens=${dep.actors.fixturePrincipal}`)).body, one.body);
   const parts = [];
   for (let url = `${base}/${gwBig.name}`; url; ) {
     const r = await web3Get(url);
@@ -953,7 +999,33 @@ export async function verify(o = {}) {
   eq("gateway remote", [moved.status, moved.headers.location, moved.headers["x-efs-sha256"], moved.headers["x-efs-media-type"] ?? null], [307, gwRemote.locator, gwRemote.sha256, gwRemote.media]);
   const listed = await web3Get(base);
   eq("gateway listing", [listed.status, listed.headers["x-efs-listing"], JSON.parse(hexToString(listed.body))], [200, "complete", { entries: exp.files.map((f) => ({ name: f.name, kind: "file" })), complete: true }]);
-  eq("gateway statuses", [(await web3Get(`${base}/missing.txt`)).status, (await web3Get("/not-a-principal/docs")).status, (await web3Get(`${base}/${gwReadme.name}?offset=${gwReadme.length}`)).status], [404, 400, 416]);
+  eq("gateway statuses", [(await web3Get(`${base}/missing.txt`)).status, (await web3Get(`${base}/${gwReadme.name}?offset=${gwReadme.length}`)).status], [404, 416]);
+  // the first segment decides the kind: a plain word is a topic (not served, so `docs` is never a folder there),
+  // `~` the system, `0x<40 hex>` a home (the fixture account's own, which holds nothing); the id of an existing
+  // object that is neither a folder nor a file (the sample file's revision record) is 501, never 404, and so is a
+  // revision link to a record that is not a revision (the root folder); only an id that names nothing is 404
+  const nothing = keccak256(toHex("efs/fixture/no such object"));
+  eq("gateway forms", [(await web3Get(`/docs/${gwReadme.name}`)).status, (await web3Get(`/~home/${dep.actors.fixturePrincipal}/docs`)).status, (await web3Get(`/${exp.root.principalId}/docs`)).status, (await web3Get(`/~efs/o/${exp.file.rootRecordId}/`)).status, (await web3Get(`/~efs/v/${exp.root.directoryRecordId}`)).status, (await web3Get(`/~efs/o/${nothing}/`)).status, (await web3Get(`/~efs/v/${nothing}`)).status, (await web3Get("/~efs/v")).status],
+    [501, 400, 400, 501, 501, 404, 404, 400]);
+  // the sample file by its object link (its creator's HEAD) and by its revision link serve the sample bytes
+  const byId = await web3Get(`/~efs/o/${exp.file.subjectId}`);
+  eq("gateway file by id", [byId.status, sha256(byId.body), byId.headers["x-efs-record"], byId.headers["content-type"]], [200, gwReadme.sha256, exp.file.rootRecordId, "application/octet-stream"]);
+  const byRevision = await web3Get(`/~efs/v/${exp.file.rootRecordId}`);
+  eq("gateway revision link", [byRevision.status, sha256(byRevision.body), byRevision.headers["x-efs-record"]], [200, gwReadme.sha256, exp.file.rootRecordId]);
+  // big.bin through both forms, chunk by chunk
+  for (const [label, first] of [["by id", `/~efs/o/${gwBig.subjectId}`], ["by revision", `/~efs/v/${gwBig.headRecordId}`]]) {
+    const got = [];
+    for (let url = first; url; ) {
+      const r = await web3Get(url);
+      eq(`gateway big ${label} chunk ${got.length}`, [r.status, r.headers["x-efs-record"], r.headers["content-type"]], [200, gwBig.headRecordId, gwBig.media]);
+      got.push(r.body);
+      url = r.status === 200 && got.length <= gwBig.chunkCount ? r.headers["web3-next-chunk"] : undefined;
+    }
+    const all = concatHex(got);
+    eq(`gateway big ${label}`, [got.length, size(all), sha256(all)], [gwBig.chunkCount, gwBig.length, gwBig.sha256]);
+  }
+  const homeDir = await web3Get(`/${dep.actors.fixturePrincipal}/`);
+  eq("gateway home", [homeDir.status, homeDir.headers["x-efs-home"], homeDir.headers["x-efs-listing"]], [200, dep.actors.fixturePrincipal.toLowerCase(), "complete"]);
 
   // 10. cold pin (design §12.3): what an SDK with only release.json + efs-deployment.json does on first contact
   rpc.reset();

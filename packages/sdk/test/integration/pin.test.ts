@@ -80,7 +80,7 @@ describe("cold pin (fixture)", () => {
           item.result =
             lie === "slot"
               ? `0x${"00".repeat(12)}${"11".repeat(20)}` // an upgrade: the slot names another implementation
-              : `${item.result.slice(0, 2 + 3 * 64)}${"ee".repeat(32)}${item.result.slice(2 + 4 * 64)}`; // LensReader
+              : `${item.result.slice(0, 2 + 4 * 64)}${"ee".repeat(32)}${item.result.slice(2 + 5 * 64)}`; // LensReader (after the zero word)
         }
         text = JSON.stringify(parsed);
       }

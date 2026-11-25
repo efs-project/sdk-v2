@@ -2,12 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "efs-gas-model/1",
   "title": "efs-gas-model/1 \u2014 a per-action gas model of one native-lane publication",
-  "description": "Written by tools/gas-model.mjs from test/integration/GasModel.t.sol. gas(publication) = fixed + \u03a3 cost(action); PUBLISH new = publishNew[shape] + perWord\u00b7ceil(n/32) + perByte\u00b7n. Planning only: eth_estimateGas stays the authority before sending. Excludes intrinsic, calldata and refunds.",
+  "description": "Written by tools/gas-model.mjs from test/integration/GasModel.t.sol. gas(publication) = fixed + \u03a3 cost(action); PUBLISH new = publishNew[shape] + perWord\u00b7ceil(n/32) + perByte\u00b7n; a first TAG on an n-word topic adds tagLevel terms per proper ancestor. Planning only: eth_estimateGas stays the authority before sending. Excludes intrinsic, calldata and refunds. profiles.<schedule>.floor carries the kernel's index-floor quote inputs and the kernel's own share (design \u00a710.4); planning the rule a planner sizes a publication by: max(E, V) \u2264 floor(txGasCap \u00d7 (100 \u2212 headroomPercent) / 100).",
   "type": "object",
   "required": [
     "schema",
     "note",
     "method",
+    "planning",
+    "tagLists",
     "profiles",
     "source"
   ],
@@ -27,7 +29,8 @@
         "measurement",
         "marginal",
         "slopes",
-        "fixed"
+        "fixed",
+        "tagLevels"
       ]
     },
     "profiles": {
@@ -42,6 +45,7 @@
             "quantity",
             "constants",
             "fit",
+            "floor",
             "rows",
             "validation",
             "maxAbsErrorPercent"
@@ -64,8 +68,16 @@
                 "bindFolderRebind",
                 "unbindFolder",
                 "releaseFolder",
+                "bindTagFresh",
+                "bindTagSecondAuthor",
+                "bindTagNumberChange",
+                "unbindTagLone",
+                "unbindTag",
+                "releaseTag",
+                "restoreTag",
                 "withdraw",
-                "firstWriteSurcharge"
+                "firstWriteSurcharge",
+                "tagLevel"
               ],
               "properties": {
                 "fixed": {
@@ -116,10 +128,44 @@
                 "releaseFolder": {
                   "type": "integer"
                 },
+                "bindTagFresh": {
+                  "type": "integer"
+                },
+                "bindTagSecondAuthor": {
+                  "type": "integer"
+                },
+                "bindTagNumberChange": {
+                  "type": "integer"
+                },
+                "unbindTagLone": {
+                  "type": "integer"
+                },
                 "withdraw": {
                   "type": "integer"
                 },
                 "firstWriteSurcharge": {
+                  "type": "integer"
+                },
+                "tagLevel": {
+                  "type": "object",
+                  "description": "Per proper ancestor of a first TAG statement's topic (design \u00a710.4): mineNew/mineExisting for the author's scope-below list at that ancestor, sharedNew/sharedExisting for the place-below list (written only on a fresh position).",
+                  "required": [
+                    "mineNew",
+                    "mineExisting",
+                    "sharedNew",
+                    "sharedExisting"
+                  ],
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "unbindTag": {
+                  "type": "integer"
+                },
+                "releaseTag": {
+                  "type": "integer"
+                },
+                "restoreTag": {
                   "type": "integer"
                 }
               }
@@ -133,7 +179,8 @@
                   "key",
                   "test",
                   "gas",
-                  "frameGas"
+                  "frameGas",
+                  "kernelFrameGas"
                 ]
               }
             },
@@ -147,12 +194,109 @@
                   "what",
                   "measured",
                   "predicted",
-                  "errorPercent"
+                  "errorPercent",
+                  "measuredKernelGas",
+                  "predictedKernelGas"
                 ]
               }
             },
             "maxAbsErrorPercent": {
               "type": "number"
+            },
+            "floor": {
+              "type": "object",
+              "description": "The kernel's index-floor inputs on this schedule, exactly (design \u00a710.4), and the kernel's own execution gas (`kernel`: the constants' structure, fitted from the rows' kernel frame gas, the index's callbacks answered by vm.mockCall).",
+              "required": [
+                "formula",
+                "quantity",
+                "workModel",
+                "limits",
+                "callGasRetained",
+                "dispatchOverhead",
+                "types",
+                "kernel"
+              ],
+              "properties": {
+                "formula": {
+                  "type": "string"
+                },
+                "workModel": {
+                  "type": "object",
+                  "required": [
+                    "formulaVersion",
+                    "freshPerPublication",
+                    "rwPerPublication",
+                    "freshPerPublishFresh",
+                    "freshPerPublishExisting",
+                    "rwPerPublish",
+                    "freshPerBindFresh",
+                    "rwPerBind",
+                    "rwPerBindLater",
+                    "freshPerRef",
+                    "freshPerDigestSpec",
+                    "computeBase",
+                    "computePerAction",
+                    "computePerHookEffect",
+                    "finalComputeBase",
+                    "finalComputePerBind",
+                    "finalComputePerPublish"
+                  ],
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "limits": {
+                  "type": "object",
+                  "required": [
+                    "floorFreshGas",
+                    "floorRewriteGas",
+                    "kernelTail"
+                  ],
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "callGasRetained": {
+                  "type": "object",
+                  "required": [
+                    "numerator",
+                    "denominator"
+                  ],
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "dispatchOverhead": {
+                  "type": "integer"
+                },
+                "types": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "refs",
+                      "specs"
+                    ],
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "kernel": {
+                  "type": "object",
+                  "required": [
+                    "fixed",
+                    "perWord",
+                    "perByte",
+                    "publishNew",
+                    "publishExisting",
+                    "reuse",
+                    "create",
+                    "firstWriteSurcharge",
+                    "tagLevel"
+                  ]
+                }
+              }
             }
           }
         },
@@ -163,6 +307,7 @@
             "constants",
             "split",
             "fit",
+            "floor",
             "rows",
             "validation",
             "maxAbsErrorPercent"
@@ -185,7 +330,8 @@
                   "key",
                   "test",
                   "gas",
-                  "frameGas"
+                  "frameGas",
+                  "kernelFrameGas"
                 ]
               }
             },
@@ -203,12 +349,109 @@
                   "measuredExecutionGas",
                   "predictedExecutionGas",
                   "measuredStateGas",
-                  "predictedStateGas"
+                  "predictedStateGas",
+                  "measuredKernelGas",
+                  "predictedKernelGas"
                 ]
               }
             },
             "maxAbsErrorPercent": {
               "type": "number"
+            },
+            "floor": {
+              "type": "object",
+              "description": "The kernel's index-floor inputs on this schedule, exactly (design \u00a710.4), and the kernel's own execution gas (`kernel`: the constants' structure, fitted from the rows' kernel frame gas, the index's callbacks answered by vm.mockCall).",
+              "required": [
+                "formula",
+                "quantity",
+                "workModel",
+                "limits",
+                "callGasRetained",
+                "dispatchOverhead",
+                "types",
+                "kernel"
+              ],
+              "properties": {
+                "formula": {
+                  "type": "string"
+                },
+                "workModel": {
+                  "type": "object",
+                  "required": [
+                    "formulaVersion",
+                    "freshPerPublication",
+                    "rwPerPublication",
+                    "freshPerPublishFresh",
+                    "freshPerPublishExisting",
+                    "rwPerPublish",
+                    "freshPerBindFresh",
+                    "rwPerBind",
+                    "rwPerBindLater",
+                    "freshPerRef",
+                    "freshPerDigestSpec",
+                    "computeBase",
+                    "computePerAction",
+                    "computePerHookEffect",
+                    "finalComputeBase",
+                    "finalComputePerBind",
+                    "finalComputePerPublish"
+                  ],
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "limits": {
+                  "type": "object",
+                  "required": [
+                    "floorFreshGas",
+                    "floorRewriteGas",
+                    "kernelTail"
+                  ],
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "callGasRetained": {
+                  "type": "object",
+                  "required": [
+                    "numerator",
+                    "denominator"
+                  ],
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                },
+                "dispatchOverhead": {
+                  "type": "integer"
+                },
+                "types": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": [
+                      "refs",
+                      "specs"
+                    ],
+                    "additionalProperties": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "kernel": {
+                  "type": "object",
+                  "required": [
+                    "fixed",
+                    "perWord",
+                    "perByte",
+                    "publishNew",
+                    "publishExisting",
+                    "reuse",
+                    "create",
+                    "firstWriteSurcharge",
+                    "tagLevel"
+                  ]
+                }
+              }
             }
           }
         }
@@ -221,6 +464,214 @@
         "commit",
         "date"
       ]
+    },
+    "reads": {
+      "type": "object",
+      "description": "The topic readers' read terms and call bounds (tools/gas-reads.mjs from test/integration/TopicReadMeasure.t.sol; docs/TAG-NUMBERS.md \"Reads\"). Written by every run of tools/gas-model.mjs; its own top-level section beside the publication model.",
+      "required": [
+        "note",
+        "suite",
+        "callGasCap",
+        "marginPercent",
+        "method",
+        "schedules"
+      ],
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "suite": {
+          "type": "string"
+        },
+        "callGasCap": {
+          "type": "integer"
+        },
+        "marginPercent": {
+          "type": "integer"
+        },
+        "method": {
+          "type": "object",
+          "required": [
+            "measurement",
+            "mine",
+            "everyone",
+            "bounds",
+            "recommended"
+          ]
+        },
+        "schedules": {
+          "type": "object",
+          "required": [
+            "prague"
+          ],
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "rows",
+              "terms",
+              "bounds",
+              "recommended"
+            ],
+            "properties": {
+              "rows": {
+                "type": "object",
+                "description": "every measured \"tr <key>\" row of the suite: one cold view call, gas",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              },
+              "terms": {
+                "type": "object",
+                "required": [
+                  "mineExact",
+                  "mineBelow",
+                  "everyoneExact",
+                  "everyoneBelow",
+                  "rawExact",
+                  "rawBelow",
+                  "byName",
+                  "about",
+                  "wordPage",
+                  "children"
+                ],
+                "properties": {
+                  "mineExact": {
+                    "type": "object",
+                    "required": [
+                      "opening",
+                      "openingPerLensAuthor",
+                      "perRow",
+                      "perLensIndex",
+                      "maxAbsErrorPercent"
+                    ]
+                  },
+                  "mineBelow": {
+                    "type": "object",
+                    "required": [
+                      "opening",
+                      "openingPerLensAuthor",
+                      "perRow",
+                      "perLensIndex",
+                      "maxAbsErrorPercent"
+                    ]
+                  },
+                  "everyoneExact": {
+                    "type": "object",
+                    "required": [
+                      "opening",
+                      "perRow",
+                      "perLensAuthor",
+                      "perSkippedEntryByLens"
+                    ]
+                  },
+                  "everyoneBelow": {
+                    "type": "object",
+                    "required": [
+                      "opening",
+                      "perRow",
+                      "perLensAuthor",
+                      "perSkippedEntryByLens"
+                    ]
+                  }
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "required": [
+                    "opening",
+                    "perRow"
+                  ]
+                }
+              },
+              "bounds": {
+                "type": "object",
+                "description": "per lens size: the most rows (worst case) and skipped entries one call reads under the budget",
+                "additionalProperties": {
+                  "type": "object",
+                  "required": [
+                    "mineExact",
+                    "mineBelow",
+                    "everyoneExact",
+                    "everyoneBelow"
+                  ]
+                }
+              },
+              "recommended": {
+                "type": "object",
+                "required": [
+                  "pageTimesLens",
+                  "maxRows",
+                  "limitEntries"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "planning": {
+      "type": "object",
+      "description": "The planning rule (tools/gas-plan.mjs is its reference implementation, reading only this file).",
+      "required": [
+        "rule",
+        "txGasCap",
+        "txGasCapRule",
+        "headroomPercent",
+        "headroomCovers",
+        "limits"
+      ],
+      "properties": {
+        "rule": {
+          "type": "string"
+        },
+        "txGasCap": {
+          "type": "integer"
+        },
+        "headroomPercent": {
+          "type": "integer"
+        },
+        "limits": {
+          "type": "object",
+          "required": [
+            "maxActions",
+            "maxBindsPerPublication",
+            "maxBodyBytesPerPublication"
+          ],
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "tagLists": {
+      "type": "object",
+      "description": "When a roll-up list's next append is priced as new (tagLevel.mineNew / sharedNew): entries \u2208 priceAsNew.entries or entries % priceAsNew.entriesMultipleOf == 0.",
+      "required": [
+        "priceAsNew",
+        "note"
+      ],
+      "properties": {
+        "priceAsNew": {
+          "type": "object",
+          "required": [
+            "entries",
+            "entriesMultipleOf"
+          ],
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            },
+            "entriesMultipleOf": {
+              "type": "integer"
+            }
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      }
     }
   }
 }

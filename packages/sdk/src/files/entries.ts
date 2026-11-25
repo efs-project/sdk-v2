@@ -499,7 +499,7 @@ async function toParts<R extends FolderReviewBase>(
     txGasCap: gas.txGasCap,
     headroom: gas.headroom,
     ...(gas.blockGasLimit !== undefined ? { blockGasLimit: gas.blockGasLimit } : {}),
-    ...(gas.floor ? { floor: gas.floor } : {}),
+    typeNames: gas.typeNames,
     firstWrite: true, // priced as a first publication: planning does not read the nonce (see planEditFile)
   });
   if (!split.ok) return { kind: "efs.folderPlan", status: "TOO_LARGE", reason: split.reason };
@@ -681,7 +681,7 @@ export async function planCreateFile(
       finish.push(
         publish(built.descriptor.typeId, built.descriptor.body, built.descriptor.shape, FINISH),
       );
-    finish.push(plain({ kind: ACTION.CREATE, salt }, { group: FINISH }));
+    finish.push(plain({ kind: ACTION.CREATE, saltOrStrength: salt }, { group: FINISH }));
     finish.push(
       publish(
         types.root,
@@ -1190,7 +1190,8 @@ async function placements(
       data: encodeFunctionData({
         abi: indexAbi,
         functionName: "postingHeadOf",
-        args: [family, ZERO_WORD, 0, t],
+        // The FOLDER backlink list (Keys.backlinkList(FOLDER, target)): tags and other purposes never count.
+        args: [family, PURPOSES.folder, 0, t],
       }),
     })),
   );

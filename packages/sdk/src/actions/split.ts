@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: MIT
-// Split an ordered list of actions into publications that each fit one transaction: the Realm's batch limits
-// (LedgerCore._bounds: actions, BIND/UNBIND/RELEASE count, summed body bytes) and a gas budget under the
-// per-transaction cap, estimated with the contracts' fitted gas model (release.json `gasModel`). Order is kept,
-// because a record must be published no later than the publication that references it, and `group`s never split
-// (a file's finish — revision, name, CREATE, HEAD and FOLDER binds — appears atomically or not at all).
+// Split an ordered list of actions into publications that each fit one transaction, by the contracts' planning rule
+// (gas/model.json `planning`; the reference is the contracts' tools/gas-plan.mjs, and the SDK reproduces its verdicts
+// on test/vectors/floor-plan.json). Order is kept, because a record must be published no later than the publication
+// that references it, and `group`s never split (a file's finish appears atomically or not at all).
 //
-// The estimate is the model's (fixed + Σ actions) plus what the model excludes: the 21,000 intrinsic gas and the
-// calldata of the encoded call, priced as if every byte were non-zero. Plans aim at txGasCap × (1 − headroom), the
-// contracts' budget rule with their 15% default (the fit's stated error is ~6–8%). eth_estimateGas on the exact call
-// stays the authority before anything is sent (sendPlan refuses an estimate over the cap).
-//
-// The kernel's index floor is added on top (when the deployment records its work model): before the callbacks the
-// kernel reserves a prefix floor P and a final reserve F, priced per action and per bind, so a publication needs
-// visible gas V = max(K + need(P), E) + ceil(F·64/63) + tail, K being the kernel's own share of the execution gas E.
-// Until the gas model gives K (the tag release's floor.kernel), K ≤ E bounds it: a publication is planned only when
-// E + need(P) + ceil(F·64/63) + tail fits the budget. That over-splits bind-heavy batches a little, never under.
+// A publication is planned when it is inside the Realm's limits (actions, bind-kind actions, summed PUBLISH body
+// bytes) and max(E, V) ≤ ⌊txGasCap × (100 − headroomPercent) / 100⌋, on the chain's fee schedule:
+//   E  the model's execution estimate: fixed + Σ actions (+ the first-write surcharge on a principal's first write);
+//   V  the visible gas the kernel's floor checks need: max(K + prefixNeed(P), E) + ⌈F·64/63⌉ + kernelTail, where K is
+//      the kernel's own share of E (floor.kernel, the same model with the index's callbacks removed), and P and F the
+//      kernel's own quote (prefix floor, final reserve) from the work model (formula 2).
+// The headroom covers the 21,000 intrinsic gas, the calldata and the model's error. eth_estimateGas on the exact call
+// stays the authority before anything is sent, and the gas limit comes from the estimate, never from V.
 import { type Reason, reason } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
-import type { DeploymentInfo, KernelFloor } from "../deployment/manifest.js";
+import type { DeploymentInfo } from "../deployment/manifest.js";
 import { ACTION } from "../generated/constants.js";
-import { GAS_ENVELOPE, GAS_SCHEDULES } from "../generated/gas.js";
+import { GAS_PLANNING, GAS_SCHEDULES, GAS_TAG_LISTS } from "../generated/gas.js";
 import type { ActionData } from "./types.js";
+
+/** The per-level terms a first TAG statement pays at each proper ancestor of its topic (tagLists). */
+export type TagLevel = "mineNew" | "mineExisting" | "sharedNew" | "sharedExisting";
 
 /** One fee schedule's fitted constants (release.json gasModel.schedules[name]; generated as GAS_SCHEDULES). */
 export interface GasConstants {
@@ -43,9 +43,52 @@ export interface GasConstants {
   bindFolderRebind: number;
   unbindFolder: number;
   releaseFolder: number;
+  bindTagFresh: number;
+  bindTagSecondAuthor: number;
+  bindTagNumberChange: number;
+  unbindTagLone: number;
+  unbindTag: number;
+  releaseTag: number;
+  restoreTag: number;
   withdraw: number;
   /** Added once to a principal's first publication ever. */
   firstWriteSurcharge: number;
+  tagLevel: Readonly<Record<TagLevel, number>>;
+}
+
+/** The work model the kernel quotes its floor with (formula 2; efs-deployment index.workModel). */
+export interface WorkModel {
+  formulaVersion: number;
+  freshPerPublication: number;
+  rwPerPublication: number;
+  freshPerPublishFresh: number;
+  freshPerPublishExisting: number;
+  rwPerPublish: number;
+  freshPerBindFresh: number;
+  rwPerBind: number;
+  rwPerBindLater: number;
+  freshPerRef: number;
+  freshPerDigestSpec: number;
+  computeBase: number;
+  computePerAction: number;
+  computePerHookEffect: number;
+  finalComputeBase: number;
+  finalComputePerBind: number;
+  finalComputePerPublish: number;
+}
+
+/** The kernel's floor, per schedule (gas/model.json profiles.<schedule>.floor). */
+export interface FloorModel {
+  workModel: WorkModel;
+  limits: { floorFreshGas: number; floorRewriteGas: number; kernelTail: number };
+  /** The 63/64 rule: what a call keeps of the gas it forwards. */
+  callGasRetained: { numerator: number; denominator: number };
+  /** The most the ingress spends between the kernel's forward and the index's. */
+  dispatchOverhead: number;
+  /** References and digest specs per Type name: what the quote charges per record. */
+  types: Readonly<Record<string, { refs: number; specs: number }>>;
+  /** The kernel's own execution gas: the same model fitted with the index's callbacks removed (K). */
+  kernel: GasConstants;
 }
 
 /** The model the planner splits with: what the per-transaction cap counts, for one fee schedule. */
@@ -54,39 +97,70 @@ export interface GasModel extends GasConstants {
   schedule: string;
   /** Set when the cap counts only execution gas (amsterdam): all gas, which must also fit the block. */
   total?: GasConstants;
+  /** The kernel's floor on this schedule. Without one, a publication is planned by E alone. */
+  floor?: FloorModel;
 }
 
-/** The gas-model row a BIND is priced at. Without one, the most expensive BIND row. */
+/** The gas-model row a BIND, UNBIND or RELEASE is priced at. Without one, the most expensive row of its kind. */
 export type BindRow =
   | "bindHeadFresh"
   | "bindHeadRebind"
   | "bindFolderFreshFile"
   | "bindFolderFreshDirectory"
-  | "bindFolderRebind";
+  | "bindFolderRebind"
+  | "unbindFolder"
+  | "releaseFolder"
+  | "bindTagFresh"
+  | "bindTagSecondAuthor"
+  | "bindTagNumberChange"
+  | "unbindTagLone"
+  | "unbindTag"
+  | "releaseTag"
+  | "restoreTag";
 const BIND_ROWS: readonly BindRow[] = [
   "bindHeadFresh",
   "bindHeadRebind",
   "bindFolderFreshFile",
   "bindFolderFreshDirectory",
   "bindFolderRebind",
+  "bindTagFresh",
+  "bindTagSecondAuthor",
+  "bindTagNumberChange",
+  "restoreTag",
 ];
+const UNBIND_ROWS: readonly BindRow[] = ["unbindFolder", "unbindTagLone", "unbindTag"];
+const RELEASE_ROWS: readonly BindRow[] = ["releaseFolder", "releaseTag"];
+/** Rows that are never a first statement: the author's head at the position already exists. */
+const LATER_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
+  "bindHeadRebind",
+  "bindFolderRebind",
+  "bindTagNumberChange",
+  "restoreTag",
+  "unbindTag",
+  "unbindFolder",
+]);
 
 export interface PlannedAction {
   action: ActionData;
   /** The body, for PUBLISH; "0x" otherwise. */
   body: Hex;
-  /** The record's shape key in the gas model; unknown shapes are priced at the model's most expensive one. */
+  /**
+   * The record's shape key in the gas model ("files-bytes/1", "files-content/1 carrier 2"); its first word names the
+   * Type. Unknown shapes are priced at the model's most expensive one.
+   */
   shape?: string;
   /** True when the record is known to exist already (priced as publishExisting). */
   exists?: boolean;
-  /** For a BIND: the row it is priced at, when the planner knows (a fresh HEAD, a rebind, …). */
+  /** For a BIND, UNBIND or RELEASE: the row it is priced at, when the planner knows. */
   bindRow?: BindRow;
+  /** For a first TAG statement: the per-level terms it pays at its topic's proper ancestors (tagLists). */
+  levels?: Readonly<Partial<Record<TagLevel, number>>>;
   /** Consecutive actions with the same group id are kept in one publication. */
   group?: number;
   /**
-   * For a BIND, UNBIND or RELEASE: whether the writer's head at the position is UNSET (a first statement), which the
-   * kernel's floor charges fresh slots for. Absent: a BIND is taken as a first statement unless its `bindRow` is a
-   * rebind; an UNBIND or RELEASE is not (this release admits them only over the writer's own bound or masked head).
+   * For a BIND or UNBIND: whether the writer's head at the position is UNSET (a first statement of either sign),
+   * which the kernel's floor charges fresh slots for. Absent: a BIND is a first statement unless its `bindRow` is a
+   * later statement's row; an UNBIND is not (a lone negative says so). A RELEASE never is.
    */
   firstStatement?: boolean;
 }
@@ -101,8 +175,6 @@ export interface BatchLimits {
 
 export interface SplitOptions {
   model: GasModel;
-  /** The kernel's index floor (DeploymentInfo.kernelFloor): each publication must also leave room for it. */
-  floor?: KernelFloor;
   limits: BatchLimits;
   /** The per-transaction gas cap (EIP-7825; 2^24 unless the chain says otherwise). */
   txGasCap: bigint;
@@ -112,14 +184,27 @@ export interface SplitOptions {
   blockGasLimit?: bigint;
   /** The principal has never published: the first part pays the model's firstWriteSurcharge. */
   firstWrite?: boolean;
+  /** Type names by Type id (lowercase), for records without a shape (DeploymentInfo.typeIds, inverted). */
+  typeNames?: Readonly<Record<string, string>>;
+}
+
+/** What the planning rule compares to the budget: E, K, V and the kernel's quote. */
+export interface RuleGas {
+  /** The model's execution estimate. */
+  E: number;
+  /** The kernel's own share of it (E when the model has no floor). */
+  K: number;
+  /** The visible gas the kernel's floor needs (E when the model has no floor). */
+  V: number;
+  quote: KernelQuote | null;
 }
 
 export interface SplitPart {
   actions: PlannedAction[];
-  /** The planning estimate (model + intrinsic + calldata), never the authority. */
+  /** The planning estimate shown to people: the model plus intrinsic and calldata gas, never the authority. */
   gas: number;
-  /** The visible gas the kernel's floor needs on top of `gas` (0 without a floor). The part fits `gas + floor`. */
-  floor: number;
+  /** What the rule judged: the part fits when max(E, V) is within the budget. */
+  rule: RuleGas;
 }
 
 export type SplitResult =
@@ -137,6 +222,7 @@ const NONZERO_BYTE = 16;
 const bodyLen = (b: Hex): number => (b.length - 2) / 2;
 const isBindLike = (k: number): boolean =>
   k === ACTION.BIND || k === ACTION.UNBIND || k === ACTION.RELEASE;
+const ceilDiv = (a: number, b: number): number => Math.floor((a + b - 1) / b);
 
 /** The model's gas for one action (without the per-publication terms). */
 export function actionGas(a: PlannedAction, m: GasConstants): number {
@@ -151,18 +237,32 @@ export function actionGas(a: PlannedAction, m: GasConstants): number {
   }
   if (k === ACTION.REUSE) return m.reuse;
   if (k === ACTION.CREATE) return m.create;
-  if (k === ACTION.BIND)
-    return a.bindRow !== undefined ? m[a.bindRow] : Math.max(...BIND_ROWS.map((r) => m[r]));
-  if (k === ACTION.UNBIND) return m.unbindFolder;
-  if (k === ACTION.RELEASE) return m.releaseFolder;
   if (k === ACTION.WITHDRAW) return m.withdraw;
+  if (isBindLike(k)) {
+    const rows = k === ACTION.BIND ? BIND_ROWS : k === ACTION.UNBIND ? UNBIND_ROWS : RELEASE_ROWS;
+    let g = a.bindRow !== undefined ? m[a.bindRow] : Math.max(...rows.map((r) => m[r]));
+    for (const [level, n] of Object.entries(a.levels ?? {}))
+      g += m.tagLevel[level as TagLevel] * (n ?? 0);
+    return g;
+  }
   // an unknown kind: priced high, never zero
-  return Math.max(m.create, m.unbindFolder, ...BIND_ROWS.map((r) => m[r]));
+  return Math.max(m.create, ...BIND_ROWS.map((r) => m[r]), ...UNBIND_ROWS.map((r) => m[r]));
+}
+
+/** The model's execution estimate of one publication (gas-plan.mjs `estimate`), without intrinsic or calldata gas. */
+export function modelGas(
+  actions: readonly PlannedAction[],
+  m: GasConstants,
+  firstWrite = false,
+): number {
+  let gas = m.fixed + (firstWrite ? m.firstWriteSurcharge : 0);
+  for (const a of actions) gas += actionGas(a, m);
+  return Math.round(gas);
 }
 
 /**
- * The planning estimate of one publication: model + intrinsic + calldata (all bytes priced as non-zero), plus the
- * first-write surcharge when `firstWrite`.
+ * The planning estimate shown to people: the model plus intrinsic gas and the calldata of the encoded call (every
+ * byte priced as non-zero), plus the first-write surcharge when `firstWrite`.
  */
 export function publicationGas(
   actions: readonly PlannedAction[],
@@ -186,67 +286,108 @@ export interface KernelQuote {
   rewrites: number;
 }
 
-const ceilDiv = (a: number, b: number): number => Math.floor((a + b - 1) / b);
-/** The ingress's own spend between the kernel's forward and the index's (the contracts' floor.dispatchOverhead). */
-const DISPATCH_OVERHEAD = 2000;
-const REBIND_ROWS: ReadonlySet<BindRow> = new Set(["bindHeadRebind", "bindFolderRebind"]);
+/** Whether a bind-kind action is a first statement (the author's head at the position is UNSET). */
+function firstStatement(a: PlannedAction, everyBindFirst: boolean): boolean {
+  const k = a.action.kind;
+  if (k === ACTION.RELEASE) return false; // a release always follows a statement
+  if (everyBindFirst) return true;
+  if (a.firstStatement !== undefined) return a.firstStatement;
+  return k === ACTION.BIND && !(a.bindRow !== undefined && LATER_ROWS.has(a.bindRow));
+}
+
+/** The refs and specs the quote charges a record of this action's Type (the dearest when the Type is unknown). */
+function typeTerms(
+  a: PlannedAction,
+  f: FloorModel,
+  typeNames?: Readonly<Record<string, string>>,
+): { refs: number; specs: number } {
+  const name = a.shape?.split(" ")[0] ?? typeNames?.[a.action.typeId.toLowerCase()];
+  const known = name !== undefined ? f.types[name] : undefined;
+  if (known) return known;
+  const all = Object.values(f.types);
+  return {
+    refs: Math.max(0, ...all.map((t) => t.refs)),
+    specs: Math.max(0, ...all.map((t) => t.specs)),
+  };
+}
 
 /**
- * The kernel's quote for these actions, from the deployment's work model: fresh slots for each first statement and
- * each new record (with its references and digest specs), rewrites per publish and per bind, and the prefix floor and
- * final reserve they price. `everyBindFirst` prices every bind as a first statement, as the kernel's own
- * indexFloor helper does (an upper bound); planners pass what they know instead.
+ * The kernel's quote (LedgerIngress._foldAndQuote, formula 2), exactly as gas-plan.mjs computes it: fresh slots for
+ * each first statement and each new record (with its references and digest specs), rewrites per publish and per bind
+ * (more for a later statement), and the prefix floor and final reserve they price. `everyBindFirst` prices every BIND
+ * and UNBIND as a first statement, as the kernel's own indexFloor helper does (an upper bound: never plan from it).
  */
 export function kernelQuote(
   actions: readonly (ActionData | PlannedAction)[],
-  f: KernelFloor,
-  o: { everyBindFirst?: boolean } = {},
+  f: FloorModel,
+  o: { everyBindFirst?: boolean; typeNames?: Readonly<Record<string, string>> } = {},
 ): KernelQuote {
   const w = f.workModel;
   let fresh10 = w.freshPerPublication;
   let rw10 = w.rwPerPublication;
+  let compute = w.computeBase + w.computePerAction * actions.length;
   let binds = 0;
+  let publishes = 0;
   for (const x of actions) {
     const a: PlannedAction = "action" in x ? x : { action: x, body: "0x" };
     const k = a.action.kind;
     if (k === ACTION.PUBLISH || k === ACTION.REUSE) {
-      const t = f.types[a.action.typeId.toLowerCase()] ?? { refs: f.maxRefs, specs: 1 };
-      rw10 += w.rwPerPublish;
-      fresh10 += w.freshPerRef * t.refs;
+      const t = typeTerms(a, f, o.typeNames);
+      // a REUSE always names an existing record
       if (k === ACTION.PUBLISH && a.exists !== true)
         fresh10 += w.freshPerPublishFresh + w.freshPerDigestSpec * t.specs;
+      else fresh10 += w.freshPerPublishExisting;
+      rw10 += w.rwPerPublish;
+      fresh10 += w.freshPerRef * t.refs;
+      publishes++;
     } else if (isBindLike(k)) {
       binds++;
+      if (firstStatement(a, o.everyBindFirst === true)) fresh10 += w.freshPerBindFresh;
+      else rw10 += w.rwPerBindLater;
       rw10 += w.rwPerBind;
-      const first =
-        o.everyBindFirst === true ||
-        (a.firstStatement ??
-          (k === ACTION.BIND && !(a.bindRow !== undefined && REBIND_ROWS.has(a.bindRow))));
-      if (first) fresh10 += w.freshPerBindFresh;
+      compute += w.computePerHookEffect;
     }
   }
   const freshSlots = ceilDiv(fresh10, 10);
   const rewrites = ceilDiv(rw10, 10);
   return {
     prefixFloor:
-      w.computeBase +
-      actions.length * w.computePerAction +
-      binds * w.computePerHookEffect +
-      freshSlots * f.floorFreshGas +
-      rewrites * f.floorRewriteGas,
-    finalReserve: w.finalComputeBase + binds * w.finalComputePerBind,
+      compute + freshSlots * f.limits.floorFreshGas + rewrites * f.limits.floorRewriteGas,
+    finalReserve:
+      w.finalComputeBase + w.finalComputePerBind * binds + w.finalComputePerPublish * publishes,
     freshSlots,
     rewrites,
   };
 }
 
-/**
- * Visible gas the floor needs beyond the execution gas, as an upper bound: the prefix floor forwarded twice at 63/64
- * (kernel to ingress to index), the final reserve at 63/64, and the kernel's tail. With K ≤ E this bounds V − E.
- */
-export function floorNeed(q: KernelQuote, f: KernelFloor): number {
-  const prefix = ceilDiv((ceilDiv(q.prefixFloor * 64, 63) + DISPATCH_OVERHEAD) * 64, 63);
-  return prefix + ceilDiv(q.finalReserve * 64, 63) + f.kernelTail;
+/** Visible gas needed at a callback so that `remaining` prefix floor passes both 63/64 steps. */
+export function prefixNeed(remaining: number, f: FloorModel): number {
+  const { numerator: num, denominator: den } = f.callGasRetained;
+  return ceilDiv((ceilDiv(remaining * den, num) + f.dispatchOverhead) * den, num);
+}
+
+/** V from E, K and the kernel's quote (gas-plan.mjs `visible`). */
+export function visibleGas(E: number, K: number, q: KernelQuote, f: FloorModel): number {
+  const { numerator: num, denominator: den } = f.callGasRetained;
+  return (
+    Math.max(K + prefixNeed(q.prefixFloor, f), E) +
+    ceilDiv(q.finalReserve * den, num) +
+    f.limits.kernelTail
+  );
+}
+
+/** E, K, V and the quote of one publication under `m` (no floor: K = V = E). */
+export function ruleGas(
+  actions: readonly PlannedAction[],
+  m: GasModel,
+  firstWrite = false,
+  typeNames?: Readonly<Record<string, string>>,
+): RuleGas {
+  const E = modelGas(actions, m, firstWrite);
+  if (!m.floor) return { E, K: E, V: E, quote: null };
+  const K = modelGas(actions, m.floor.kernel, firstWrite);
+  const quote = kernelQuote(actions, m.floor, typeNames ? { typeNames } : {});
+  return { E, K, V: visibleGas(E, K, quote, m.floor), quote };
 }
 
 interface Tally {
@@ -276,7 +417,7 @@ function units(actions: readonly PlannedAction[]): { start: number; list: Planne
 export function splitPublications(actions: readonly PlannedAction[], o: SplitOptions): SplitResult {
   const { model: m, limits: L } = o;
   const keep = 1 - (o.headroom ?? 0.15);
-  const budget = Math.floor(Number(o.txGasCap) * keep);
+  const budget = budgetOf(o.txGasCap, o.headroom);
   const blockBudget =
     m.total && o.blockGasLimit !== undefined
       ? Math.floor(Number(o.blockGasLimit) * keep)
@@ -294,8 +435,6 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
         ),
       };
   }
-  const floorOf = (list: readonly PlannedAction[]): number =>
-    o.floor ? floorNeed(kernelQuote(list, o.floor), o.floor) : 0;
   const fits = (list: readonly PlannedAction[], first: boolean): true | Reason => {
     const t = tally(list);
     if (t.actions > L.maxActionsPerPublication)
@@ -316,12 +455,12 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
         "after-replan",
         `${t.bodyBytes} body bytes; the limit is ${L.maxBodyBytesPerPublication}`,
       );
-    const gas = publicationGas(list, m, first && o.firstWrite === true) + floorOf(list);
-    if (gas > budget)
+    const r = ruleGas(list, m, first && o.firstWrite === true, o.typeNames);
+    if (Math.max(r.E, r.V) > budget)
       return reason(
         "OVER_TX_GAS_CAP",
         "after-replan",
-        `~${gas} gas with the kernel's floor; the budget is ${budget} (cap ${o.txGasCap})`,
+        `~${Math.max(r.E, r.V)} gas (E ${r.E}, V ${r.V}); the budget is ${budget} (cap ${o.txGasCap})`,
       );
     if (m.total && blockBudget !== undefined) {
       const all = publicationGas(list, m.total, first && o.firstWrite === true);
@@ -336,27 +475,21 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
   };
   const parts: SplitPart[] = [];
   let current: PlannedAction[] = [];
-  const gasOf = (list: readonly PlannedAction[], first: boolean): number =>
-    publicationGas(list, m, first && o.firstWrite === true);
+  const partOf = (list: PlannedAction[], first: boolean): SplitPart => ({
+    actions: list,
+    gas: publicationGas(list, m, first && o.firstWrite === true),
+    rule: ruleGas(list, m, first && o.firstWrite === true, o.typeNames),
+  });
   for (const u of units(actions)) {
     const alone = fits(u.list, parts.length === 0 && current.length === 0);
     if (alone !== true) return { ok: false, reason: alone, at: u.start };
     if (current.length && fits([...current, ...u.list], parts.length === 0) !== true) {
-      parts.push({
-        actions: current,
-        gas: gasOf(current, parts.length === 0),
-        floor: floorOf(current),
-      });
+      parts.push(partOf(current, parts.length === 0));
       current = [];
     }
     current.push(...u.list);
   }
-  if (current.length)
-    parts.push({
-      actions: current,
-      gas: gasOf(current, parts.length === 0),
-      floor: floorOf(current),
-    });
+  if (current.length) parts.push(partOf(current, parts.length === 0));
   return { ok: true, parts, budget };
 }
 
@@ -366,27 +499,47 @@ export interface PartBody {
   bodies: readonly Hex[];
 }
 
+/** The planning rule's budget: ⌊txGasCap × (100 − headroomPercent) / 100⌋ (headroom as a fraction). */
+export function budgetOf(txGasCap: bigint, headroom = 0.15): number {
+  const percent = Math.round(headroom * 100);
+  return Number((txGasCap * BigInt(100 - percent)) / 100n);
+}
+
+/** `tagLists.priceAsNew`: whether a roll-up list holding `entries` entries is priced as a new list. */
+export function priceAsNew(entries: number): boolean {
+  const r = GAS_TAG_LISTS.priceAsNew;
+  return (r.entries as readonly number[]).includes(entries) || entries % r.entriesMultipleOf === 0;
+}
+
 /**
- * A conservative planning estimate of one part from its actions and bodies alone: new records at the dearest
- * shape, BINDs at the dearest row, and the first-write surcharge always included. With the kernel's floor, plus
- * what the floor needs, every BIND taken as a first statement.
+ * A conservative planning estimate of one part from its actions and bodies alone: new records at the dearest shape,
+ * binds at the dearest row of their kind and taken as first statements, and the first-write surcharge always
+ * included. With a floor, max(E, V) of that; plus intrinsic and calldata gas, as a batch of parts carries them.
  */
-export function partGas(part: PartBody, m: GasConstants, floor?: KernelFloor): number {
-  const gas = publicationGas(
-    part.actions.map((action, i) => ({ action, body: part.bodies[i] ?? "0x" })),
-    m,
-    true,
-  );
-  return floor ? gas + floorNeed(kernelQuote(part.actions, floor), floor) : gas;
+export function partGas(
+  part: PartBody,
+  m: GasModel | GasConstants,
+  typeNames?: Readonly<Record<string, string>>,
+): number {
+  const list: PlannedAction[] = part.actions.map((action, i) => ({
+    action,
+    body: part.bodies[i] ?? "0x",
+    ...(action.kind === ACTION.UNBIND ? { firstStatement: true } : {}),
+  }));
+  const shown = publicationGas(list, m, true);
+  const floor = (m as GasModel).floor;
+  if (!floor) return shown;
+  const r = ruleGas(list, m as GasModel, true, typeNames);
+  return shown + Math.max(r.E, r.V) - r.E;
 }
 
 /**
  * Consecutive parts packed into atomic EIP-5792 batches, as lists of part indexes in order. An atomic batch may run
  * as ONE transaction (EIP-7702 and ERC-4337 accounts run it that way), so it is under the same per-transaction cap
- * as one part. Each batch's summed `partGas` (with each part's kernel floor, when `floor` is given) fits
- * txGasCap × (1 − headroom). Where the cap counts only execution
- * gas (`model.total`), the summed whole gas must also fit the block budget, and with no block gas limit known
- * nothing is batched. At most `maxParts` per batch. A part that fits with no neighbour goes alone.
+ * as one part, and each call in it must still find its own floor. Each batch's summed `partGas` fits the budget.
+ * Where the cap counts only execution gas (`model.total`), the summed whole gas must also fit the block budget, and
+ * with no block gas limit known nothing is batched. At most `maxParts` per batch. A part that fits with no neighbour
+ * goes alone.
  */
 export function packBatches(
   parts: readonly PartBody[],
@@ -395,12 +548,12 @@ export function packBatches(
     txGasCap: bigint;
     headroom?: number;
     blockGasLimit?: bigint;
-    floor?: KernelFloor;
+    typeNames?: Readonly<Record<string, string>>;
   },
   maxParts: number = Number.POSITIVE_INFINITY,
 ): number[][] {
   const keep = 1 - (g.headroom ?? 0.15);
-  const budget = Math.floor(Number(g.txGasCap) * keep);
+  const budget = budgetOf(g.txGasCap, g.headroom);
   const total = g.model.total;
   const blockBudget =
     total && g.blockGasLimit !== undefined ? Math.floor(Number(g.blockGasLimit) * keep) : undefined;
@@ -410,8 +563,7 @@ export function packBatches(
   let gas = 0;
   let all = 0;
   parts.forEach((p, i) => {
-    // Each call in a batch must still find its own floor: summed, a conservative bound.
-    const pg = partGas(p, g.model, g.floor);
+    const pg = partGas(p, g.model, g.typeNames);
     const pa = total ? partGas(p, total) : 0;
     const fits =
       batch.length > 0 &&
@@ -434,7 +586,7 @@ export function packBatches(
 }
 
 /** EIP-7825's per-transaction gas cap (2^24): the default when the deployment document states none. */
-export const TX_GAS_CAP: bigint = BigInt(GAS_ENVELOPE.txGasCap);
+export const TX_GAS_CAP: bigint = BigInt(GAS_PLANNING.txGasCap);
 /** The cap of this deployment's chain (efs-deployment.chain.txGasCap). Always enforced. */
 export const txGasCapOf = (d: DeploymentInfo): bigint => d.chain?.txGasCap ?? TX_GAS_CAP;
 
@@ -443,18 +595,63 @@ export type GasPlan =
       ok: true;
       model: GasModel;
       txGasCap: bigint;
-      /** The contracts' planning headroom (GAS_ENVELOPE.headroomPercent / 100). */
+      /** The contracts' planning headroom (planning.headroomPercent / 100). */
       headroom: number;
       blockGasLimit?: bigint;
-      /** The kernel's index floor, when the deployment records its work model. */
-      floor?: KernelFloor;
+      /** Type names by Type id (lowercase), from the deployment. */
+      typeNames: Readonly<Record<string, string>>;
     }
   | { ok: false; reason: Reason };
 
+/** The work-model formula the planner implements (gas/model.json floor, formula 2). */
+export const FLOOR_FORMULA = 2;
+
+/** Type names by Type id (lowercase), from a deployment's typeIds. */
+export const typeNamesOf = (d: DeploymentInfo): Record<string, string> =>
+  Object.fromEntries(Object.entries(d.typeIds ?? {}).map(([name, id]) => [id.toLowerCase(), name]));
+
+/**
+ * A refusal when the chain's kernel prices its floor differently from the model this SDK plans with, else null: the
+ * formula must be the one implemented here, and the deployment's work model and floor limits must equal the model's
+ * field by field (the fixture's `verify` checks the same on chain).
+ */
+export function floorMismatch(d: DeploymentInfo, m: GasModel): Reason | null {
+  const f = m.floor;
+  if (f && f.workModel.formulaVersion !== FLOOR_FORMULA)
+    return reason(
+      "UNSUPPORTED_PROFILE",
+      "never",
+      `the gas model's work model is formula ${f.workModel.formulaVersion}; this SDK plans with formula ${FLOOR_FORMULA}`,
+    );
+  const k = d.kernelFloor;
+  if (!k) return null;
+  if (!f)
+    return reason(
+      "UNSUPPORTED_PROFILE",
+      "never",
+      "the deployment's kernel reserves an index floor, and this gas model has none: pass a model with `floor`",
+    );
+  const differs = [
+    ...Object.entries(k.workModel)
+      .filter(([key, v]) => (f.workModel as unknown as Record<string, number>)[key] !== v)
+      .map(([key]) => `workModel.${key}`),
+    ...(["floorFreshGas", "floorRewriteGas", "kernelTail"] as const)
+      .filter((key) => k[key] !== f.limits[key])
+      .map((key) => `limits.${key}`),
+  ];
+  if (differs.length)
+    return reason(
+      "UNSUPPORTED_PROFILE",
+      "never",
+      `the deployment's kernel floor is not this gas model's (${differs.join(", ")})`,
+    );
+  return null;
+}
+
 /**
  * The gas model and cap to split with on this deployment's chain: the schedule `chain.feeSchedule` names, else the
- * one whose hardforks include `chain.hardfork`. Refused, never guessed, when the document has no `chain` block or
- * names a schedule this SDK was not generated with (pass an explicit model instead).
+ * one whose hardforks include `chain.hardfork`. Refused, never guessed, when the document has no `chain` block, names a
+ * schedule this SDK was not generated with, or records a kernel floor the model does not price.
  */
 export function gasPlanFor(d: DeploymentInfo): GasPlan {
   const chain = d.chain;
@@ -469,8 +666,9 @@ export function gasPlanFor(d: DeploymentInfo): GasPlan {
     };
   type Schedule = {
     hardforks: readonly string[];
-    constants: Omit<GasConstants, never>;
-    executionGas?: Omit<GasConstants, never>;
+    constants: GasConstants;
+    executionGas?: GasConstants;
+    floor?: FloorModel;
   };
   const all = GAS_SCHEDULES as unknown as Readonly<Record<string, Schedule>>;
   const name =
@@ -486,30 +684,18 @@ export function gasPlanFor(d: DeploymentInfo): GasPlan {
         `no gas model for ${chain.feeSchedule ? `fee schedule ${chain.feeSchedule}` : `hardfork ${chain.hardfork}`} in this SDK (it has ${Object.keys(all).join(", ")})`,
       ),
     };
-  const unsupported = floorUnsupported(d.kernelFloor);
-  if (unsupported) return { ok: false, reason: unsupported };
-  const model: GasModel = sch.executionGas
+  const base = sch.executionGas
     ? { ...sch.executionGas, schedule: name, total: sch.constants }
     : { ...sch.constants, schedule: name };
+  const model: GasModel = sch.floor ? { ...base, floor: sch.floor } : base;
+  const mismatch = floorMismatch(d, model);
+  if (mismatch) return { ok: false, reason: mismatch };
   return {
     ok: true,
     model,
     txGasCap: chain.txGasCap,
-    headroom: GAS_ENVELOPE.headroomPercent / 100,
+    headroom: GAS_PLANNING.headroomPercent / 100,
     ...(chain.blockGasLimit !== null ? { blockGasLimit: chain.blockGasLimit } : {}),
-    ...(d.kernelFloor ? { floor: d.kernelFloor } : {}),
+    typeNames: typeNamesOf(d),
   };
-}
-
-/** The work-model formula kernelQuote implements. */
-export const FLOOR_FORMULA = 1;
-
-/** A refusal when the deployment's floor uses a formula this SDK cannot price, else null. */
-export function floorUnsupported(f: KernelFloor | null | undefined): Reason | null {
-  if (!f || f.workModel.formulaVersion === FLOOR_FORMULA) return null;
-  return reason(
-    "UNSUPPORTED_PROFILE",
-    "never",
-    `the kernel's work model uses formula ${f.workModel.formulaVersion}; this SDK prices formula ${FLOOR_FORMULA}`,
-  );
 }

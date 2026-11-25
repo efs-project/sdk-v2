@@ -401,7 +401,7 @@ export async function planEditFile(
     txGasCap: gas.txGasCap,
     headroom: gas.headroom,
     ...(gas.blockGasLimit !== undefined ? { blockGasLimit: gas.blockGasLimit } : {}),
-    ...(gas.floor ? { floor: gas.floor } : {}),
+    typeNames: gas.typeNames,
     // Priced as if this were the principal's first publication ever (the surcharge is ~0.1% of the cap): planning
     // does not read the nonce, and an under-estimate is the one error a split must not make.
     firstWrite: true,

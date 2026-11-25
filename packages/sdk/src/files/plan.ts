@@ -3,17 +3,18 @@
 // and the content records, so every planner encodes content and prices it the same way.
 import { keccak256, sha256 } from "viem";
 import {
-  floorUnsupported,
+  floorMismatch,
   type GasModel,
   gasPlanFor,
   type PlannedAction,
   txGasCapOf,
+  typeNamesOf,
 } from "../actions/split.js";
 import type { ActionData } from "../actions/types.js";
 import { CARRIER, CHUNK_PAYLOAD, chunkTree, encode } from "../content/codec.js";
 import { EfsFault, type Reason, reason } from "../core/errors.js";
 import { bytesToHex, type Hex, lower, ZERO_WORD } from "../core/hex.js";
-import type { DeploymentInfo, KernelFloor } from "../deployment/manifest.js";
+import type { DeploymentInfo } from "../deployment/manifest.js";
 import { ACTION } from "../generated/constants.js";
 import { recordId } from "../protocol/keys.js";
 import { normalizeMediaType } from "./media.js";
@@ -36,7 +37,7 @@ export const blank: ActionData = {
   role: ZERO_WORD,
   target: ZERO_WORD,
   expectedRevision: 0n,
-  salt: ZERO_WORD,
+  saltOrStrength: ZERO_WORD,
 };
 
 export const publish = (
@@ -62,8 +63,8 @@ export interface GasSetup {
   txGasCap: bigint;
   headroom: number;
   blockGasLimit?: bigint;
-  /** The kernel's index floor, from the deployment (whatever model the caller passes). */
-  floor?: KernelFloor;
+  /** Type names by Type id (lowercase), for records the floor prices by Type. */
+  typeNames: Readonly<Record<string, string>>;
 }
 export interface GasOpts {
   gasModel?: GasModel;
@@ -76,18 +77,20 @@ export function gasSetup(
   d: DeploymentInfo,
   o: GasOpts,
 ): { ok: true; gas: GasSetup } | { ok: false; reason: Reason } {
-  const unsupported = floorUnsupported(d.kernelFloor);
-  if (unsupported) return { ok: false, reason: unsupported };
-  if (o.gasModel)
+  if (o.gasModel) {
+    // A caller's model must still price the kernel floor this deployment reserves.
+    const mismatch = floorMismatch(d, o.gasModel);
+    if (mismatch) return { ok: false, reason: mismatch };
     return {
       ok: true,
       gas: {
         model: o.gasModel,
         txGasCap: o.txGasCap ?? txGasCapOf(d),
         headroom: o.headroom ?? 0.15,
-        ...(d.kernelFloor ? { floor: d.kernelFloor } : {}),
+        typeNames: typeNamesOf(d),
       },
     };
+  }
   const g = gasPlanFor(d);
   if (!g.ok) return { ok: false, reason: g.reason };
   return {
@@ -97,7 +100,7 @@ export function gasSetup(
       txGasCap: o.txGasCap ?? g.txGasCap,
       headroom: o.headroom ?? g.headroom,
       ...(g.blockGasLimit !== undefined ? { blockGasLimit: g.blockGasLimit } : {}),
-      ...(g.floor ? { floor: g.floor } : {}),
+      typeNames: g.typeNames,
     },
   };
 }
