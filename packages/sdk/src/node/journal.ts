@@ -16,7 +16,7 @@ import {
   encodeJournalRecord,
   encodeSequenceRecord,
   isOpenSequence,
-  isResolved,
+  isSettled,
   type Journal,
   localLocks,
   lockKey,
@@ -260,7 +260,7 @@ export function fileJournal(dir: string, options: FileJournalOptions = {}): Jour
       const out: SequenceRecord[] = [];
       for (const f of files.filter((n) => /^0x[0-9a-f]{64}\.json$/.test(n)).sort()) {
         const r = await readSequence(f);
-        if (r && r.lock === lock && isOpenSequence(r)) out.push(r);
+        if (r && (lock === undefined || r.lock === lock) && isOpenSequence(r)) out.push(r);
       }
       return out;
     },
@@ -291,7 +291,7 @@ export function fileJournal(dir: string, options: FileJournalOptions = {}): Jour
       const out: AttemptRecord[] = [];
       for (const f of files.filter((n) => /^0x[0-9a-f]{64}\.json$/.test(n)).sort()) {
         const r = await readRecord(f);
-        if (r && !isResolved(r.stage) && lockKey(r.plan) === lock) out.push(r);
+        if (r && !isSettled(r) && lockKey(r.plan) === lock) out.push(r);
       }
       return out;
     },

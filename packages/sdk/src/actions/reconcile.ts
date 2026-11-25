@@ -157,11 +157,43 @@ export async function reconcileAttempt(
     outcome === "COMMITTED"
       ? final.present && final.publication !== 0n && final.digest === plan.digest
       : outcome === "NOT_COMMITTED_PROVEN";
-  if (outcome !== "UNKNOWN") {
+  // Reorged out: this attempt was COMMITTED (not final) and the latest block no longer shows its admission. It goes
+  // back to SUBMISSION_POSSIBLE, never left as a stale COMMITTED. Sending it again is the user's choice (the same
+  // plan is safe to send: AlreadyAdmitted if the original is re-included); reconcile keeps watching meanwhile.
+  if (record.stage === "COMMITTED" && outcome === "UNKNOWN") {
     await journal.put({
       ...record,
+      stage: "SUBMISSION_POSSIBLE",
+      final: false,
+      history: [
+        ...record.history,
+        {
+          stage: "SUBMISSION_POSSIBLE",
+          at: Date.now(),
+          detail: `reorged out (basis ${basis.blockNumber})`,
+        },
+      ],
+    });
+    return {
+      kind: "efs.reconcile",
+      planId,
+      outcome: "UNKNOWN",
+      final: false,
+      reason: reason(
+        "REORGED",
+        "after-reconcile",
+        "the admission is no longer at the latest block",
+      ),
+      basis,
+    };
+  }
+  if (outcome !== "UNKNOWN") {
+    const { final: _drop, ...rest } = record;
+    void _drop;
+    await journal.put({
+      ...rest,
       stage: outcome,
-      ...(outcome === "COMMITTED" ? { publication: latest.publication } : {}),
+      ...(outcome === "COMMITTED" ? { publication: latest.publication, final: isFinal } : {}),
       history: [
         ...record.history,
         {

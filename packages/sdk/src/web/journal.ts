@@ -9,7 +9,7 @@ import {
   encodeJournalRecord,
   encodeSequenceRecord,
   isOpenSequence,
-  isResolved,
+  isSettled,
   type Journal,
   localLocks,
   lockKey,
@@ -154,9 +154,7 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
       const t = await tx("readonly");
       if (!t) return [];
       const rows = (await done(t.objectStore(STORE).index(BY_LOCK).getAll(lock))) as Row[];
-      return rows
-        .filter((r) => !isResolved(r.stage as AttemptRecord["stage"]))
-        .map((r) => decodeJournalRecord(r.json));
+      return rows.map((r) => decodeJournalRecord(r.json)).filter((r) => !isSettled(r));
     },
     async putSequence(record: SequenceRecord) {
       const t = (await seqTx("readwrite")) as IDBTransaction;
@@ -183,7 +181,10 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
     async openSequences(lock) {
       const t = await seqTx("readonly");
       if (!t) return [];
-      const rows = (await done(t.objectStore(SEQUENCES).index(BY_LOCK).getAll(lock))) as {
+      const store = t.objectStore(SEQUENCES);
+      const rows = (await done(
+        lock === undefined ? store.getAll() : store.index(BY_LOCK).getAll(lock),
+      )) as {
         json: string;
       }[];
       return rows.map((r) => decodeSequenceRecord(r.json)).filter(isOpenSequence);

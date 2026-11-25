@@ -34,12 +34,15 @@ interface AttemptRecord {
   stage: "PLANNED" | "SUBMISSION_POSSIBLE" | "SUBMITTED" | "NOT_SENT" | "COMMITTED" | "NOT_COMMITTED_PROVEN";
   txHash?: Hex;
   publication?: bigint;       // set at COMMITTED
+  final?: boolean;            // on COMMITTED: false until the admission is at a finalized block (absent: final)
   history: { stage: AttemptStage; at: number /* ms epoch */; detail?: string }[];
   extensions?: Record<string, unknown>; // fields from newer SDKs, preserved on rewrite
 }
 ```
 
-Resolved stages are `COMMITTED`, `NOT_COMMITTED_PROVEN` and `NOT_SENT`; every other stage is pending.
+An attempt is settled when it is `NOT_SENT`, `NOT_COMMITTED_PROVEN`, or `COMMITTED` at a finalized block
+(`isSettled`); every other attempt is pending, a `COMMITTED` with `final: false` included, so reconcile keeps
+re-checking it. If a reorg drops it, it goes back to `SUBMISSION_POSSIBLE` with "reorged out" in its history.
 `SUBMISSION_POSSIBLE` is written before any call that might broadcast. An attempt in that stage is never sent again,
 only reconciled.
 

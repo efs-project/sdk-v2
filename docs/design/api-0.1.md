@@ -652,6 +652,24 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   `resume(id)` continues, and is the only sequence call that may prompt. `abandon(id)` stops offering to continue:
   committed parts stay on chain, and abandoning is not undoing.
 
+### Finality, reorgs and the wallet-free view (0.1)
+
+- **Finality:** a COMMITTED reconcile carries `final`. While it is false, the admission is not yet at a finalized
+  block, the attempt stays in `pending()`, and reconcile keeps re-checking it. Sequences carry the same `final`, and
+  a COMPLETE sequence stays in `pendingSequences` until it is final. Client vocabulary: "Saved · confirming" for
+  COMPLETE with `final: false`, then "Saved".
+- **Reorgs:** if a re-check no longer finds the admission at the latest block, reconcile answers UNKNOWN with
+  reason REORGED. The attempt goes back to SUBMISSION_POSSIBLE, and a COMPLETE sequence becomes IN_FLIGHT. Sending
+  the same plan again is safe (AlreadyAdmitted if the original is re-included) and is the user's choice, never an
+  automatic prompt: "This save was undone by the network — Send again".
+- **Unreadable finalized block:** if the finalized-block read fails (an endpoint without the "finalized" tag, or a
+  finalized block from before the deployment), COMMITTED at latest is still decided, with `final: false`, and
+  NOT_COMMITTED_PROVEN still requires a successful finalized read.
+- **`openJournal(efs, { journal })`:** sequences with no wallet. `pendingSequences({ account? })` covers one
+  account, or every account on this deployment, and `reconcileSequence(id)` settles from the ledger alone. Both
+  never prompt and create nothing. Each `SequenceProgress` names its `account`. Continue means: connect, create a
+  writer for that account, and `resume(id)`. A writer for another account refuses with MISUSE.
+
 ## 8. Errors that do throw
 
 ```ts
