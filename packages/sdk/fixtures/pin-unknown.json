@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "b645b61c371ad41c01b5ba6a0c0a1f2a6baa333e",
+  "contractsCommit": "07818d1e90c5bbfefb85bb47f8935a446a6da6ad",
   "case": "pin-unknown",
   "note": "efs.pin() with every endpoint down",
   "result": {
@@ -21,7 +21,7 @@
             "retry": "transient",
             "detail": "fetch failed"
           },
-          "ms": 3
+          "ms": 0
         }
       ],
       "requests": 0

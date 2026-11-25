@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "b645b61c371ad41c01b5ba6a0c0a1f2a6baa333e",
+  "contractsCommit": "07818d1e90c5bbfefb85bb47f8935a446a6da6ad",
   "case": "open-span",
   "note": "openFile on a 20,000-byte span-tree file (docs/big.bin)",
   "result": {
@@ -28,7 +28,7 @@
       "blockNumber": {
         "$efs:bigint": "62"
       },
-      "blockHash": "0x3075414ae43a1d486c386eae12cfeb7f3e0cc78bc7de37e762ad689f3b6ed255",
+      "blockHash": "0x3d61a3545a0a7443eca2824d1a25c8ea23cc1351be32aa95dc64702ba6510542",
       "executionSet": "0x5440a17bac803bdcd97568ccffe1d4f3becb0b28ccafaa63932f651fd2be9d44",
       "endpoint": "local fixture"
     },
@@ -37,12 +37,12 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 9
+          "ms": 0
         },
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 9
+          "ms": 3
         }
       ],
       "requests": 4
