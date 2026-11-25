@@ -214,6 +214,36 @@ describe("planEditFile (fixture)", () => {
     expect((await revisionOf(readme.subjectId)).revision).toBe(readme.headRecordId);
   });
 
+  it("repeated chunks are published once, and the span tree over them reads back verified", async () => {
+    const w = await writerFor(carol);
+    const lens = efs.lens.mineFirst(carol.address);
+    const put = putInline(
+      efs,
+      w.principal,
+      docs,
+      "zeros.bin",
+      text("z"),
+      keccak256(toHex("edit-zeros")),
+    );
+    const created = await w.planActions(put);
+    if (created.status !== "PLANNED") throw new Error(created.status);
+    await w.run(created.plan);
+    const zeros = new Uint8Array(2 * 8_160); // two identical canonical chunks
+    const r = await planEditFile(efs, w, {
+      file: { kind: "file", subject: put.file },
+      base: { kind: "revision", recordId: (await revisionOf(put.file, lens)).revision },
+      content: zeros,
+      lens,
+    });
+    if (r.status !== "PLANNED") throw new Error(r.status);
+    expect(r.review).toMatchObject({ layout: "span", records: 4 }); // 1 chunk + 1 span + descriptor + revision
+    expect((await w.runSequence(r.parts)).state).toBe("COMPLETE");
+    const head = await revisionOf(put.file, lens);
+    const bytes = await readBytes(efs, head);
+    expect(bytes.grade).toBe("VERIFIED");
+    expect(bytes.bytes).toEqual(zeros);
+  });
+
   it("refuses what it cannot carry, reports a missing HEAD, and rejects a base of another file", async () => {
     const w = await writerFor(grace);
     const big = seeded("big.bin");
@@ -228,8 +258,31 @@ describe("planEditFile (fixture)", () => {
       { maxParts: 1 },
     );
     expect(tooMany).toMatchObject({ status: "TOO_LARGE", reason: { code: "LIMIT_EXCEEDED" } });
+    expect(tooMany.status === "TOO_LARGE" && tooMany.reason.detail).toMatch(/need more than 1 /);
     const huge = await planEditFile(efs, w, { ...input, content: new Uint8Array(64 * 16_384 + 1) });
     expect(huge.status).toBe("TOO_LARGE");
+    // Passes the byte pre-check (2 × 16,384), but chunk headers, spans and the finish need a third publication:
+    // the exact check after splitting refuses it.
+    const split = await planEditFile(
+      efs,
+      w,
+      { ...input, content: new Uint8Array(2 * 16_384).map((_, i) => (i * 7 + 3) & 0xff) }, // no repeated chunk
+      { maxParts: 2 },
+    );
+    expect(split.status === "TOO_LARGE" && split.reason.detail).toMatch(
+      /publications; the limit is 2/,
+    );
+    await expect(
+      planEditFile(efs, w, {
+        ...input,
+        content: {
+          kind: "external",
+          length: 1n << 256n,
+          sha256: sha256(text("x")),
+          locator: "ipfs://x",
+        },
+      }),
+    ).rejects.toBeInstanceOf(EfsFault);
 
     const nowhere = keccak256(toHex("no such file")) as SubjectId;
     const missing = await planEditFile(efs, w, {

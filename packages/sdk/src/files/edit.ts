@@ -203,7 +203,8 @@ export async function planEditFile(
       throw new EfsFault("MISUSE", "an external locator must be printable ASCII");
     if (!/^0x[0-9a-fA-F]{64}$/.test(content.sha256))
       throw new EfsFault("MISUSE", "sha256 must be 32 bytes of hex");
-    if (content.length < 0n) throw new EfsFault("MISUSE", "length must not be negative");
+    if (content.length < 0n || content.length >= 1n << 256n)
+      throw new EfsFault("MISUSE", "length must be a uint256");
   }
 
   const maxParts = o.maxParts ?? 64;
