@@ -328,7 +328,14 @@ function sequenceCore(efs: Efs, journal: Journal) {
           continue;
         }
         const rec = await reconcileAttempt(efs, journal, p.planId, o);
-        if (rec.basis?.timestamp !== undefined)
+        // checkedAt (and so pastDeadline) only from a reconcile that read the admission at its basis: a decided
+        // outcome, NOT_YET_DECIDABLE or REORGED. A failed read also carries its basis, but proves nothing about that
+        // block, so it leaves the last judgement as it was (fail closed: no false "not committed there").
+        const readAtBasis =
+          rec.outcome !== "UNKNOWN" ||
+          rec.reason?.code === "NOT_YET_DECIDABLE" ||
+          rec.reason?.code === "REORGED";
+        if (readAtBasis && rec.basis?.timestamp !== undefined)
           p.checkedAt = { blockNumber: rec.basis.blockNumber, timestamp: rec.basis.timestamp };
         if (rec.outcome === "COMMITTED") {
           p.committed = true;
