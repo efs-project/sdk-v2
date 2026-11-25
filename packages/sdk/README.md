@@ -8,6 +8,9 @@ documented in [`docs/design/api-0.1.md`](../../docs/design/api-0.1.md), and what
 
 ## Quick start
 
+New here? [`examples/getting-started`](../../examples/getting-started/README.md) walks through pinning, reading, editing
+and recovering, with the copy rule for every outcome. CI runs it against a local chain.
+
 ```ts
 import { createEfs } from "@efs/sdk";
 import { openFile, readBytes } from "@efs/sdk/files";

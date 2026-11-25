@@ -5,8 +5,9 @@ JavaScript/TypeScript, for Solidity contracts, and later for native applications
 
 > **Status: EFS SDK 0.1 in development.** `@efs/sdk` pins deployments, reads and streams verified files,
 > writes exactly once through a durable journal, and parses links. See [`packages/sdk/README.md`](packages/sdk/README.md)
-> for a quick start and [`LIMITATIONS.md`](LIMITATIONS.md) for what is missing. Both packages are private and
-> unpublished.
+> for a quick start, [`examples/getting-started`](examples/getting-started/README.md) for the guide (pin, read, edit,
+> recover, and what to say for each outcome), and [`LIMITATIONS.md`](LIMITATIONS.md) for what is missing. Both
+> packages are private and unpublished.
 
 ## Install paths (none published yet)
 
