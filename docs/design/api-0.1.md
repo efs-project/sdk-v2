@@ -684,9 +684,9 @@ export interface ReconcileResult {
 
 ### Splitting a save into publications (0.1, model-independent part)
 
-`splitPublications(actions, { model, limits, txGasCap, headroom?, blockGasLimit?, firstWrite? })` in
-`@efs/sdk/actions` packs an ordered list of `PlannedAction`s (`{ action, body, shape?, exists?, bindRow?, group? }`)
-into publications that each fit one transaction.
+`splitPublications(actions, { model, limits, txGasCap, headroom?, blockGasLimit?, firstWrite?, floor? })` in
+`@efs/sdk/actions` packs an ordered list of `PlannedAction`s (`{ action, body, shape?, exists?, bindRow?, group?,
+firstStatement? }`) into publications that each fit one transaction.
 - **Batch limits** come from the kernel's own checks (`LedgerCore._bounds`): actions ≤ `maxActionsPerPublication`;
   BIND, UNBIND and RELEASE ≤ `maxBindsPerPublication`; summed body bytes ≤ `maxBodyBytesPerPublication`; each
   body ≤ `maxBodyBytes`.
@@ -697,6 +697,21 @@ into publications that each fit one transaction.
   `firstWrite` adds `firstWriteSurcharge` to the first part. The SDK adds the 21,000 intrinsic gas and the calldata
   (every byte priced as non-zero), which the model excludes. Plans aim at `txGasCap × (1 − headroom)`, the
   contracts' budget rule with their 15%.
+- **The kernel's floor** (`floor`, from `DeploymentInfo.kernelFloor`: the deployment's `index.workModel` and floor
+  limits). Before a publication's index callbacks, the kernel reserves a prefix floor and a final reserve. It prices
+  both per action and per bind, and refuses a call that leaves less (`E_INDEX_GAS`). `kernelQuote` gives the
+  kernel's own four numbers (the prefix floor, the final reserve, fresh slots, rewrites), equal to
+  `LedgerIngress.indexFloor` when every bind is taken as a first statement. A bind is a first statement unless its
+  `bindRow` is a rebind or `firstStatement` says otherwise; a RELEASE or UNBIND is not, in this release.
+  `floorNeed` turns the quote into the visible gas the floor needs on top of the execution gas.
+  - Each publication must fit `gas + floor` (`SplitPart.floor`), and `packBatches` sums both per part.
+  - Until the contracts' gas model gives the kernel's own share of the execution gas (the tag release's
+    `floor.kernel`), that share is bounded by the whole estimate. That is safe but over-splits bind-heavy batches.
+  - Why: measured on the fixture, a 64-entry remove was planned as one publication at 9.3M gas but needed
+    18.9M, over the 2^24 cap, so it could never be sent. With the floor it is planned as two parts that need at
+    most 10.9M each.
+  - A work model whose `formulaVersion` is not 1 is refused (`UNSUPPORTED_PROFILE`): nothing is planned under a
+    formula the SDK cannot price.
 - **Which model:** `gasPlanFor(deployment)` takes the schedule `efs-deployment.chain.feeSchedule` names, else the one
   whose hardforks include `chain.hardfork`, with `chain.txGasCap` (always enforced; 2^24 when not stated). It
   refuses (`UNSUPPORTED_PROFILE`) rather than guess when the document has no `chain` block or names a schedule this

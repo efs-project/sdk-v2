@@ -12,7 +12,7 @@ import {
   type SequenceEvent,
   type SequenceProgress,
 } from "../../src/actions/index.ts";
-import { TX_GAS_CAP } from "../../src/actions/split.ts";
+import { gasPlanFor, packBatches, TX_GAS_CAP } from "../../src/actions/split.ts";
 import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import { EfsFault } from "../../src/core/errors.ts";
@@ -819,9 +819,15 @@ describe("runSequence (fixture)", () => {
       authorizer: { kind: "eip1193", profile: "direct", provider: picky, account: FRANK },
       journal,
     });
-    const r = await w.runSequence(parts(w.principal, "seq-batch-5740", 5), { pollMs: 50 });
+    const five = parts(w.principal, "seq-batch-5740", 5);
+    // The first batch is what fits one transaction, each part with its kernel floor (4 of the 5 on the fixture).
+    const g = gasPlanFor(efs.deployment);
+    if (!g.ok) throw new Error(g.reason.code);
+    const first = packBatches(five, g)[0]?.length ?? 0;
+    expect(first).toBeGreaterThanOrEqual(3);
+    const r = await w.runSequence(five, { pollMs: 50 });
     expect(r).toMatchObject({ state: "COMPLETE", committed: 5 });
-    expect(picky.batchSizes).toEqual([5, 2, 2]);
+    expect(picky.batchSizes).toEqual([first, 2, 2]);
     expect(picky.sends).toBe(1);
     expect((await journal.getSequence(r.sequenceId))?.batchMax).toBe(2);
   });

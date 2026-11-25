@@ -3,8 +3,11 @@
 // the kernel's batch limits (LedgerCore._bounds), atomic groups, and honest refusals.
 import { describe, expect, it } from "vitest";
 import {
+  floorNeed,
+  floorUnsupported,
   type GasModel,
   gasPlanFor,
+  kernelQuote,
   type PlannedAction,
   packBatches,
   partGas,
@@ -14,7 +17,7 @@ import {
 import { ACTION, type ActionData } from "../src/actions/types.ts";
 import type { Hex } from "../src/core/hex.ts";
 import { ZERO_WORD } from "../src/core/hex.ts";
-import type { ChainFacts, DeploymentInfo } from "../src/deployment/manifest.ts";
+import type { ChainFacts, DeploymentInfo, KernelFloor } from "../src/deployment/manifest.ts";
 import { GAS_ENVELOPE, GAS_SCHEDULES } from "../src/generated/gas.ts";
 
 /** The contracts' fitted prague model, as generated from release.json gasModel. */
@@ -304,5 +307,115 @@ describe("packBatches", () => {
     ];
     const kept = { actions: shaped.map((a) => a.action), bodies: shaped.map((a) => a.body) };
     expect(partGas(kept, MODEL)).toBeGreaterThanOrEqual(publicationGas(shaped, MODEL, true));
+  });
+});
+
+/** The fixture's kernel floor (its deployment's index.workModel and floor limits; the contracts' test defaults). */
+const SPAN = `0x${"5a".repeat(32)}` as Hex;
+const CONTENT = `0x${"c0".repeat(32)}` as Hex;
+const FLOOR: KernelFloor = {
+  workModel: {
+    formulaVersion: 1,
+    freshPerPublication: 2,
+    rwPerPublication: 10,
+    freshPerPublishFresh: 10,
+    rwPerPublish: 50,
+    freshPerBindFresh: 30,
+    rwPerBind: 40,
+    freshPerRef: 10,
+    freshPerDigestSpec: 10,
+    computeBase: 60_000,
+    computePerAction: 25_000,
+    computePerHookEffect: 60_000,
+    finalComputeBase: 60_000,
+    finalComputePerBind: 120_000,
+  },
+  floorFreshGas: 22_100,
+  floorRewriteGas: 5_000,
+  kernelTail: 20_000,
+  maxRefs: 8,
+  types: { [SPAN]: { refs: 2, specs: 0 }, [CONTENT]: { refs: 1, specs: 1 } },
+};
+const releases = (n: number) => Array.from({ length: n }, () => action(ACTION.RELEASE));
+
+describe("the kernel's floor", () => {
+  it("quotes like the kernel: 64 RELEASEs of your own entries reserve 6.8M before the callbacks and 7.7M after", () => {
+    // fresh10 = 2 (the publication): 1 slot; rw10 = 10 + 64·40: 257 rewrites.
+    expect(kernelQuote(releases(64), FLOOR)).toEqual({
+      prefixFloor: 60_000 + 64 * 25_000 + 64 * 60_000 + 1 * 22_100 + 257 * 5_000,
+      finalReserve: 60_000 + 64 * 120_000,
+      freshSlots: 1,
+      rewrites: 257,
+    });
+    // As the kernel's own helper prices them, every bind a first statement: 2 + 64·30 = 1,922 → 193 slots.
+    expect(kernelQuote(releases(64), FLOOR, { everyBindFirst: true }).freshSlots).toBe(193);
+    // What that needs on top of the execution gas: the prefix floor through two 63/64 forwards, the final reserve
+    // through one, and the tail. 14,909,805 is the fixture's measured lower bound for this shape.
+    expect(floorNeed(kernelQuote(releases(64), FLOOR), FLOOR)).toBe(14_909_805);
+  });
+
+  it("charges fresh slots for first statements and new records only", () => {
+    const fresh = (list: readonly (ActionData | PlannedAction)[]) =>
+      kernelQuote(list, FLOOR).freshSlots;
+    const bind = (extra: Partial<PlannedAction> = {}): PlannedAction => ({
+      action: action(ACTION.BIND),
+      body: "0x",
+      ...extra,
+    });
+    // A BIND is a first statement unless its row is a rebind or the planner says otherwise.
+    expect(fresh([bind()])).toBe(4); // 2 + 30
+    expect(fresh([bind({ bindRow: "bindFolderFreshFile" })])).toBe(4);
+    expect(fresh([bind({ bindRow: "bindFolderRebind" })])).toBe(1);
+    expect(fresh([bind({ firstStatement: false })])).toBe(1);
+    expect(fresh([{ ...plain(ACTION.RELEASE), firstStatement: true }])).toBe(4);
+    // A new record pays its references and digest specs; an existing one its references only.
+    const pub = (typeId: Hex, exists = false): PlannedAction => ({
+      action: { ...action(ACTION.PUBLISH), typeId },
+      body: "0x",
+      ...(exists ? { exists } : {}),
+    });
+    expect(fresh([pub(SPAN)])).toBe(4); // 2 + 2·10 + 10
+    expect(fresh([pub(SPAN, true)])).toBe(3); // 2 + 2·10
+    expect(fresh([pub(CONTENT)])).toBe(4); // 2 + 10 + 10 + 10
+    // A Type with no count is priced at the most references a record can carry, and one digest spec.
+    expect(fresh([pub(`0x${"77".repeat(32)}` as Hex)])).toBe(11); // 2 + 8·10 + 10 + 10
+  });
+
+  it("splits a 64-entry remove so each part fits with its floor; without the floor it was one unsendable part", () => {
+    const limits = { ...LIMITS, maxBindsPerPublication: 64 };
+    const list = releases(64).map((a) => ({ action: a, body: "0x" as Hex }));
+    const bare = splitPublications(list, { model: MODEL, limits, txGasCap: CAP });
+    expect(bare.ok && bare.parts.length).toBe(1);
+    const r = splitPublications(list, { model: MODEL, limits, txGasCap: CAP, floor: FLOOR });
+    if (!r.ok) throw new Error(r.reason.code);
+    expect(r.parts.length).toBeGreaterThan(1);
+    for (const part of r.parts) {
+      expect(part.floor).toBe(floorNeed(kernelQuote(part.actions, FLOOR), FLOOR));
+      expect(part.gas + part.floor).toBeLessThanOrEqual(r.budget);
+    }
+    // Greedy: no part could have taken the next action.
+    for (let i = 0; i + 1 < r.parts.length; i++) {
+      const more = [...(r.parts[i]?.actions ?? []), ...(r.parts[i + 1]?.actions.slice(0, 1) ?? [])];
+      expect(
+        publicationGas(more, MODEL) + floorNeed(kernelQuote(more, FLOOR), FLOOR),
+      ).toBeGreaterThan(r.budget);
+    }
+  });
+
+  it("plans nothing under a work-model formula this SDK cannot price", () => {
+    expect(floorUnsupported(FLOOR)).toBeNull();
+    expect(floorUnsupported(null)).toBeNull();
+    const next = { ...FLOOR, workModel: { ...FLOOR.workModel, formulaVersion: 2 } };
+    expect(floorUnsupported(next)).toMatchObject({ code: "UNSUPPORTED_PROFILE", retry: "never" });
+  });
+
+  it("an atomic batch counts each part's floor, so parts that fit by their estimates alone may not share one", () => {
+    const part = { actions: releases(20), bodies: releases(20).map(() => "0x" as Hex) };
+    const g = { model: MODEL, txGasCap: CAP };
+    expect(packBatches([part, part], g)).toEqual([[0, 1]]);
+    expect(packBatches([part, part], { ...g, floor: FLOOR })).toEqual([[0], [1]]);
+    expect(partGas(part, MODEL, FLOOR)).toBe(
+      partGas(part, MODEL) + floorNeed(kernelQuote(part.actions, FLOOR), FLOOR),
+    );
   });
 });

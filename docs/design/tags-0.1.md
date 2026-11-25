@@ -395,7 +395,10 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
       estimate (prague: `constants`; amsterdam: `split.executionGas`). V is the visible gas the kernel's floor checks
       need, from the floor's own formula: its prefix floor and final reserve from `floor.workModel`, `floor.limits`
       and `floor.types`, the kernel's share from `floor.kernel`, and the 63/64 forwarding;
-    - why: today's SDK plans by E alone and its review's `gas.floor` is always null. In the contracts' shared shapes
+    - since sdk-v2 commit `fix/2026-11-25-kernel-floor` (see api-0.1, "The kernel's floor"), the planners already add
+      an upper bound of V − E from the deployment's work model, with the kernel's share K bounded by E. The
+      re-vendor replaces that bound with the model's exact rule (`floor.kernel` for K), which splits less;
+    - why: the SDK used to plan by E alone, and its review's `gas.floor` is still always null. In the contracts' shared shapes
       V exceeds E in every case, by about 0.04M to 1.56M gas. So E alone can admit a publication the floor refuses: on
       prague, 11 create-file recipes in one publication have E 13.87M, inside the 14.26M budget, but V 15.42M. If
       such a plan were made today, `eth_estimateGas` would refuse it before signing (OVER_TX_GAS_CAP, NOT_SENT) or

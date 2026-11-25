@@ -2,12 +2,18 @@
 // @internal Shared by the Files planners (edit, create, move, remove, restore): the action builders, the gas setup
 // and the content records, so every planner encodes content and prices it the same way.
 import { keccak256, sha256 } from "viem";
-import { type GasModel, gasPlanFor, type PlannedAction, txGasCapOf } from "../actions/split.js";
+import {
+  floorUnsupported,
+  type GasModel,
+  gasPlanFor,
+  type PlannedAction,
+  txGasCapOf,
+} from "../actions/split.js";
 import type { ActionData } from "../actions/types.js";
 import { CARRIER, CHUNK_PAYLOAD, chunkTree, encode } from "../content/codec.js";
 import { EfsFault, type Reason, reason } from "../core/errors.js";
 import { bytesToHex, type Hex, lower, ZERO_WORD } from "../core/hex.js";
-import type { DeploymentInfo } from "../deployment/manifest.js";
+import type { DeploymentInfo, KernelFloor } from "../deployment/manifest.js";
 import { ACTION } from "../generated/constants.js";
 import { recordId } from "../protocol/keys.js";
 import { normalizeMediaType } from "./media.js";
@@ -48,7 +54,7 @@ export const publish = (
 /** A body-less action (CREATE, BIND, UNBIND, RELEASE). */
 export const plain = (
   a: Partial<ActionData>,
-  extra: Pick<PlannedAction, "bindRow" | "group"> = {},
+  extra: Pick<PlannedAction, "bindRow" | "group" | "firstStatement"> = {},
 ): PlannedAction => ({ action: { ...blank, ...a }, body: "0x", ...extra });
 
 export interface GasSetup {
@@ -56,6 +62,8 @@ export interface GasSetup {
   txGasCap: bigint;
   headroom: number;
   blockGasLimit?: bigint;
+  /** The kernel's index floor, from the deployment (whatever model the caller passes). */
+  floor?: KernelFloor;
 }
 export interface GasOpts {
   gasModel?: GasModel;
@@ -68,6 +76,8 @@ export function gasSetup(
   d: DeploymentInfo,
   o: GasOpts,
 ): { ok: true; gas: GasSetup } | { ok: false; reason: Reason } {
+  const unsupported = floorUnsupported(d.kernelFloor);
+  if (unsupported) return { ok: false, reason: unsupported };
   if (o.gasModel)
     return {
       ok: true,
@@ -75,6 +85,7 @@ export function gasSetup(
         model: o.gasModel,
         txGasCap: o.txGasCap ?? txGasCapOf(d),
         headroom: o.headroom ?? 0.15,
+        ...(d.kernelFloor ? { floor: d.kernelFloor } : {}),
       },
     };
   const g = gasPlanFor(d);
@@ -86,6 +97,7 @@ export function gasSetup(
       txGasCap: o.txGasCap ?? g.txGasCap,
       headroom: o.headroom ?? g.headroom,
       ...(g.blockGasLimit !== undefined ? { blockGasLimit: g.blockGasLimit } : {}),
+      ...(g.floor ? { floor: g.floor } : {}),
     },
   };
 }

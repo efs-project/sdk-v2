@@ -438,6 +438,8 @@ const freshFolderBindRow = (h: RawHead, directory: boolean) =>
       ? ("bindFolderFreshDirectory" as const)
       : ("bindFolderFreshFile" as const)
     : undefined; // a masked or released position is priced at the larger rows
+/** The writer has never stated anything at this place: a BIND there is a first statement (the kernel's floor). */
+const isUnset = (h: RawHead): boolean => headState(h.state) === "UNSET";
 
 /** NOT_YOURS or ENTRY_ABSENT for a place where your own entry is not bound. */
 const notMine = (
@@ -497,6 +499,7 @@ async function toParts<R extends FolderReviewBase>(
     txGasCap: gas.txGasCap,
     headroom: gas.headroom,
     ...(gas.blockGasLimit !== undefined ? { blockGasLimit: gas.blockGasLimit } : {}),
+    ...(gas.floor ? { floor: gas.floor } : {}),
     firstWrite: true, // priced as a first publication: planning does not read the nonce (see planEditFile)
   });
   if (!split.ok) return { kind: "efs.folderPlan", status: "TOO_LARGE", reason: split.reason };
@@ -711,7 +714,11 @@ export async function planCreateFile(
           target: file,
           expectedRevision: BigInt(st.mine.revision),
         },
-        { group: FINISH, ...(folderRow ? { bindRow: folderRow } : {}) },
+        {
+          group: FINISH,
+          firstStatement: isUnset(st.mine),
+          ...(folderRow ? { bindRow: folderRow } : {}),
+        },
       ),
     );
     const args = effectArgs(place, { file, revision });
@@ -827,7 +834,7 @@ export async function planCreateFolder(
           target: directory,
           expectedRevision: BigInt(st.mine.revision),
         },
-        { group: 1, ...(row ? { bindRow: row } : {}) },
+        { group: 1, firstStatement: isUnset(st.mine), ...(row ? { bindRow: row } : {}) },
       ),
     ];
     const args = effectArgs(place, { directory });
@@ -1090,7 +1097,7 @@ export async function planMoveEntries(
             target: lower(from.mine.target),
             expectedRevision: BigInt(to.mine.revision),
           },
-          { group, ...(row ? { bindRow: row } : {}) },
+          { group, firstStatement: isUnset(to.mine), ...(row ? { bindRow: row } : {}) },
         ),
       ];
       if (needName) records++;
@@ -1395,14 +1402,17 @@ export async function planRestoreEntries(
           text: `Restore ${p.name}`,
         }),
         actions: [
-          plain({
-            kind: ACTION.BIND,
-            purpose: PURPOSES.folder,
-            subject: p.folder,
-            role: p.role,
-            target: targetWord,
-            expectedRevision: BigInt(st.mine.revision),
-          }),
+          plain(
+            {
+              kind: ACTION.BIND,
+              purpose: PURPOSES.folder,
+              subject: p.folder,
+              role: p.role,
+              target: targetWord,
+              expectedRevision: BigInt(st.mine.revision),
+            },
+            { firstStatement: false }, // your own released or masked entry: the head exists
+          ),
         ],
         finishes: true,
       });
