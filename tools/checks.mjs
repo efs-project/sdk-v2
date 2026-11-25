@@ -27,13 +27,17 @@ const checks = {
 
   licenses() {
     const root = readFileSync(join(ROOT, "LICENSE"), "utf8");
-    for (const copy of ["packages/sdk/LICENSE", "packages/solidity/src/LICENSE"]) {
+    for (const copy of [
+      "packages/sdk/LICENSE",
+      "packages/fixture/LICENSE",
+      "packages/solidity/src/LICENSE",
+    ]) {
       if (readFileSync(join(ROOT, copy), "utf8") !== root)
         fail(`${copy} differs from the root LICENSE`);
     }
     // Runtime dependencies of publishable packages must be permissively licensed.
     let count = 0;
-    for (const dir of ["packages/sdk", "packages/solidity/src"]) {
+    for (const dir of ["packages/sdk", "packages/fixture", "packages/solidity/src"]) {
       const pkg = JSON.parse(readFileSync(join(ROOT, dir, "package.json"), "utf8"));
       if (pkg.license !== "MIT") fail(`${pkg.name}: license must be MIT`);
       for (const dep of Object.keys(pkg.dependencies ?? {})) {
@@ -163,6 +167,8 @@ const checks = {
       "./node",
     ]);
     ok("publint and attw (., ./web) pass for @efs/sdk");
+    run("pnpm", ["exec", "publint", "--strict", "packages/fixture"]);
+    ok("publint passes for @efs/fixture");
   },
 };
 

@@ -755,6 +755,18 @@ publisher's https URL, reads it with the default policy (POLICY_BLOCKED, nothing
 `[method, params]` and ignores the JSON-RPC id. Calls inside a batch are matched one by one, and an unmatched call
 gets a JSON-RPC error and is listed in `misses`.
 
+**A live chain (`@efs/fixture`, Node only):** a second private tarball, packed from the same commit as `@efs/sdk`,
+for live-chain tests such as the client's required e2e job. `startFixtureChain({ anvilPath?, port?, ttlSeconds?,
+home? })` → `{ rpcUrl, chainId, deployment, deploymentPath, accounts: { fixture, unlocked }, seed, contracts, stop() }`.
+- **What it runs:** the contracts' own fixture tool, from the lock-verified snapshot it carries (`contracts/`, with
+  `contracts/PROVENANCE.json`). That means anvil (osaka, with the EIP-7825 cap enforced), the genesis deployment, the
+  Files Types and the seed. It needs `anvil` on PATH (or `anvilPath`) and `perl` (the ttl watchdog).
+- **Wallet path:** anvil's ten default accounts are unlocked, so a test EIP-1193 provider forwards
+  `eth_sendTransaction` for `accounts.fixture.address` (the seed's author, anvil #0) to anvil. That is the same call
+  the writer's `eip1193` "direct" profile makes with a real wallet.
+- **Proof:** `examples/smoke-fixture` installs both tarballs as a plain npm consumer, starts a chain, edits the
+  seeded `readme.txt` and reads the edit back. CI runs it in the integration job.
+
 ## 10. Decisions from the client review (2026-11-24)
 
 1. Both are available: `efs.at(...)` views, and the convenience `efs.files`.

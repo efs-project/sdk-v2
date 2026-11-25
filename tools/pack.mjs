@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Pack once: @efs/sdk and @efs/solidity tarballs plus the deterministic Solidity source
-// archive, with a file-list check, SHA256SUMS and .packs/pack.json. Packages stay private;
-// packing is not publishing. Usage: node tools/pack.mjs [--only sdk|solidity]
+// Pack once: @efs/sdk, @efs/fixture and @efs/solidity tarballs plus the deterministic Solidity
+// source archive, with a file-list check, SHA256SUMS and .packs/pack.json. Packages stay private;
+// packing is not publishing. Usage: node tools/pack.mjs [--only sdk,fixture,solidity]
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -9,7 +9,9 @@ import { npmIntegrity, readTar, sha256, writeTar } from "./lib/tar.mjs";
 import { fail, ok, PACKS, ROOT, run, walk } from "./lib/util.mjs";
 
 const { values } = parseArgs({ options: { only: { type: "string" } } });
-const only = values.only ? new Set(values.only.split(",")) : new Set(["sdk", "solidity"]);
+const only = values.only
+  ? new Set(values.only.split(","))
+  : new Set(["sdk", "fixture", "solidity"]);
 
 const PACKAGES = {
   sdk: {
@@ -18,6 +20,14 @@ const PACKAGES = {
       /^(package\.json|README\.md|LICENSE|protocol-inputs\.json|fixtures\/(rpc\/)?[a-z0-9-]+\.json|dist\/.+|src\/.+\.ts)$/.test(
         p,
       ) && !p.endsWith(".test.ts"),
+  },
+  fixture: {
+    dir: "packages/fixture",
+    // contracts/ is the lock-verified snapshot (tools/fixture-bundle.mjs) plus PROVENANCE.json
+    allowed: (p) =>
+      /^(package\.json|README\.md|LICENSE|dist\/[^/]+\.(js|d\.ts|js\.map|d\.ts\.map)|contracts\/.+)$/.test(
+        p,
+      ),
   },
   solidity: {
     dir: "packages/solidity/src",
