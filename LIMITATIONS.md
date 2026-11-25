@@ -6,8 +6,7 @@ reconcile) with durable attempt journals (IndexedDB + Web Locks in browsers and 
 homes (an address as a parent: list, look up, resolve paths and links, and create, edit, move, rename, remove,
 restore, hide and unhide entries), and tags (topics and homes as places, `planTag` / `planDeny` / `planUntag`, and
 the Mine / Everyone / Raw reads, labels and topic names, file names in a topic, "same as" and "broader", and synonym
-gathering). **Not yet:** the tag word fold (words are checked as given until it is ruled), a Lens-applied `tagsOf`,
-merged reads across synonym lists, authoring as a contract principal (the writer is
+gathering). **Not yet:** the tag word fold (words are checked as given until it is ruled), merged reads across synonym lists, authoring as a contract principal (the writer is
 key-principal only), and storage for files above the chain's per-file ceiling (about 1 MiB). An edit re-publishes
 every chunk of its content, including chunks already on chain. When the edited revision belongs to another author, only the planning-time base check guards it
 (the ledger's compare-and-swap covers the editor's own HEAD). web3:// reads cover addresses on the client's own chain in ERC-5219 mode. ENS names, other

@@ -54,6 +54,12 @@
 >   topic), each edge decided by the Lens law at its position (an earlier "not the same" decides it), at most 4 hops,
 >   16 topics and 16 entries per list, with `limited` and `complete` saying when it stopped short or can't prove an
 >   absence; ids are never merged;
+> - `lensTagsOf(thing, { view, lens, rows, entries, cursor })`: a thing's tags as a Lens sees them, applied by the SDK
+>   over the chain's `about` list (which reads no Lens), per (place, thing): the first Lens author with a stance decides
+>   (a yes: the Lens tier with their number; "not this": hidden, counted); with none, Everyone shows the public tier
+>   when someone says yes, and Mine nothing. topicItems' page laws: two limits, only EXHAUSTED ends, repeats removed by
+>   place across pages; each place checked to name the thing, each head reply checked against the Lens law, and a
+>   deciding yes checked to name the thing. `tagsOf` stays the unfiltered list;
 > - save effects for every tag planner: `tags.tag` / `tags.deny` (topic, number, targets), `tags.untag`,
 >   `tags.label`, `tags.same`, `tags.broader`, with registration-only parts folded into their save's kind
 >   (`tags.register` when a save is nothing else), on the record and through resume;
@@ -63,7 +69,6 @@
 >   word against the chain's grammar);
 > - the junk rule for children (two distinct authors), which needs a per-child author figure the readers don't
 >   give;
-> - Lens-applied `tagsOf` (it reads no Lens today, and gives each place's exact yes-count);
 > - merged item reads across synonym lists (a multi-list cursor merged by statement sequence changes `topicItems`'
 >   paging, so it is its own reviewed step); `topicSynonyms` gives the lists to merge.
 

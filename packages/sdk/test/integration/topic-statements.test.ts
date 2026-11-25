@@ -5,7 +5,7 @@
 // label that is not a text skipped and any failed read UNKNOWN, never "no name".
 // Two accounts of anvil's public development mnemonic (indexes 20 and 21, used by no other test file), funded here.
 import { readFileSync } from "node:fs";
-import { keccak256 } from "viem";
+import { decodeFunctionResult, encodeFunctionResult, keccak256 } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { ACTION, createWriter, memoryJournal } from "../../src/actions/index.ts";
@@ -13,12 +13,18 @@ import { createEfs } from "../../src/client.ts";
 import { type Address, type Hex, lower, type PrincipalId, ZERO_WORD } from "../../src/core/hex.ts";
 import { planCreateFile, planRemoveEntries } from "../../src/files/entries.ts";
 import { plain, publish } from "../../src/files/plan.ts";
-import { bitmapStoreAbi, indexAbi, ledgerViewsAbi } from "../../src/generated/abis.ts";
+import {
+  bitmapStoreAbi,
+  indexAbi,
+  ledgerViewsAbi,
+  topicLookupReaderAbi,
+} from "../../src/generated/abis.ts";
 import { PURPOSES } from "../../src/generated/constants.ts";
 import { keyPrincipal } from "../../src/protocol/keys.ts";
 import { fileNames } from "../../src/tags/filenames.ts";
+import { lensTagsOf } from "../../src/tags/lenstags.ts";
 import { labelOf, topicName } from "../../src/tags/names.ts";
-import { planTag, planUntag } from "../../src/tags/plan.ts";
+import { planDeny, planTag, planUntag } from "../../src/tags/plan.ts";
 import { planBroader, planLabel, planSame } from "../../src/tags/statements.ts";
 import { topicSynonyms } from "../../src/tags/synonyms.ts";
 import {
@@ -597,5 +603,134 @@ describe("tag saves name what they touch (fixture)", () => {
       limited: false,
       complete: true,
     });
+  });
+});
+
+describe("lensTagsOf: a thing's tags as a Lens sees them (fixture)", () => {
+  const X = () => pathId(T, ["nmcars"]); // the thing: any id the chain tags
+  const ofX = (r: { status: string; rows?: readonly { topic: Hex }[] }) =>
+    r.status === "PRESENT" ? (r.rows ?? []).map((x) => x.topic) : r.status;
+  const thing = () => ({ kind: "topic" as const, id: X() });
+  it("the Lens tier and the public tier, apart; a Lens author's 'not this' hides it; Mine keeps the Lens only", async () => {
+    await run(wc, planTag(efs, wc, { topic: ["lt1"], targets: [thing()], number: 5 }));
+    await run(wd, planTag(efs, wd, { topic: ["lt2"], targets: [thing()], number: 1 }));
+    await run(wd, planDeny(efs, wd, { topic: ["lt1"], targets: [thing()] }));
+    const lt1 = lower(pathId(T, ["lt1"]));
+    const lt2 = lower(pathId(T, ["lt2"]));
+    const cleoView = await lensTagsOf(efs, X(), { lens: lens(C) });
+    if (cleoView.status !== "PRESENT") throw new Error(cleoView.status);
+    expect(cleoView.finished).toBe(true);
+    const byTopic = Object.fromEntries(cleoView.rows.map((x) => [x.topic, x]));
+    expect(byTopic[lt1]).toMatchObject({
+      number: 5,
+      decider: { kind: "lens", index: 0, author: C, number: 5 },
+    });
+    expect(byTopic[lt2]).toMatchObject({ number: 0, decider: { kind: "public" }, yes: 1n });
+    // Dov first: his "not this" at lt1 decides it (hidden, counted); his own yes at lt2 is the Lens tier.
+    const dovFirst = await lensTagsOf(efs, X(), { lens: lens(D, C) });
+    if (dovFirst.status !== "PRESENT") throw new Error(dovFirst.status);
+    expect(dovFirst.rows.map((x) => x.topic)).not.toContain(lt1);
+    expect(dovFirst.rows.find((x) => x.topic === lt2)).toMatchObject({
+      decider: { kind: "lens", author: D, number: 1 },
+    });
+    expect(dovFirst.counts.deniedByLens).toBeGreaterThanOrEqual(1);
+    // Mine: only what a Lens author says yes to.
+    const mine = await lensTagsOf(efs, X(), { view: "mine", lens: lens(C) });
+    expect(ofX(mine)).toContain(lt1);
+    expect(ofX(mine)).not.toContain(lt2);
+  });
+
+  it("pages of one row: never the end until the chain says so, and no place twice", async () => {
+    await run(wc, planTag(efs, wc, { topic: ["lt3"], targets: [thing()] }));
+    const all = await lensTagsOf(efs, X(), { lens: lens(C) });
+    if (all.status !== "PRESENT") throw new Error(all.status);
+    const got: Hex[] = [];
+    let cursor: unknown;
+    for (let i = 0; i < 20; i++) {
+      const p = await lensTagsOf(efs, X(), {
+        lens: lens(C),
+        rows: 1,
+        ...(cursor ? { cursor: cursor as never } : {}),
+      });
+      if (p.status !== "PRESENT") throw new Error(p.status);
+      expect(p.rows.length).toBeLessThanOrEqual(1);
+      got.push(...p.rows.map((x) => x.topic));
+      if (p.finished) break;
+      expect(p.next).toBeDefined();
+      cursor = p.next;
+    }
+    expect(new Set(got).size).toBe(got.length);
+    expect([...got].sort()).toEqual(all.rows.map((x) => x.topic).sort());
+  });
+
+  it("a forged reply is UNKNOWN, never a row: a place about another thing, a deciding yes about another thing", async () => {
+    const edit =
+      (abi: readonly unknown[], fn: string, f: (out: unknown[]) => unknown[]): Edit =>
+      (result) =>
+        encodeFunctionResult({
+          abi: abi as never,
+          functionName: fn,
+          result: f(
+            decodeFunctionResult({
+              abi: abi as never,
+              functionName: fn,
+              data: result,
+            } as never) as unknown[],
+          ) as never,
+        } as never) as Hex;
+    const otherThing = `0x${"5e".repeat(32)}`;
+    const placeLies = createEfs({
+      rpcs: [fixture.rpcUrl],
+      deployment,
+      fetch: tampered({
+        [sel(topicLookupReaderAbi, "about")]: edit(topicLookupReaderAbi, "about", (out) => [
+          out[0],
+          (out[1] as Record<string, unknown>[]).map((r) => ({ ...r, thing: otherThing })),
+        ]),
+      }),
+    });
+    expect(await lensTagsOf(placeLies, X(), { lens: lens(C) })).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR" },
+    });
+    // A reply that lists every place twice: each is returned once, the repeats counted.
+    const twice = createEfs({
+      rpcs: [fixture.rpcUrl],
+      deployment,
+      fetch: tampered({
+        [sel(topicLookupReaderAbi, "about")]: edit(topicLookupReaderAbi, "about", (out) => [
+          out[0],
+          [...(out[1] as unknown[]), ...(out[1] as unknown[])],
+        ]),
+      }),
+    });
+    const once = await lensTagsOf(twice, X(), { lens: lens(C) });
+    if (once.status !== "PRESENT") throw new Error(once.status);
+    expect(new Set(once.rows.map((x) => x.topic)).size).toBe(once.rows.length);
+    expect(once.counts.repeatsSkipped).toBe(once.rows.length);
+    const headLies = createEfs({
+      rpcs: [fixture.rpcUrl],
+      deployment,
+      fetch: tampered({
+        [sel(ledgerViewsAbi, "headsAt")]: edit(ledgerViewsAbi, "headsAt", (out) =>
+          out.map((x, i) =>
+            i === 3
+              ? (x as Record<string, unknown>[]).map((h) => ({ ...h, target: otherThing }))
+              : x,
+          ),
+        ),
+      }),
+    });
+    expect(await lensTagsOf(headLies, X(), { lens: lens(C) })).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR" },
+    });
+    const fail: Edit = () => ({ error: { code: -32000, message: "the node is sick" } });
+    const sick = createEfs({
+      rpcs: [fixture.rpcUrl],
+      deployment,
+      fetch: tampered({ [sel(ledgerViewsAbi, "headsAt")]: fail }),
+    });
+    expect(await lensTagsOf(sick, X(), { lens: lens(C) })).toMatchObject({ status: "UNKNOWN" });
   });
 });
