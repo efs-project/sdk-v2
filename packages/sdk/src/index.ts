@@ -43,6 +43,7 @@ export type {
   LinkTarget,
   ObjectLink,
   ParseLinkOpts,
+  PathLink,
   RealmRef,
   RealmRule,
   RealmSplit,

@@ -248,18 +248,33 @@ string that an app places in its route, for example after `#/files/`:
 | Link | Form | Opens | Lens |
 |---|---|---|---|
 | object | `~efs/o/0x<64 hex subject id>[?lens=<p>,<p>…]` | the current head of that subject (a file today; folders reuse the form) | the route default, or the given ordered principals |
+| path | `~efs/o/0x<64 hex folder id>/<name>[/<name>…][?lens=…]` | a folder or file by name below a folder named by its id (files-name/2, case kept). Any folder, the shared root included | the given principals, else the reader then the folder's creator (`efs.lens.place`) |
 | revision | `~efs/v/0x<64 hex revision record id>` | exactly that revision's bytes | no |
-| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address, then folder and file names (files-name/2, case kept) | the route default, or the given ordered principals |
+| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address, then folder and file names (files-name/2, case kept) | the given principals, else the reader then the address (`efs.lens.place`) |
 | topic | `<word>[/<word>/…][?lens=…]` | a topic; one word alone is that word's page. Words are folded before lookup | the route default, or the given ordered principals |
 
 - The first segment is `~efs`. The name profile reserves that prefix, so no path can look like a link. This
   departs from the naming review's `o/<id>` and `v/<id>`, which collide with root folders named `o` or `v`.
 - `link()` emits lowercase ids. `parseLink()` accepts any hex case and one percent-decode per segment, and returns
   `canonical` so a router can redirect to the canonical form. `%2F` is never a separator.
-- `parseLink(input, { fold? })` returns `{ status: "OK", target: ObjectLink | RevisionLink | HomeLink | TopicLink,
-  canonical }` or `{ status: "INVALID", rule, segment?, detail? }`. Every first segment starting with `~` is the
-  system's (only `~efs` is defined); a first segment that is an address is a home; anything else is a topic (tag
-  model spec §5). One trailing "/" is ignored, an empty segment is refused, and each segment is percent-decoded once
+- `parseLink(input, { fold? })` returns `{ status: "OK", target: ObjectLink | PathLink | RevisionLink | HomeLink |
+  TopicLink, canonical }` or `{ status: "INVALID", rule, segment?, detail? }`. Every first segment starting with `~`
+  is the system's (only `~efs` is defined); a first segment that is an address is a home; anything else is a topic
+  (tag model spec §5). The shared root has no named link (no `~root`), and `~home` is never defined: both are
+  INVALID with rule `reserved-name`, like any other `~` segment.
+- **Path links** (`PathLink`, kind `path`): names after an object id are a path from that folder. It is its own
+  kind, never an object link with names, so a router that only opens objects can't open the folder in place of the
+  entry the link names. Without names the link is an object link, and `link()` refuses a path link with none. The
+  string can't say whether the id is a folder, so the reader decides. `openPath(efs, link, { reader?, base? })` in
+  `@efs/sdk/files` does it, so no client can open a file id that has names, or leave the creator out of the Lens:
+  1. `openObject(efs, link.folder)`;
+  2. on FOLDER, `resolvePath(efs, { from: open.folder, segments: link.names }, { lens })`, with `lens` the link's,
+     used as it is, else `efs.lens.place({ reader, owner: open.folder.owner, base })` (the reader, then the folder's
+     creator, then `base`, by default the client's default Lens);
+  3. any other answer, a file included, makes the link INVALID: a file has no names below it.
+
+  A revision link takes no names (rule `bad-id`). The app links and the web3:// gateway share this grammar
+  (planning D12). One trailing "/" is ignored, an empty segment is refused, and each segment is percent-decoded once
   before folding. Home and topic segments are written in the canonical wire form (RFC 3986, uppercase %HH).
 - **The fold is the caller's** until the fold rule (`efs/fold/1`) is chosen: `fold(segment)` returns the word or the
   rule it breaks. Without a fold, a topic parses with `segments` only and no `words`, and its `canonical` keeps the
@@ -864,8 +879,9 @@ of one owner forever (never REUSE another principal's folder record: the chain r
 are FOLDER bindings, one per author: `(FOLDER, directory, keccak(name)) → target`, where the target is a file
 subject or another folder's directory record. The Lens decides which author's entry a name shows (the first author
 in Lens order with a bound entry; an earlier author's mask hides the name). Every read and planner takes the parent
-explicitly: there is no default root, and no link format names one (the Realm's shared root is a stand-in parent in
-fixtures; folder paths will live under an address once homes land). `openObject(efs, id, { lens? })` says what an
+explicitly: there is no default root, and no link format names one. A path link names its starting folder by id
+(`~efs/o/<folder>/<name>/…`, opened with `openPath`), and the Realm's shared root is reached that way like any other
+folder. `openObject(efs, id, { lens? })` says what an
 object link's id is, in one batched read: a folder record is `FOLDER { folder, owner }`, a created subject is
 `FILE { file, creator, open }` (opened under the Lens), anything else `ABSENT_PROVEN`; a record of another Type is
 INVALID. The kind is fixed by the id, so the answer never changes. The kind read carries the file's HEAD read in the
@@ -907,6 +923,10 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   ABSENT_PROVEN. Each segment follows the Lens's choice, with its author in `chain`. No depth limit: a path costs one
   round trip per segment, so object links are the fast (and rename-proof) way to open a file; a path is a lookup that
   a rename or move can break.
+- `openPath(efs, link, { reader?, base?, maxSegments? })` → resolvePath's answers, `INVALID` when the link's id is
+  not a folder (a file included), or openObject's `ABSENT_PROVEN` (`kind: "efs.object"`) when nothing has the id.
+  The Lens is the link's own when it carries one, else the reader, then the folder's creator, then `base`.
+  `evidence` covers both reads.
 - Each reply is cross-checked: the folder must be a files-directory/1 record, the heads' selection must be the Lens
   law's, the page and Lens readers must agree on every row, and COMPLETE must hold locally.
 

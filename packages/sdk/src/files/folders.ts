@@ -18,6 +18,7 @@ import type { RpcOutcome } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import {
+  type Address,
   bytesToHex,
   type Hex,
   hexToBytes,
@@ -34,6 +35,7 @@ import {
   lensReaderAbi,
 } from "../generated/abis.js";
 import { FILES, PURPOSES } from "../generated/constants.js";
+import type { PathLink } from "../names/links.js";
 import { checkName, decodeScalars, type NameRule } from "../names/name.js";
 import { positionKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
@@ -1640,4 +1642,72 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
   const file: FileRef = { kind: "file", subject: target as SubjectId };
   const open = openResult(v.open, basis, evidence);
   return { kind: "efs.object", status: "FILE", file, creator: v.creator, open, basis, evidence };
+}
+
+// ---- a path link: names below a folder named by its id
+
+export interface OpenPathOpts extends Omit<ResolvePathOpts, "lens"> {
+  /** Who is reading: first in the default Lens. Leave it out for a reader with no account. */
+  reader?: Address | PrincipalId;
+  /** What follows the reader and the folder's creator in the default Lens (default: the client's default Lens). */
+  base?: Lens;
+}
+
+export type PathOpen =
+  | PathResolution
+  /** Nothing has the link's id, neither a folder nor a file: openObject's own answer, at its basis. */
+  | Extract<ObjectOpen, { status: "ABSENT_PROVEN" }>;
+
+/**
+ * Open a path link (`~efs/o/<folder>/<name>/…`, a `PathLink` from parseLink): the id's kind first (openObject), then,
+ * for a folder, its names (resolvePath). The Lens is the link's own when it carries one, used as it is; else the
+ * reader, then the folder's creator, then `base` (efs.lens.place). Any id that is not a folder, a file included, is
+ * INVALID: a file has no names below it, so the file itself is never what the link opens. An id nothing has is
+ * openObject's ABSENT_PROVEN (`kind: "efs.object"`), never a missing name. `evidence` covers both reads.
+ */
+export async function openPath(efs: Efs, link: PathLink, o: OpenPathOpts = {}): Promise<PathOpen> {
+  if (link.names.length === 0)
+    throw misuse(
+      "openPath: a path link has at least one name (with none, open it with openObject)",
+    );
+  const { reader, base, ...read } = o;
+  const obj = await openObject(efs, link.folder, read);
+  if (obj.status === "ABSENT_PROVEN") return obj;
+  const at = obj.basis ? { basis: obj.basis } : {};
+  if (obj.status === "UNKNOWN")
+    return {
+      kind: "efs.path",
+      status: "UNKNOWN",
+      reason: obj.reason,
+      ...at,
+      evidence: obj.evidence,
+    };
+  if (obj.status !== "FOLDER")
+    return {
+      kind: "efs.path",
+      status: "INVALID",
+      reason:
+        obj.status === "FILE"
+          ? reason(
+              "UNSUPPORTED_PROFILE",
+              "never",
+              "the link's id is a file, and a file has no names below it",
+            )
+          : obj.reason,
+      ...at,
+      evidence: obj.evidence,
+    };
+  const lens =
+    link.lens ??
+    efs.lens.place({
+      ...(reader !== undefined ? { reader } : {}),
+      owner: obj.folder.owner,
+      ...(base ? { base } : {}),
+    });
+  const r = await resolvePath(efs, { from: obj.folder, segments: link.names }, { ...read, lens });
+  const evidence: Evidence = {
+    attempts: [...obj.evidence.attempts, ...r.evidence.attempts],
+    requests: obj.evidence.requests + r.evidence.requests,
+  };
+  return { ...r, evidence };
 }

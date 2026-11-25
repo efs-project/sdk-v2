@@ -4,6 +4,9 @@
 //
 //   ~efs/o/<id>[?lens=<p>,<p>…]        an object link: a subject id (stable across renames). It opens the current
 //                                      head under a Lens: the route's default, or the ordered principals given
+//   ~efs/o/<folder>/<name>/…[?lens=…]  a path link: folder and file names below a folder named by its id, which
+//                                      keep their case (files-name/2). Any folder can start one, the shared root
+//                                      included. The string can't say that the id is a folder: the reader checks
 //   ~efs/v/<record>                    a revision link: one immutable revision record (exact bytes; no Lens)
 //   0x<40 hex>[/<name>/…]              a home (an address), then folder and file names, which keep their case
 //                                      (files-name/2): a lookup, which a rename or a move can break
@@ -11,7 +14,8 @@
 //                                      folded before lookup: the fold is the caller's (`ParseLinkOpts.fold`), so
 //                                      the grammar works before the fold rule is chosen
 //
-// Every first segment starting with `~` is reserved for the system; only `~efs` is defined. A leading "/" and one
+// Every first segment starting with `~` is reserved for the system; only `~efs` is defined (the shared root has no
+// named link such as `~root`, and `~home` is never defined: a home is its address). A leading "/" and one
 // trailing "/" are ignored; an empty segment is refused. Segments are split first and decoded once each
 // (percent-decoding before folding), so an escaped `%2F` is never a separator. Topic and home segments are written
 // in the canonical wire form (RFC 3986 percent-encoding, uppercase %HH).
@@ -40,7 +44,6 @@ export interface RevisionLink {
   kind: "revision";
   recordId: RecordId;
 }
-/** What `link` accepts: an object or revision link, or a FileRef / RevisionRef from `@efs/sdk/files`. */
 /**
  * A topic: a path of words. `segments` are the decoded segments as typed. `words` are the folded words (the topic's
  * identity), present when the link was parsed with a fold or built from folded words.
@@ -57,7 +60,28 @@ export interface HomeLink {
   kind: "home";
   address: Address;
   names: readonly string[];
-  /** The sharer's Lens (`?lens=`), when it differs from the route's default. */
+  /**
+   * The sharer's Lens (`?lens=`). Without one, a home opens under `efs.lens.place({ reader, owner: address })`: the
+   * reader, then the address.
+   */
+  lens?: Lens;
+}
+/**
+ * A path from a folder named by its id (`~efs/o/<folder>/<name>/…`): that folder's object link, then at least one
+ * folder or file name, which keep their case (files-name/2). Any folder can start one, the shared root included (it
+ * has no named link of its own). It is its own kind, never an object link with names, so a router that only opens
+ * objects can't open the folder in place of the entry the link names.
+ *
+ * The string can't say whether the id is a folder, so the reader decides: open it with `openPath` (`@efs/sdk/files`),
+ * which reads the id's kind, then the names under `lens`, or else under the reader then the folder's creator. Any id
+ * that is not a folder, a file included, makes the link INVALID: a file has no names below it.
+ */
+export interface PathLink {
+  kind: "path";
+  /** The id the link names, as a folder's record id. Unchecked until a reader opens it. */
+  folder: RecordId;
+  names: readonly string[];
+  /** The sharer's Lens (`?lens=`), when it differs from the default above. */
   lens?: Lens;
 }
 /** One fold step, supplied by the caller until the fold rule is chosen: a word, or the rule the segment breaks. */
@@ -69,9 +93,13 @@ export interface ParseLinkOpts {
   fold?: FoldStep;
 }
 
-/** What `link` accepts: an object, revision, topic or home link, or a FileRef / RevisionRef from `@efs/sdk/files`. */
+/**
+ * What `link` accepts: an object, path, revision, topic or home link, or a FileRef / RevisionRef from
+ * `@efs/sdk/files`.
+ */
 export type LinkTarget =
   | ObjectLink
+  | PathLink
   | RevisionLink
   | TopicLink
   | HomeLink
@@ -83,7 +111,11 @@ export type LinkParse =
    * `canonical` is the link in canonical form; routers can redirect to it when it differs from the input. A topic
    * parsed without a fold has no `words`, and its `canonical` keeps the typed form: redirect only once it is folded.
    */
-  | { status: "OK"; target: ObjectLink | RevisionLink | TopicLink | HomeLink; canonical: string }
+  | {
+      status: "OK";
+      target: ObjectLink | PathLink | RevisionLink | TopicLink | HomeLink;
+      canonical: string;
+    }
   /** `segment` (0-based) is the segment that breaks `rule`; `detail` is the name rule or the fold's rule. */
   | { status: "INVALID"; rule: LinkRule; segment?: number; detail?: string };
 
@@ -132,20 +164,36 @@ export function link(target: LinkTarget): string {
   }
   if (target.kind === "home") {
     if (!ADDRESS.test(target.address)) throw misuse("link: a home is a 20-byte address");
-    const names = target.names.map((n, i) => {
-      const c = checkName(n);
-      if (c.status !== "VALID")
-        throw misuse(`link: home name ${i} is not a files-name/2 name`, { segment: i });
-      return wireSegment(c.bytes);
-    });
+    const names = wireNames(target.names, "home");
     return [target.address.toLowerCase(), ...names].join("/") + lensQuery(target.lens);
   }
-  const id = target.kind === "revision" ? target.recordId : target.subject;
+  const id =
+    target.kind === "revision"
+      ? target.recordId
+      : target.kind === "path"
+        ? target.folder
+        : target.subject;
   if (typeof id !== "string" || !ID.test(id))
     throw misuse("link: the id must be 0x followed by 64 hex digits", { kind: target.kind });
   if (target.kind === "revision") return `${LINK_PREFIX}/v/${id.toLowerCase()}`;
+  if (target.kind === "path") {
+    if (target.names.length === 0)
+      throw misuse("link: a path link has at least one name (with none, it is an object link)");
+    const names = wireNames(target.names, "path");
+    return [`${LINK_PREFIX}/o/${id.toLowerCase()}`, ...names].join("/") + lensQuery(target.lens);
+  }
   const base = `${LINK_PREFIX}/o/${id.toLowerCase()}`;
   return base + lensQuery(target.kind === "object" ? target.lens : undefined);
+}
+
+/** Folder and file names in the canonical wire form, or MISUSE for one that is not a files-name/2 name. */
+function wireNames(names: readonly string[], what: "home" | "path"): string[] {
+  return names.map((n, i) => {
+    const c = checkName(n);
+    if (c.status !== "VALID")
+      throw misuse(`link: ${what} name ${i} is not a files-name/2 name`, { segment: i });
+    return wireSegment(c.bytes);
+  });
 }
 
 /** `?lens=<p>,<p>…` for a Lens, or "" for none: 1 to 64 principals, each once. */
@@ -212,24 +260,68 @@ export function parseLink(input: string, o: ParseLinkOpts = {}): LinkParse {
   // Route on the decoded first segment, so `%7Eefs` is the system's too.
   const head = parseSegment(wire[0] as string);
   const headText = head.ok ? (decodeScalars(head.bytes)?.text ?? "") : "";
-  if (!headText.startsWith("~")) return parsePlace(wire, q >= 0 ? raw.slice(q + 1) : undefined, o);
-  const segments = wire.map(decodeOnce);
-  if (segments.some((x) => x === null)) return { status: "INVALID", rule: "bad-escape" };
-  const [first = "", kind, id, ...rest] = segments as string[];
+  const query = q >= 0 ? raw.slice(q + 1) : undefined;
+  if (!headText.startsWith("~")) return parsePlace(wire, query, o);
+  // `~efs/<kind>/<id>`; after an object id, names may follow (a path link).
+  const sys = wire.slice(0, 3).map(decodeOnce);
+  if (sys.some((x) => x === null)) return { status: "INVALID", rule: "bad-escape" };
+  const [first = "", kind, id] = sys as string[];
   if (first !== LINK_PREFIX) return { status: "INVALID", rule: "reserved-name" }; // every `~` segment is the system's
   if (kind !== "o" && kind !== "v") return { status: "INVALID", rule: "unknown-link-kind" };
-  if (id === undefined || !ID.test(id) || rest.length > 0)
-    return { status: "INVALID", rule: "bad-id" };
+  if (id === undefined || !ID.test(id)) return { status: "INVALID", rule: "bad-id" };
+  const rest = wire.slice(3);
   if (kind === "v") {
+    if (rest.length > 0) return { status: "INVALID", rule: "bad-id" }; // names follow only an object link
     if (q >= 0) return { status: "INVALID", rule: "unsupported-parameter" }; // a revision needs no Lens
     const target: RevisionLink = { kind: "revision", recordId: id.toLowerCase() as RecordId };
     return { status: "OK", target, canonical: link(target) };
   }
-  const target: ObjectLink = { kind: "object", subject: id.toLowerCase() as SubjectId };
-  const lens = queryLens(q >= 0 ? raw.slice(q + 1) : undefined);
+  const lens = queryLens(query);
   if (typeof lens === "string") return { status: "INVALID", rule: lens };
-  if (lens) target.lens = lens;
+  if (rest.length === 0) {
+    const target: ObjectLink = { kind: "object", subject: id.toLowerCase() as SubjectId };
+    if (lens) target.lens = lens;
+    return { status: "OK", target, canonical: link(target) };
+  }
+  const decoded = decodeSegments(rest, 3);
+  if (!Array.isArray(decoded)) return decoded;
+  const names = checkNames(decoded, 3);
+  if (!Array.isArray(names)) return names;
+  const target: PathLink = {
+    kind: "path",
+    folder: id.toLowerCase() as RecordId,
+    names,
+    ...(lens ? { lens } : {}),
+  };
   return { status: "OK", target, canonical: link(target) };
+}
+
+/** Each wire segment decoded once to text (`at`: the first one's index in the link, for `segment`). */
+function decodeSegments(wire: readonly string[], at: number): string[] | LinkParse {
+  const out: string[] = [];
+  for (const [j, w] of wire.entries()) {
+    const p = parseSegment(w);
+    if (!p.ok) return { status: "INVALID", rule: "bad-escape", segment: at + j };
+    out.push(decodeScalars(p.bytes)?.text ?? "");
+  }
+  return out;
+}
+
+/** Folder and file names (files-name/2, case kept), or the first that breaks a name rule (`at` as above). */
+function checkNames(decoded: readonly string[], at: number): string[] | LinkParse {
+  const names: string[] = [];
+  for (const [j, n] of decoded.entries()) {
+    const c = checkName(n);
+    if (c.status !== "VALID")
+      return {
+        status: "INVALID",
+        rule: "bad-name",
+        segment: at + j,
+        detail: c.status === "INVALID" ? (c.rule as NameRule) : c.status,
+      };
+    names.push(c.text);
+  }
+  return names;
 }
 
 const ADDRESS_SHAPE = /^0x[0-9a-f]{40}$/i;
@@ -259,26 +351,12 @@ function wordRule(w: string, typed: boolean): string | null {
 function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts): LinkParse {
   const lens = queryLens(query); // the same single `lens=` parameter as object links
   if (typeof lens === "string") return { status: "INVALID", rule: lens };
-  const decoded: string[] = [];
-  for (const [i, w] of wire.entries()) {
-    const p = parseSegment(w);
-    if (!p.ok) return { status: "INVALID", rule: "bad-escape", segment: i };
-    decoded.push(decodeScalars(p.bytes)?.text ?? "");
-  }
+  const decoded = decodeSegments(wire, 0);
+  if (!Array.isArray(decoded)) return decoded;
   const first = decoded[0] as string;
   if (ADDRESS.test(first)) {
-    const names: string[] = [];
-    for (const [j, n] of decoded.slice(1).entries()) {
-      const c = checkName(n);
-      if (c.status !== "VALID")
-        return {
-          status: "INVALID",
-          rule: "bad-name",
-          segment: j + 1,
-          detail: c.status === "INVALID" ? (c.rule as NameRule) : c.status,
-        };
-      names.push(c.text);
-    }
+    const names = checkNames(decoded.slice(1), 1);
+    if (!Array.isArray(names)) return names;
     const target: HomeLink = {
       kind: "home",
       address: first.toLowerCase() as Address,

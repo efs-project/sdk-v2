@@ -71,11 +71,13 @@ export type {
   FolderRow,
   ListFolderOpts,
   ObjectOpen,
+  OpenPathOpts,
+  PathOpen,
   PathResolution,
   PathStep,
   ResolvePathOpts,
 } from "./folders.js";
-export { listFolder, lookupEntry, openObject, resolvePath } from "./folders.js";
+export { listFolder, lookupEntry, openObject, openPath, resolvePath } from "./folders.js";
 export type { MediaTypeCheck } from "./media.js";
 export { MAX_MEDIA_TYPE_BYTES, normalizeMediaType } from "./media.js";
 export type { ListRemovedOpts, RemovedCursor, RemovedPage, RemovedRow } from "./removed.js";

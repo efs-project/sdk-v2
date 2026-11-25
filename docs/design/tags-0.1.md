@@ -47,9 +47,10 @@
 | `/<word>` | that word's page |
 | `/0x<40 hex>/<name>/…` | a home, then folder and file names, which keep their case (files-name/2) |
 | `/~efs/o/…`, `/~efs/v/…` | permanent object and revision links (as built) |
+| `/~efs/o/<folder>/<name>/…` | a path from a folder named by its id, the shared root included (see api-0.1) |
 
   Trailing slashes are ignored and empty segments are refused. Every first segment starting with `~` is reserved for
-  the system. No link addresses a named file through a topic until the owner settles whether a file's name is the last
+  the system. The shared root has no named link of its own (no `~root`), and `~home` is never defined. No link addresses a named file through a topic until the owner settles whether a file's name is the last
   word of a path.
 
 ## 3. Ids (pure, no chain read)

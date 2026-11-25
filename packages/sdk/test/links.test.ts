@@ -84,6 +84,20 @@ describe("links", () => {
     expect(checkName("~efs").status).toBe("INVALID");
   });
 
+  it("parses names after an object link as their own kind, so code that opens objects never opens the folder instead", () => {
+    // A router written before path links switches on `kind`: a path link is never an "object" with an extra field
+    // it could ignore, which would open the folder in place of the entry the link names.
+    const p = parseLink(`~efs/o/${S}/Photos/cat.jpg`);
+    expect(p).toEqual({
+      status: "OK",
+      target: { kind: "path", folder: S, names: ["Photos", "cat.jpg"] },
+      canonical: `~efs/o/${S}/Photos/cat.jpg`,
+    });
+    expect(parseLink(`~efs/o/${S}`)).toMatchObject({ target: { kind: "object" } });
+    // The shared root has no named link: it is reached by its folder id like any other folder.
+    expect(parseLink("~root/photos")).toEqual({ status: "INVALID", rule: "reserved-name" });
+  });
+
   it("refuses malformed links with a rule", () => {
     const rule = (s: string) => {
       const p = parseLink(s);
@@ -93,7 +107,7 @@ describe("links", () => {
     expect(rule(`~efs/o/${S}#x`)).toBe("fragment");
     expect(rule("~efs/o/%zz")).toBe("bad-escape");
     expect(rule(`~efs/x/${S}`)).toBe("unknown-link-kind");
-    expect(rule(`~efs/o/${S}/extra`)).toBe("bad-id");
+    expect(rule(`~efs/v/${R}/extra`)).toBe("bad-id"); // names follow only an object link
     expect(rule("~efs/o/0x1234")).toBe("bad-id");
     expect(rule("~efs/o")).toBe("bad-id");
     expect(rule(`~efs/v/${R}?lens=${A}`)).toBe("unsupported-parameter"); // a revision needs no Lens

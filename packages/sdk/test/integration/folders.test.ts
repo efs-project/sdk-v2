@@ -12,8 +12,10 @@ import {
   listFolder,
   lookupEntry,
   openObject,
+  openPath,
   resolvePath,
 } from "../../src/files/folders.ts";
+import { link, parseLink } from "../../src/names/links.ts";
 
 type SeedFile = { name: string; subjectId: SubjectId; headRecordId: RecordId };
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -218,6 +220,73 @@ describe("folder reads (fixture)", () => {
       ...docs,
       owner: seeder,
     });
+  });
+
+  it("openPath opens a path link from a folder's id, with the folder's creator in the default Lens", async () => {
+    const readme = seeded("readme.txt");
+    const parsed = parseLink(link({ kind: "path", folder: docs.directory, names: ["readme.txt"] }));
+    if (parsed.status !== "OK" || parsed.target.kind !== "path") throw new Error("not a path link");
+    const opened = await openPath(efs, parsed.target);
+    expect(opened).toMatchObject({
+      kind: "efs.path",
+      status: "PRESENT",
+      target: { kind: "file", subject: readme.subjectId },
+    });
+    // The shared root is a folder like any other: reached by its id, with names after it.
+    expect(
+      await openPath(efs, { kind: "path", folder: root.directory, names: ["docs", "readme.txt"] }),
+    ).toMatchObject({ status: "PRESENT", target: { kind: "file", subject: readme.subjectId } });
+    // The creator joins the default Lens after the reader: a reader and a base with no entries still see the
+    // creator's. Under the same Lens without the creator, nothing is there.
+    const stranger = `0x${"0".repeat(24)}${"12".repeat(20)}` as PrincipalId;
+    const nobody = { principals: [stranger] };
+    expect(
+      await openPath(
+        efs,
+        { kind: "path", folder: docs.directory, names: ["readme.txt"] },
+        { reader: stranger, base: nobody },
+      ),
+    ).toMatchObject({ status: "PRESENT" });
+    expect(
+      await resolvePath(efs, { from: docs, segments: ["readme.txt"] }, { lens: nobody }),
+    ).toMatchObject({ status: "ABSENT_PROVEN", segment: 0 });
+    // A Lens the link carries is used as it is: the sharer's view, with no creator added.
+    expect(
+      await openPath(efs, {
+        kind: "path",
+        folder: docs.directory,
+        names: ["readme.txt"],
+        lens: nobody,
+      }),
+    ).toMatchObject({ status: "ABSENT_PROVEN", segment: 0 });
+  });
+
+  it("openPath refuses names below a file id, and says when nothing has the id", async () => {
+    const readme = seeded("readme.txt");
+    // A file has no names below it: INVALID, never the file itself.
+    const below = await openPath(efs, {
+      kind: "path",
+      folder: readme.subjectId as unknown as RecordId,
+      names: ["inside"],
+    });
+    expect(below).toMatchObject({
+      kind: "efs.path",
+      status: "INVALID",
+      reason: { code: "UNSUPPORTED_PROFILE", retry: "never" },
+    });
+    expect(below).not.toHaveProperty("target");
+    // A record of another Type (a revision) is not a folder either.
+    expect(
+      await openPath(efs, { kind: "path", folder: readme.headRecordId, names: ["inside"] }),
+    ).toMatchObject({ kind: "efs.path", status: "INVALID" });
+    // Nothing has this id: openObject's own proven absence, not a missing name.
+    expect(
+      await openPath(efs, {
+        kind: "path",
+        folder: `0x${"9e".repeat(32)}` as RecordId,
+        names: ["readme.txt"],
+      }),
+    ).toMatchObject({ kind: "efs.object", status: "ABSENT_PROVEN" });
   });
 
   it("an author outside the Lens is not shown, and a Lens of nobody is refused", async () => {
