@@ -7,6 +7,14 @@
  * give (labelOf, topicName) under a Lens. See docs/design/tags-0.1.md.
  */
 
+export type {
+  FileName,
+  FileNameInput,
+  FileNameRow,
+  FileNamesOpts,
+  FileNamesResult,
+} from "./filenames.js";
+export { fileNames } from "./filenames.js";
 export type { Label, LabelResult, NameOpts, SegmentName, TopicNameResult } from "./names.js";
 export { labelOf, topicName } from "./names.js";
 export type {
@@ -54,6 +62,8 @@ export type {
   TopicStatementReview,
 } from "./statements.js";
 export { langTag, planBroader, planLabel, planSame } from "./statements.js";
+export type { Joined, SynonymOpts, SynonymsResult, WordSynonyms } from "./synonyms.js";
+export { topicSynonyms } from "./synonyms.js";
 export type { GrammarCheck, TopicId, TopicTypes } from "./topics.js";
 export {
   broaderAction,

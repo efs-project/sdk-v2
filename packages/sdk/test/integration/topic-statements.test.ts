@@ -5,18 +5,27 @@
 // label that is not a text skipped and any failed read UNKNOWN, never "no name".
 // Two accounts of anvil's public development mnemonic (indexes 20 and 21, used by no other test file), funded here.
 import { readFileSync } from "node:fs";
+import { keccak256 } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { ACTION, createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
-import { type PrincipalId, ZERO_WORD } from "../../src/core/hex.ts";
-import { ledgerViewsAbi } from "../../src/generated/abis.ts";
+import { type Address, type Hex, lower, type PrincipalId, ZERO_WORD } from "../../src/core/hex.ts";
+import { planCreateFile, planRemoveEntries } from "../../src/files/entries.ts";
+import { plain, publish } from "../../src/files/plan.ts";
+import { bitmapStoreAbi, indexAbi, ledgerViewsAbi } from "../../src/generated/abis.ts";
+import { PURPOSES } from "../../src/generated/constants.ts";
+import { keyPrincipal } from "../../src/protocol/keys.ts";
+import { fileNames } from "../../src/tags/filenames.ts";
 import { labelOf, topicName } from "../../src/tags/names.ts";
+import { planTag, planUntag } from "../../src/tags/plan.ts";
 import { planBroader, planLabel, planSame } from "../../src/tags/statements.ts";
+import { topicSynonyms } from "../../src/tags/synonyms.ts";
 import {
   labelKey,
   pathId,
   propertyAction,
+  sameAction,
   topicTypesOf,
   wordPageId,
 } from "../../src/tags/topics.ts";
@@ -37,6 +46,7 @@ let wd: Awaited<ReturnType<typeof writerFor>>;
 let C: PrincipalId;
 let D: PrincipalId;
 const lens = (...ps: PrincipalId[]) => ({ principals: ps });
+const STRANGER = `0x${"0".repeat(24)}${"57".repeat(20)}` as PrincipalId;
 
 const run = async (
   writer: typeof wc,
@@ -291,5 +301,239 @@ describe("same as and broader (fixture)", () => {
     expect(
       gasOf((await planBroader(efs, wd, { topic: ["nmtesla"], broader: ["nmcars"] })) as never),
     ).toBeGreaterThanOrEqual(694_701);
+  });
+});
+
+describe("a file's name in a topic (fixture)", () => {
+  const text = (x: string) => new TextEncoder().encode(x);
+  /** Place an existing file at `name` in `parent` (a raw FOLDER bind: no planner places someone else's file). */
+  const place = async (w: typeof wc, parentWord: Hex, name: string, file: Hex) => {
+    const nameType = efs.deployment.typeIds["files-name/2"] as Hex;
+    const p = await w.planActions({
+      actions: [
+        publish(nameType, text(name), "files-name/2").action,
+        plain({
+          kind: ACTION.BIND,
+          purpose: PURPOSES.folder,
+          subject: parentWord,
+          role: keccak256(text(name)),
+          target: file,
+        }).action,
+      ],
+      bodies: [publish(nameType, text(name), "files-name/2").body, "0x"],
+      effects: [{ code: "test.place", args: {} }],
+    });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect((await w.run(p.plan)).reconcile?.outcome).toBe("COMMITTED");
+  };
+  let F: Hex;
+  const cleoHome = () => ({
+    kind: "home" as const,
+    address: cleo.address.toLowerCase() as Address,
+  });
+
+  it("the tagger's own name for it, else its creator's, else the first from the Lens", async () => {
+    const made = await run(
+      wc,
+      planCreateFile(efs, wc, { folder: cleoHome(), name: "report.pdf", content: text("r") }),
+    );
+    F = (made["file"] as { subject: Hex }).subject;
+    await place(wd, keyPrincipal(dov.address), "dovs-copy.pdf", F); // Dov's own home
+    await place(wd, keyPrincipal(cleo.address), "dov-was-here.pdf", F); // newer, but in Cleo's home: not his own place
+    const named = await fileNames(
+      efs,
+      [{ file: F, tagger: D }, { file: F }, { file: F, tagger: STRANGER }],
+      {
+        lens: lens(C),
+      },
+    );
+    expect(named).toMatchObject({
+      status: "PRESENT",
+      rows: [
+        {
+          file: F,
+          creator: C,
+          complete: true,
+          name: {
+            text: "dovs-copy.pdf",
+            author: D,
+            why: "tagger",
+            folder: { kind: "home", address: dov.address.toLowerCase() },
+          },
+        },
+        { name: { text: "report.pdf", author: C, why: "creator" } },
+        { name: { text: "report.pdf", why: "creator" } }, // a tagger with no entry of their own
+      ],
+    });
+  });
+
+  it("an entry counts only while its author still binds the file there; nothing is null, proven when complete", async () => {
+    // Cleo removes her report.pdf: her backlink stays in the append-only list, but is no longer current.
+    await run(
+      wc,
+      planRemoveEntries(efs, wc, { entries: [{ folder: cleoHome(), name: "report.pdf" }] }),
+    );
+    expect(await fileNames(efs, [{ file: F }], { lens: lens(D) })).toMatchObject({
+      rows: [{ name: { author: D, why: "lens", text: "dov-was-here.pdf" } }], // Dov's newest
+    });
+    expect(await fileNames(efs, [{ file: F }], { lens: lens(STRANGER) })).toMatchObject({
+      rows: [{ name: null, complete: true }],
+    });
+    // Reading fewer entries than the list holds: a null is not proven.
+    expect(await fileNames(efs, [{ file: F }], { lens: lens(STRANGER), scan: 1 })).toMatchObject({
+      rows: [{ name: null, complete: false }],
+    });
+  });
+
+  it("a failed read is UNKNOWN, never no name", async () => {
+    const fail: Edit = () => ({ error: { code: -32000, message: "the node is sick" } });
+    const sick = createEfs({
+      rpcs: [fixture.rpcUrl],
+      deployment,
+      fetch: tampered({ [sel(indexAbi, "postingSliceOf")]: fail }),
+    });
+    expect(await fileNames(sick, [{ file: F }])).toMatchObject({ status: "UNKNOWN" });
+  });
+});
+
+describe("synonyms: gathering at both levels (fixture)", () => {
+  const pid = (words: string[]) => pathId(T, words);
+  it("word pages joined by same are word-level synonyms and joined places, found from either side, hop by hop", async () => {
+    await run(wc, planSame(efs, wc, { topic: ["sycar"], other: ["sycars"] }));
+    await run(wd, planSame(efs, wd, { topic: ["sycars"], other: ["syauto"] }));
+    const both = await topicSynonyms(efs, ["sycar"], { lens: lens(C, D) });
+    expect(both).toMatchObject({
+      status: "PRESENT",
+      topic: { words: ["sycar"] },
+      places: [
+        { id: pid(["sycars"]), kind: "word", hops: 1, author: C },
+        { id: pid(["syauto"]), kind: "word", hops: 2, author: D },
+      ],
+      words: [
+        {
+          word: "sycar",
+          synonyms: [
+            { word: "sycars", hops: 1 },
+            { word: "syauto", hops: 2 },
+          ],
+        },
+      ],
+      limited: false,
+      complete: true,
+    });
+    // From the other end: the same edges, found through the lists that name it.
+    expect(await topicSynonyms(efs, ["syauto"], { lens: lens(C, D) })).toMatchObject({
+      places: [
+        { id: pid(["sycars"]), hops: 1, author: D },
+        { id: pid(["sycar"]), hops: 2, author: C },
+      ],
+    });
+    // Only Cleo in the Lens: Dov's edge doesn't count.
+    expect(await topicSynonyms(efs, ["sycar"], { lens: lens(C) })).toMatchObject({
+      places: [{ id: pid(["sycars"]) }],
+    });
+    // One hop: the gathering says it stopped early.
+    expect(await topicSynonyms(efs, ["sycar"], { lens: lens(C, D), maxHops: 1 })).toMatchObject({
+      places: [{ id: pid(["sycars"]) }],
+      limited: true,
+    });
+  });
+
+  it("path to path and word page to path join places only, with no word-level effect", async () => {
+    await run(
+      wc,
+      planSame(efs, wc, {
+        topic: ["sybrands", "sytesla"],
+        other: ["sycompanies", "sytesla_motors"],
+      }),
+    );
+    await run(wd, planSame(efs, wd, { topic: ["sytsla"], other: ["sybrands", "sytesla"] }));
+    const r = await topicSynonyms(efs, ["sybrands", "sytesla"], { lens: lens(C, D) });
+    if (r.status !== "PRESENT") throw new Error(r.status);
+    expect([...r.places].sort((a, b) => a.id.localeCompare(b.id))).toEqual(
+      [
+        { id: pid(["sycompanies", "sytesla_motors"]), kind: "path", hops: 1, author: C },
+        { id: pid(["sytsla"]), kind: "word", hops: 1, author: D },
+      ].sort((a, b) => a.id.localeCompare(b.id)),
+    );
+    expect(r.words.map((w) => [w.word, w.synonyms.length])).toEqual([
+      ["sybrands", 0],
+      ["sytesla", 0],
+    ]);
+    // From the word page's side: the path is a joined place, but not a word-level synonym of the word.
+    expect(await topicSynonyms(efs, ["sytsla"], { lens: lens(C, D) })).toMatchObject({
+      places: [{ id: pid(["sybrands", "sytesla"]), kind: "path", hops: 1, author: D }, { hops: 2 }],
+      words: [{ word: "sytsla", synonyms: [] }],
+    });
+  });
+
+  it("an earlier Lens author's 'not the same' (MASKED) decides that edge; a failed read is UNKNOWN", async () => {
+    const notSame = await wd.planActions({
+      actions: [
+        {
+          ...sameAction(pid(["sycar"]), pid(["sycars"]), 0n),
+          kind: ACTION.UNBIND,
+          target: ZERO_WORD,
+        },
+      ],
+      bodies: ["0x"],
+      effects: [{ code: "test.notSame", args: {} }],
+    });
+    if (notSame.status !== "PLANNED") throw new Error(notSame.status);
+    expect((await wd.run(notSame.plan)).reconcile?.outcome).toBe("COMMITTED");
+    expect(await topicSynonyms(efs, ["sycar"], { lens: lens(D, C) })).toMatchObject({ places: [] });
+    expect(await topicSynonyms(efs, ["sycar"], { lens: lens(C, D) })).toMatchObject({
+      places: [{ id: pid(["sycars"]), author: C }, { id: pid(["syauto"]) }],
+    });
+    const fail: Edit = () => ({ error: { code: -32000, message: "the node is sick" } });
+    const sick = createEfs({
+      rpcs: [fixture.rpcUrl],
+      deployment,
+      fetch: tampered({ [sel(bitmapStoreAbi, "scopeHead")]: fail }),
+    });
+    expect(await topicSynonyms(sick, ["sycar"], { lens: lens(C) })).toMatchObject({
+      status: "UNKNOWN",
+    });
+  });
+});
+
+describe("tag saves name what they touch (fixture)", () => {
+  it("planTag, planUntag and planLabel saves carry their effect on the record, and resume reports it", async () => {
+    const thing = pathId(T, ["nmcars"]); // a topic is a thing a tag can be about
+    const tagged = await planTag(efs, wc, {
+      topic: ["nmfx", "nmdeep"],
+      targets: [{ kind: "topic", id: thing }],
+      number: 2,
+    });
+    if (tagged.status !== "PLANNED") throw new Error(tagged.status);
+    const done = await wc.runSequence(tagged.parts);
+    expect(done).toMatchObject({
+      state: "COMPLETE",
+      effect: {
+        kind: "tags.tag",
+        topic: pathId(T, ["nmfx", "nmdeep"]),
+        number: 2,
+        targets: [lower(thing)],
+      },
+    });
+    expect((await wc.resume(done.sequenceId)).effect).toEqual(done.effect);
+    const untagged = await planUntag(efs, wc, {
+      topic: ["nmfx", "nmdeep"],
+      targets: [{ kind: "topic", id: thing }],
+    });
+    if (untagged.status !== "PLANNED") throw new Error(untagged.status);
+    expect(await wc.runSequence(untagged.parts)).toMatchObject({
+      effect: { kind: "tags.untag", topic: pathId(T, ["nmfx", "nmdeep"]), targets: [lower(thing)] },
+    });
+    const labelled = await planLabel(efs, wc, { topic: ["nmfx"], lang: "en", text: "Effects" });
+    if (labelled.status !== "PLANNED") throw new Error(labelled.status);
+    const l = await wc.runSequence(labelled.parts);
+    expect(l.effect).toEqual({
+      kind: "tags.label",
+      subject: pathId(T, ["nmfx"]),
+      lang: "en",
+      remove: false,
+    });
+    expect((await wc.resume(l.sequenceId)).effect).toEqual(l.effect);
   });
 });

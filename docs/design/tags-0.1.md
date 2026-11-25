@@ -43,6 +43,20 @@
 >   that language. A label is used only when its target really is an admitted text/1 record (its id recomputed from
 >   the body read back); one that is not is skipped, counted, and the next author is tried. A failed read is UNKNOWN,
 >   never "no name";
+> - a file's name in a topic (spec §3.7): `fileNames(files, { lens, scan })` reads each file's FOLDER backlink list
+>   itself (no chain reader serves its entries): the newest `scan` (≤ 16) entries, each one's author, position, the
+>   author's current head there (an entry counts only while it still binds the file) and its name record. Order: the
+>   tagger's own entry in their home or a folder they created, else the creator's, else the first Lens author's, else
+>   null (the client shows media type and a short id); `complete` is false when a null is not proven;
+> - synonyms gathered at both levels (spec §3.5): `topicSynonyms(topic, { lens })` gives the places joined to a topic
+>   by "same as" (path ↔ path, word page ↔ path, word page ↔ word page) and each word's word-level synonyms (word page ↔
+>   word page only), found from both sides (each Lens author's own statements, and the list of statements naming the
+>   topic), each edge decided by the Lens law at its position (an earlier "not the same" decides it), at most 4 hops,
+>   16 topics and 16 entries per list, with `limited` and `complete` saying when it stopped short or can't prove an
+>   absence; ids are never merged;
+> - save effects for every tag planner: `tags.tag` / `tags.deny` (topic, number, targets), `tags.untag`,
+>   `tags.label`, `tags.same`, `tags.broader`, with registration-only parts folded into their save's kind
+>   (`tags.register` when a save is nothing else), on the record and through resume;
 >
 > **Not built yet:**
 > - the fold rule itself (James's ruling: the planners and readers take a `fold` step meanwhile, and check every
@@ -51,9 +65,8 @@
 >   give;
 > - synonym merging across "same as" lists;
 > - Lens-applied `tagsOf` (it reads no Lens today, and gives each place's exact yes-count);
-> - the name of a file shown in a topic (spec §3.7: its tagger's name for it, its creator's, the first from the Lens);
-> - gathering "same as" across both levels, and merged item reads across those lists (a multi-list cursor changes
->   `topicItems`' paging, so it is its own reviewed step).
+> - merged item reads across synonym lists (a multi-list cursor merged by statement sequence changes `topicItems`'
+>   paging, so it is its own reviewed step); `topicSynonyms` gives the lists to merge.
 
 ## 1. The model
 

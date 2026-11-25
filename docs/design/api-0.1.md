@@ -29,7 +29,7 @@
 | `@efs/sdk/links` | the route and link grammar alone (`link`, `parseLink`, `formatRealm`, `splitRealm`): no runtime dependencies, for startup routers | yes |
 | `@efs/sdk/files` | the Files reader (`resolve`, `list`, `lookup`, `open`, `read`, `stream`, `history`, …) | yes |
 | `@efs/sdk/actions` | `createWriter`, plans, `review`, `send`, `reconcile`, `memoryJournal` | no |
-| `@efs/sdk/tags` | topics, tags and homes: ids and the chain's word grammar, `planTag` / `planDeny` / `planUntag`, `planLabel` / `planSame` / `planBroader`, `topicItems` (Mine, Everyone, Raw), `tagsOf`, `topicChildren`, `wordPage`, `topicPath`, `labelOf` / `topicName`, the counts (docs/design/tags-0.1.md) | reads yes, planners no |
+| `@efs/sdk/tags` | topics, tags and homes: ids and the chain's word grammar, `planTag` / `planDeny` / `planUntag`, `planLabel` / `planSame` / `planBroader`, `topicItems` (Mine, Everyone, Raw), `tagsOf`, `topicChildren`, `wordPage`, `topicPath`, `labelOf` / `topicName`, `fileNames`, `topicSynonyms`, the counts (docs/design/tags-0.1.md) | reads yes, planners no |
 | `@efs/sdk/web` | browser helpers (no journal) | yes |
 | `@efs/sdk/web/journal` | `indexedDbJournal`, submission lock (Web Locks) | no |
 | `@efs/sdk/node` | `fileJournal`, file-system stores (Node condition only) | no |
@@ -1056,7 +1056,10 @@ takes a home as a parent (create, move to or from it, `via` from it, remove, res
 - `SequenceRecord.effect` names the save: `files.create`, `files.createFolder`, `files.move` (its moves),
   `files.remove` (`hide` and its entries), `files.restore`, `files.unhide` (its entries) or `files.hide` (its entries,
   each with the `author` whose entry it covers when planHideEntries knew it; planLoneHide's have none), each listing
-  the names it touches, so a listing knows which folders a save changes.
+  the names it touches, so a listing knows which folders a save changes. Tag saves: `tags.tag` / `tags.deny`
+  (`topic`, `number`, `targets`), `tags.untag` (`topic`, `targets`), `tags.label` (`subject`, `lang`, `remove`),
+  `tags.same` / `tags.broader` (`subject`, `other`, `remove`); a save's registration-only parts fold into its kind,
+  and a save that only registers is `tags.register` (`topics`).
 
 ## 8. Errors that do throw
 
