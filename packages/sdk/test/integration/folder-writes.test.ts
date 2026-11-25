@@ -684,7 +684,13 @@ describe("planHideEntries: a folder owner hides another author's entry (fixture)
     expect(p.parts.flatMap((x) => x.actions.map((a) => [a.kind, a.expectedRevision]))).toEqual([
       [ACTION.UNBIND, 0n],
     ]);
-    expect((await w.runSequence(p.parts)).state).toBe("COMPLETE");
+    expect(await w.runSequence(p.parts)).toMatchObject({
+      state: "COMPLETE",
+      effect: {
+        kind: "files.hide",
+        entries: [{ folder: here.directory, name: "spam.txt", author: B }],
+      },
+    });
 
     // Hidden in Alice-first views; Bob's own view still shows it.
     expect(

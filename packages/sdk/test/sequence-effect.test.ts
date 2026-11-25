@@ -97,6 +97,32 @@ describe("sequenceEffect for folder saves", () => {
     expect(sequenceEffect([part(r("a", "false"), r("b", "true"))])).toBeUndefined(); // one save, one hide
   });
 
+  it("hides and unhides list each entry once; a hide names the author it covers when the planner knew it", () => {
+    const AUTHOR = `0x${"0".repeat(24)}${"ee".repeat(20)}`;
+    const u = (name: string, st: string) => fx("files.unhide", { folder: DIR, name, ...stage(st) });
+    expect(sequenceEffect([part(u("a", "finish"), u("b", "finish"))])).toEqual({
+      kind: "files.unhide",
+      entries: [
+        { folder: DIR, name: "a" },
+        { folder: DIR, name: "b" },
+      ],
+    });
+    const h = (name: string, extra: Record<string, string>) =>
+      fx("files.hide", { folder: DIR, name, ...extra, ...stage("finish") });
+    expect(sequenceEffect([part(h("spam", { author: AUTHOR })), part(h("lone", {}))])).toEqual({
+      kind: "files.hide",
+      entries: [
+        { folder: DIR, name: "spam", author: AUTHOR },
+        { folder: DIR, name: "lone" },
+      ],
+    });
+    // A malformed author is a malformed effect, not an entry without one.
+    expect(sequenceEffect([part(h("spam", { author: "bob" }))])).toBeUndefined();
+    expect(
+      sequenceEffect([part(fx("files.unhide", { folder: "docs", name: "a" }))]),
+    ).toBeUndefined();
+  });
+
   it("is undefined for mixed kinds or a malformed folder effect", () => {
     expect(
       sequenceEffect([
@@ -137,6 +163,31 @@ describe("SequenceProgress.effect", () => {
     expect(await openJournal(efs, { journal }).pendingSequences()).toMatchObject([
       { sequenceId: stored.sequenceId, effect: { kind: "files.edit", file: FILE, revision: REV } },
     ]);
+  });
+
+  it("hide and unhide effects survive the journal codec and are listed from the record", async () => {
+    const DIR = `0x${"dd".repeat(32)}` as Hex;
+    const AUTHOR = `0x${"0".repeat(24)}${"ee".repeat(20)}` as Hex;
+    const journal = memoryJournal();
+    const effects = [
+      { kind: "files.unhide", entries: [{ folder: DIR, name: "a" }] },
+      {
+        kind: "files.hide",
+        entries: [
+          { folder: DIR, name: "b", author: AUTHOR },
+          { folder: DIR, name: "c" },
+        ],
+      },
+    ] as const;
+    for (const [i, effect] of effects.entries()) {
+      const stored = record({ sequenceId: `0x${String(i + 1).repeat(64)}` as Hex, effect });
+      expect(decodeSequenceRecord(encodeSequenceRecord(stored)).effect).toEqual(effect);
+      await journal.putSequence(stored);
+    }
+    const pending = await openJournal(efs, { journal }).pendingSequences();
+    expect(
+      pending.map((p) => p.effect).sort((a, b) => (a?.kind ?? "").localeCompare(b?.kind ?? "")),
+    ).toEqual([effects[1], effects[0]]);
   });
 
   it("is absent on a record written before it (the client keeps its account-wide hold for those)", async () => {

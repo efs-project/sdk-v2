@@ -1031,7 +1031,9 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   `hiddenBy`, and `shownAfter` for the place an entry leaves). Invalid names (checkName) and media types throw MISUSE
   before any read.
 - `SequenceRecord.effect` names the save: `files.create`, `files.createFolder`, `files.move` (its moves),
-  `files.remove` (`hide` and its entries) or `files.restore`, each listing the names it touches.
+  `files.remove` (`hide` and its entries), `files.restore`, `files.unhide` (its entries) or `files.hide` (its entries,
+  each with the `author` whose entry it covers when planHideEntries knew it; planLoneHide's have none), each listing
+  the names it touches, so a listing knows which folders a save changes.
 
 ## 8. Errors that do throw
 

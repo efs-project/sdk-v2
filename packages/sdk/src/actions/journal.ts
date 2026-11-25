@@ -104,7 +104,11 @@ export type SequenceEffect =
       entries: readonly { folder: Hex; name: string; target: Hex }[];
     }
   /** Entries restored to the target each had before it was removed. */
-  | { kind: "files.restore"; entries: readonly { folder: Hex; name: string; target: Hex }[] };
+  | { kind: "files.restore"; entries: readonly { folder: Hex; name: string; target: Hex }[] }
+  /** Your hides removed (Unhide): each name falls through to the next author's entry again. */
+  | { kind: "files.unhide"; entries: readonly { folder: Hex; name: string }[] }
+  /** Names hidden (planHideEntries), each with the author whose entry the hide covers when the planner knew it. */
+  | { kind: "files.hide"; entries: readonly { folder: Hex; name: string; author?: Hex }[] };
 
 export interface SequenceRecord {
   schema: "efs-sdk-sequence/1";

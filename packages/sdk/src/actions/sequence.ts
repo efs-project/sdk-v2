@@ -149,8 +149,8 @@ const WORD = /^0x[0-9a-fA-F]{64}$/;
 
 /**
  * What a save is for, from its parts' effects: one file edit (every `files.edit` effect names the same file and
- * revision), one created file or folder, or the entries a move, remove or restore touches (each listed once). Else
- * undefined: no Files effect, a malformed one, or effects of different kinds (nothing single to name).
+ * revision), one created file or folder, or the entries a move, remove, restore, hide or unhide touches (each listed
+ * once). Else undefined: no Files effect, a malformed one, or effects of different kinds (nothing single to name).
  */
 export function sequenceEffect(parts: readonly SequencePartInput[]): SequenceEffect | undefined {
   const effects = parts.flatMap((p) => p.effects).filter((e) => e.code.startsWith("files."));
@@ -248,6 +248,19 @@ export function sequenceEffect(parts: readonly SequencePartInput[]): SequenceEff
         return p && target ? { ...p, target } : undefined;
       });
       return entries ? { kind: "files.restore", entries } : undefined;
+    }
+    case "files.unhide": {
+      const entries = each(place);
+      return entries ? { kind: "files.unhide", entries } : undefined;
+    }
+    case "files.hide": {
+      const entries = each((e) => {
+        const p = place(e);
+        if (!p || e.args["author"] === undefined) return p;
+        const author = word(e, "author");
+        return author ? { ...p, author } : undefined; // a malformed author is a malformed effect
+      });
+      return entries ? { kind: "files.hide", entries } : undefined;
     }
     default:
       return undefined;

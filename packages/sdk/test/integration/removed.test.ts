@@ -367,7 +367,15 @@ describe("planLoneHide (@efs/sdk/testing, fixture)", () => {
       [ACTION.PUBLISH, 0n],
       [ACTION.UNBIND, 0n],
     ]);
-    expect((await w.runSequence(first.parts)).state).toBe("COMPLETE");
+    const hid = await w.runSequence(first.parts);
+    expect(hid.state).toBe("COMPLETE");
+    // The save names the folder it touched, so another tab can re-list it.
+    expect(hid.effect).toEqual({
+      kind: "files.hide",
+      entries: [{ folder: here.directory, name: "lone.txt" }],
+    });
+    // It is on the sequence record, so a resume (a reload, another tab) reports it too.
+    expect((await w.resume(hid.sequenceId)).effect).toEqual(hid.effect);
     expect(await rowAt("lone.txt")).toMatchObject({
       state: "MASKED",
       last: "NEVER_BOUND",
@@ -384,9 +392,18 @@ describe("planLoneHide (@efs/sdk/testing, fixture)", () => {
       code: "MISUSE",
     });
     // After Unhide the name can be hidden again (a retried test), now without the name record.
-    await run(
-      planUnhideEntries(efs, w, { entries: [{ folder: here, name: "lone.txt" }] }) as never,
+    const unhid = await w.runSequence(
+      (
+        (await planUnhideEntries(efs, w, { entries: [{ folder: here, name: "lone.txt" }] })) as {
+          parts: Parameters<typeof w.runSequence>[0];
+        }
+      ).parts,
     );
+    expect(unhid).toMatchObject({
+      state: "COMPLETE",
+      effect: { kind: "files.unhide", entries: [{ folder: here.directory, name: "lone.txt" }] },
+    });
+    expect((await w.resume(unhid.sequenceId)).effect).toEqual(unhid.effect);
     const again = await planLoneHide(efs, w, { folder: here, name: "lone.txt" });
     if (again.status !== "PLANNED") throw new Error(again.status);
     expect(again.review.records).toBe(0);
