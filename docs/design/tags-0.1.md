@@ -18,6 +18,8 @@
 >   bounds from the gas model's `reads` section;
 > - `tagsOf`, `topicChildren` (each child's word read back and checked against its parent; an optional fold skips a
 >   word that is not its own fold), `wordPage`, `topicPath`, and `placeCount` / `authorCount` ("about" figures);
+>   a word nobody has used (`wordPage`) or a topic nobody registered (`topicChildren`) is ABSENT_PROVEN, never a
+>   refusal, and a registered topic with nothing below it is an empty, finished page;
 > - the hidden-child rule (section 5.4): in a roll-up through a Lens, a child topic the first Lens author with a
 >   stance hides where it hangs hides everything filed at or below it (`counts.hiddenByChild`);
 > - every reader reply is checked before use, and a failed check is the endpoint's fault (RPC_ERROR), never a row:

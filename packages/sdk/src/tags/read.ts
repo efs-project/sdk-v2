@@ -856,6 +856,17 @@ export type LookupPage<R> =
     }
   | {
       kind: "efs.lookupPage";
+      /**
+       * The reader proved the directory's own record absent at the basis: wordPage, no topic-word/1 record for the
+       * word (nobody has used it); topicChildren, no registered topic at the place (nothing can be below it). Never a
+       * refusal, and never "couldn't be read": an empty answer that is proven. tagsOf never answers it.
+       */
+      status: "ABSENT_PROVEN";
+      basis: Basis;
+      evidence: Evidence;
+    }
+  | {
+      kind: "efs.lookupPage";
       status: "UNKNOWN" | "INVALID";
       reason: Reason;
       basis?: Basis;
@@ -906,6 +917,7 @@ async function paged<R, X>(
   const ctx: Ctx = { efs, requests: 0 };
   type Out =
     | { kind: "page"; rows: R[]; finished: boolean; next: Hex; notOwnFold: number }
+    | { kind: "absent" }
     | { kind: "refused"; status: "UNKNOWN" | "INVALID"; reason: Reason };
   const r = await onEndpoint<Out>(
     efs._internal.pool,
@@ -922,6 +934,16 @@ async function paged<R, X>(
       const dec = decoded<[RawInfo, readonly X[]]>(topicLookupReaderAbi, fn, out);
       if (!dec.ok) return dec;
       const [info, raw] = dec.value;
+      // A word page's or a directory's own record proven absent (TopicLookupReader._place): nothing is there.
+      if (fn !== "about" && chainStatus(Number(info.q.status)) === "ABSENT_PROVEN") {
+        if (raw.length > 0)
+          return {
+            ok: false,
+            retryElsewhere: true,
+            reason: reason("RPC_ERROR", "transient", "an absent directory came with rows"),
+          };
+        return { ok: true, value: { kind: "absent" } };
+      }
       const refused = refusal(Number(info.q.status));
       if (refused) return { ok: true, value: { kind: "refused", ...refused } };
       const st = SCAN[Number(info.scanStatus)];
@@ -972,6 +994,8 @@ async function paged<R, X>(
   if (!r.ok)
     return { kind: "efs.lookupPage", status: "UNKNOWN", reason: r.reason, basis, evidence };
   const v = r.value;
+  if (v.kind === "absent")
+    return { kind: "efs.lookupPage", status: "ABSENT_PROVEN", basis, evidence };
   if (v.kind === "refused")
     return { kind: "efs.lookupPage", status: v.status, reason: v.reason, basis, evidence };
   return {

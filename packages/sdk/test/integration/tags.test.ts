@@ -421,6 +421,17 @@ describe("tag reads refuse a tampered endpoint (fixture)", () => {
     });
   });
 
+  it("a directory claimed absent that still lists rows: UNKNOWN, never an absence or a page", async () => {
+    const lying = forged(topicLookupReaderAbi, "children", (out) => [
+      { ...(out[0] as Record<string, unknown>), q: { ...(out[0] as { q: object }).q, status: 3 } }, // ABSENT_PROVEN
+      out[1],
+    ]);
+    expect(await topicChildren(lying, ["brands"])).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR" },
+    });
+  });
+
   it("a page that is not the end but gives no resume point: UNKNOWN, never a cursor that can't move", async () => {
     const lying = forged(topicLookupReaderAbi, "children", (out) => [
       { ...(out[0] as Record<string, unknown>), next: "0x" },
@@ -485,13 +496,32 @@ describe("tags: the review's cases (fixture)", () => {
   it("a word page with limit 1: the root topic alone first (reading nothing is honest there), then the rest", async () => {
     await run(wa, planTag(efs, wa, { topic: ["x"], targets: [files[0] as never] }) as never);
     const first = await wordPage(efs, "x", { limit: 1 });
-    if (first.status !== "PRESENT") throw new Error(`${first.status}: ${first.reason.detail}`);
+    if (first.status !== "PRESENT")
+      throw new Error(`${first.status}: ${"reason" in first ? first.reason.detail : ""}`);
     expect(first.rows.map((r) => r.topic)).toEqual([pathId(T, ["x"])]);
     expect(first.finished).toBe(false);
     const rest = await wordPage(efs, "x", { limit: 1, cursor: first.next as never });
     expect(rest.status === "PRESENT" && rest.rows.map((r) => r.topic)).toEqual([
       pathId(T, ["brands", "x"]),
     ]);
+  });
+
+  it("a word nobody has used, and a topic nobody registered, are ABSENT_PROVEN; a leaf's children are empty and finished", async () => {
+    // The reader proved there is no topic-word/1 record: no place uses the word. Never a refusal.
+    for (const w of ["zzz", "vitalik.eth"])
+      expect(await wordPage(efs, w)).toMatchObject({
+        kind: "efs.lookupPage",
+        status: "ABSENT_PROVEN",
+      });
+    expect(await topicChildren(efs, ["never", "registered"])).toMatchObject({
+      status: "ABSENT_PROVEN",
+    });
+    // A registered topic with nothing below it: an empty list that ended, not an absence.
+    expect(await topicChildren(efs, ["brands", "x"])).toMatchObject({
+      status: "PRESENT",
+      rows: [],
+      finished: true,
+    });
   });
 
   it("a Lens author's hidden child topic hides everything filed at or below it from that Lens's roll-up", async () => {
