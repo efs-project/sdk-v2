@@ -25,9 +25,10 @@ What trips people up:
   own entry, then its creator's, then the first from the Lens. `complete: false` means a missing name is not proven.
 - **Labels are per language.** `planLabel` keys a label by its BCP 47 tag, lowercased (`"EN"` and `"en"` are one).
   `topicName` tries the reader's languages in order, and falls back to the word itself (`source: "none"`).
-- **A home's owner moves.** `openHome` reads the address's own identity at one block: a key account's address, a
-  contract's Realm principal (a Safe's home shows the Safe's own entries). It changes when code is deployed or a
-  7702 delegation is set, so read it with the home and never cache it across reads.
+- **A home's owner moves.** `openHome` reads the address's own identity at one block: a key account's address
+  (an EIP-7702 account with the standard designator included), a contract's Realm principal (a Safe's home shows the
+  Safe's own entries). It changes when contract code is deployed at the address (a counterfactual Safe) or removed,
+  so read it with the home and never cache it across reads.
 - **Show people, not ids.** `efs.lens.displayOf(principal)` gives the checksummed address of a key principal, and a
   contract's address only for one you name in `contracts`.
 - **Every save names what it touched.** A tag, label or folder save's `effect` (`tags.tag`, `tags.label`,
