@@ -1388,8 +1388,11 @@ async function counted<C>(
 }
 
 /**
- * A place's two counts: `positionsEver`, the distinct things ever filed there (or below it), shown as "about N"
- * (it includes things nobody says yes to now, so it is never the number of rows Everyone returns), and `filings`.
+ * A place's two counts, for one of two lists, never both: exactly at the place, or with `below: true` strictly below
+ * it (statements at its proper descendants; the place itself is left out). `positionsEver` is the distinct things
+ * ever filed in that list, shown as "about N" (it includes things nobody says yes to now, so it is never the number of
+ * rows Everyone returns), and `filings` its statements. There is no "here and below" count: a thing filed at both
+ * levels is in both lists, so exact + below is an upper bound on it and the larger of the two a lower bound.
  */
 export function placeCount(
   efs: Efs,
