@@ -33,7 +33,15 @@ import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
 import { positionKey } from "../protocol/keys.js";
 import { chainStatus } from "../protocol/status.js";
-import { checkWord, homeId, pathId, type TopicId, topicTypesOf, wordPageId } from "./topics.js";
+import {
+  checkWord,
+  childId,
+  homeId,
+  pathId,
+  type TopicId,
+  topicTypesOf,
+  wordPageId,
+} from "./topics.js";
 
 /** A place: a topic by its words or its id, or a home (an address). */
 export type TopicPlace =
@@ -457,6 +465,15 @@ export async function topicItems(
         counts.positionsEver = BigInt(info.positionsEver);
         counts.repeatsSkipped += Number(info.repeatsSkipped);
         for (const x of raw) {
+          // Every row is checked before it is used: its position must be its own (topic, thing); an exact read's
+          // topic must be the place; a decider must be a Lens index naming that author.
+          const bad = rowFault(view, x, id, o.below === true, lensList);
+          if (bad)
+            return {
+              ok: false,
+              retryElsewhere: true,
+              reason: reason("RPC_ERROR", "transient", bad),
+            };
           const thing = lower(x.thing);
           if (seen.has(thing)) {
             dropped++;
@@ -535,6 +552,28 @@ export async function topicItems(
   };
 }
 
+/** Why a reader's row can't be what it says, or null when it holds together. */
+function rowFault(
+  view: TopicView,
+  x: RawMine | RawPlace,
+  place: Hex,
+  below: boolean,
+  lens: readonly PrincipalId[],
+): string | null {
+  if (lower(positionKey(PURPOSES.tag, lower(x.topic), lower(x.thing))) !== lower(x.position))
+    return "a row's position does not match its (topic, thing)";
+  if (!below && lower(x.topic) !== place)
+    return "an exact read returned a row filed at another place";
+  const d = Number(x.decider);
+  if (view === "mine") {
+    const m = x as RawMine;
+    if (lens[d] === undefined || lower(m.principalId) !== lens[d])
+      return "a row names a deciding author who is not at that Lens index";
+  } else if (view === "everyone" && d !== NO_DECIDER && lens[d] === undefined)
+    return "a row names a deciding Lens index past the Lens";
+  return null;
+}
+
 function rowOf(view: TopicView, x: RawMine | RawPlace, lens: readonly PrincipalId[]): TopicRow {
   const base = {
     thing: lower(x.thing),
@@ -547,10 +586,11 @@ function rowOf(view: TopicView, x: RawMine | RawPlace, lens: readonly PrincipalI
     return {
       ...base,
       number: Number(m.number),
+      // The author comes from the Lens, by index (rowFault checked the reply names the same one).
       decider: {
         kind: "lens",
         index: Number(m.decider),
-        author: lower(m.principalId) as PrincipalId,
+        author: lens[Number(m.decider)] as PrincipalId,
         number: Number(m.number),
       },
     };
@@ -710,6 +750,22 @@ async function paged<R, X>(
           retryElsewhere: true,
           reason: reason("RPC_ERROR", "transient", "an unknown scan status"),
         };
+      if (st !== "EXHAUSTED" && (info.next === "0x" || info.next.length <= 2))
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason(
+            "RPC_ERROR",
+            "transient",
+            "a page that is not the end gave no resume point",
+          ),
+        };
+      if (Number(info.scanned) === 0 && st !== "EXHAUSTED")
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason("RPC_ERROR", "transient", "a page read nothing and did not end"),
+        };
       const shaped = await shape(s, basis, ctx, raw);
       if (!shaped.ok) return shaped;
       return {
@@ -750,29 +806,43 @@ async function paged<R, X>(
 export function tagsOf(efs: Efs, thing: Hex, o: PlacesOpts = {}): Promise<LookupPage<FiledRow>> {
   if (!/^0x[0-9a-fA-F]{64}$/.test(thing))
     throw misuse("a thing is 32 bytes of hex (an id, or a padded address)");
-  return paged<FiledRow, RawPlace>(efs, "about", lower(thing), o, async (_s, _b, _c, rows) => ({
-    ok: true,
-    value: {
-      rows: rows.map((p) => ({
-        topic: lower(p.topic),
-        position: lower(p.position),
-        statements: BigInt(p.statements),
-        yes: BigInt(p.yes),
-        shown: BigInt(p.yes) > 0n,
-        ...(Number(p.sampled) > 0
-          ? {
-              sample: {
-                sampled: Number(p.sampled),
-                yes: Number(p.sampleYes),
-                no: Number(p.sampleNo),
-                incomplete: p.incomplete,
-              },
-            }
-          : {}),
-      })),
-      notOwnFold: 0,
-    },
-  }));
+  const asked = lower(thing);
+  return paged<FiledRow, RawPlace>(efs, "about", asked, o, async (_s, _b, _c, rows) => {
+    // Each place must name the thing asked about, and its position must be (topic, that thing).
+    for (const p of rows)
+      if (
+        lower(p.thing) !== asked ||
+        lower(positionKey(PURPOSES.tag, lower(p.topic), asked)) !== lower(p.position)
+      )
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason("RPC_ERROR", "transient", "a listed place does not name this thing"),
+        };
+    return {
+      ok: true,
+      value: {
+        rows: rows.map((p) => ({
+          topic: lower(p.topic),
+          position: lower(p.position),
+          statements: BigInt(p.statements),
+          yes: BigInt(p.yes),
+          shown: BigInt(p.yes) > 0n,
+          ...(Number(p.sampled) > 0
+            ? {
+                sample: {
+                  sampled: Number(p.sampled),
+                  yes: Number(p.sampleYes),
+                  no: Number(p.sampleNo),
+                  incomplete: p.incomplete,
+                },
+              }
+            : {}),
+        })),
+        notOwnFold: 0,
+      },
+    };
+  });
 }
 
 const countRow = (c: RawCount, word?: string): PlaceCountRow => ({
@@ -833,6 +903,7 @@ export function topicChildren(
 ): Promise<LookupPage<PlaceCountRow>> {
   const { id, topic } = placeId(efs, place, o.fold);
   if (!topic) throw misuse("a home has no child topics");
+  const t = topicTypesOf(efs.deployment);
   return paged<PlaceCountRow, RawCount>(efs, "children", id, o, async (s, basis, ctx, rows) => {
     const recs = await bodies(
       s,
@@ -868,6 +939,16 @@ export function topicChildren(
           retryElsewhere: true,
           reason: reason("RPC_ERROR", "transient", "a listed word breaks the grammar"),
         };
+      if (childId(t, id, w) !== lower(c.place))
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason(
+            "RPC_ERROR",
+            "transient",
+            "a listed child's id is not (this topic, its word)",
+          ),
+        };
       if (o.fold) {
         const f = o.fold(w);
         if (!f.ok || f.word !== w) {
@@ -893,11 +974,31 @@ export function wordPage(
     if (!f.ok) throw misuse(`the word does not fold (${f.rule})`);
     w = f.word;
   }
-  const page = wordPageId(topicTypesOf(efs.deployment), w);
-  return paged<PlaceCountRow, RawCount>(efs, "wordPage", page, o, async (_s, _b, _c, rows) => ({
-    ok: true,
-    value: { rows: rows.map((c) => countRow(c, w)), notOwnFold: 0 },
-  }));
+  const t = topicTypesOf(efs.deployment);
+  const page = wordPageId(t, w);
+  return paged<PlaceCountRow, RawCount>(efs, "wordPage", page, o, async (s, basis, ctx, rows) => {
+    // Each place must be the root topic /<word> itself, or a path record whose id is (its parent, this word's page):
+    // its parent comes from its record, and its id is recomputed from both.
+    const deeper = rows.filter((c) => lower(c.place) !== page);
+    const recs = await bodies(
+      s,
+      basis,
+      ctx,
+      deeper.map((c) => c.place),
+      64,
+    );
+    if (!recs.ok) return recs;
+    for (const [i, c] of deeper.entries()) {
+      const b = recs.value[i] as Uint8Array;
+      if (b.length !== 64 || childId(t, lower(bytesToHex(b.subarray(0, 32))), w) !== lower(c.place))
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason("RPC_ERROR", "transient", "a listed place is not a topic of this word"),
+        };
+    }
+    return { ok: true, value: { rows: rows.map((c) => countRow(c, w)), notOwnFold: 0 } };
+  });
 }
 
 export type TopicPathResult =

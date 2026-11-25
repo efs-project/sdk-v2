@@ -5,6 +5,7 @@
 // across pages; and restore's alsoPlaced, which tags never change. Two accounts of anvil's public development
 // mnemonic (indexes 13 and 14, used by no other test file), funded here.
 import { readFileSync } from "node:fs";
+import { decodeFunctionResult, encodeFunctionResult } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
@@ -17,6 +18,7 @@ import {
   planRestoreEntries,
 } from "../../src/files/entries.ts";
 import type { FolderRef } from "../../src/files/folders.ts";
+import { topicLookupReaderAbi, topicMineReaderAbi } from "../../src/generated/abis.ts";
 import {
   authorCount,
   homeId,
@@ -33,6 +35,7 @@ import {
   topicTypesOf,
   wordPage,
 } from "../../src/tags/index.ts";
+import { type Edit, sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -331,5 +334,91 @@ describe("tags (fixture)", () => {
     if (after.status !== "PLANNED") throw new Error(after.status);
     expect(after.review.entries[0]?.alsoPlaced).toBe(before.review.entries[0]?.alsoPlaced);
     expect(after.review.entries[0]?.alsoPlaced).toBe(0);
+  });
+});
+
+/** The fixture behind a fetch whose `fn` replies (of `abi`) pass through `f`, decoded and re-encoded. */
+const forged = (abi: readonly unknown[], fn: string, f: (out: unknown[]) => unknown[]) => {
+  const edit: Edit = (result) => {
+    const out = decodeFunctionResult({
+      abi: abi as never,
+      functionName: fn,
+      data: result,
+    } as never) as unknown[];
+    return encodeFunctionResult({
+      abi: abi as never,
+      functionName: fn,
+      result: f(out) as never,
+    } as never) as Hex;
+  };
+  return createEfs({
+    rpcs: [fixture.rpcUrl],
+    deployment,
+    fetch: tampered({ [sel(abi, fn)]: edit }),
+  });
+};
+const stranger = `0x${"0".repeat(24)}${"56".repeat(20)}` as PrincipalId;
+const rowsOf = (out: unknown[]) => out[1] as Record<string, unknown>[];
+
+describe("tag reads refuse a tampered endpoint (fixture)", () => {
+  const words = ["brands", "x"];
+  it("a row whose position is not its (topic, thing): UNKNOWN, never a row", async () => {
+    const lying = forged(topicMineReaderAbi, "mine", (out) => [
+      out[0],
+      rowsOf(out).map((r) => ({ ...r, thing: `0x${"77".repeat(32)}` })),
+    ]);
+    expect(
+      await topicItems(lying, words, { view: "mine", lens: { principals: [A] } }),
+    ).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR" },
+    });
+  });
+
+  it("a Mine row that names an author who is not at that Lens index: UNKNOWN, never a borrowed author", async () => {
+    const lying = forged(topicMineReaderAbi, "mine", (out) => [
+      out[0],
+      rowsOf(out).map((r) => ({ ...r, principalId: stranger })),
+    ]);
+    expect(
+      await topicItems(lying, words, { view: "mine", lens: { principals: [A] } }),
+    ).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR" },
+    });
+  });
+
+  it("tagsOf: a place whose position does not name the thing: UNKNOWN", async () => {
+    const lying = forged(topicLookupReaderAbi, "about", (out) => [
+      out[0],
+      rowsOf(out).map((r) => ({ ...r, position: `0x${"66".repeat(32)}` })),
+    ]);
+    expect(await tagsOf(lying, files[3]?.subject as Hex)).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR" },
+    });
+  });
+
+  it("a word page listing a place whose word is another: UNKNOWN, never labelled with the word asked for", async () => {
+    const other = pathId(T, ["brands", "y"]);
+    const lying = forged(topicLookupReaderAbi, "wordPage", (out) => [
+      out[0],
+      rowsOf(out).map((r) => ({ ...r, place: other })),
+    ]);
+    expect(await wordPage(lying, "x")).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR" },
+    });
+  });
+
+  it("a page that is not the end but gives no resume point: UNKNOWN, never a cursor that can't move", async () => {
+    const lying = forged(topicLookupReaderAbi, "children", (out) => [
+      { ...(out[0] as Record<string, unknown>), next: "0x" },
+      out[1],
+    ]);
+    expect(await topicChildren(lying, ["brands"], { limit: 1 })).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR" },
+    });
   });
 });
