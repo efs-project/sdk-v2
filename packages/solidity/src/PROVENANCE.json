@@ -3,7 +3,7 @@
   "note": "Copied byte for byte from efs-project/contracts-v2 at `commit` by tools/solidity.mjs. Do not edit.",
   "contracts": {
     "repo": "https://github.com/efs-project/contracts-v2",
-    "commit": "07818d1e90c5bbfefb85bb47f8935a446a6da6ad"
+    "commit": "e90c7d802f3c354b93dbf9b23baa8d3c867bf79d"
   },
   "files": {
     "interfaces/Actions.sol": "ea28464813d5d9cfe42b58bd8a6d5e0619b8674abc66f7bfa664ee1707c2c9b0",
@@ -31,6 +31,6 @@
     "interfaces/Views.sol": "15c1279e351358f246ada93c37ee0d588cf2039d6b29a774869cfc1a071720b8",
     "lib/Keys.sol": "a3b8b5f6c92c3e567ed5378453672ec6579ff30d88a862b990d8c082bcfc648f",
     "lib/EfsNative.sol": "804e64325f5f06b2568a0a9476d0aa16c4f01915d4546650754632406a2a89b4",
-    "lib/EfsFiles.sol": "7c2a3e981b39889e6e5c1745bfa765e049dc7cf4c71265cb789e46762bc7cdbc"
+    "lib/EfsFiles.sol": "5598e3a2819c74bb8f512accd8120dc8936fee86e4e1528769e1ce42a7040e97"
   }
 }

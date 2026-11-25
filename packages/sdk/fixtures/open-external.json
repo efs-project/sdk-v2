@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "07818d1e90c5bbfefb85bb47f8935a446a6da6ad",
+  "contractsCommit": "e90c7d802f3c354b93dbf9b23baa8d3c867bf79d",
   "case": "open-external",
   "note": "openFile on a files-external/1 file with a web3:// locator (docs/remote.txt)",
   "result": {
@@ -8,7 +8,7 @@
     "status": "PRESENT",
     "file": {
       "file": "0xf9ad02bbc5ce96d4893b1357b259e0321d7ae7b0418a38f43ec323106dc88385",
-      "revision": "0x2938e512bcc75a4e8653dc8ae77abbdc2986fe9de144b7ffbd5f5f0e7291fa77",
+      "revision": "0x376647d8cac1ac2432213227f5a77a917a34eb74b1ac791c6baac32fd86f49f3",
       "author": "0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
       "size": {
         "$efs:bigint": "51"
@@ -19,17 +19,21 @@
         {
           "scheme": "web3",
           "uri": "web3://0x0000000000000000000000000000000000000000:31337/remote.txt",
-          "descriptor": "0x78541dd36e01b180e0eb36d60f107b99f71a42342cc96f8d433c178b24883c9b"
+          "descriptor": "0x92b89d01f6f0623c3287498a9d0d418597e9b39bd5d3fe08352b30d103443034"
         }
-      ]
+      ],
+      "mediaType": "text/plain; charset=utf-8"
     },
     "basis": {
       "chainId": 31337,
       "blockNumber": {
         "$efs:bigint": "62"
       },
-      "blockHash": "0x3d61a3545a0a7443eca2824d1a25c8ea23cc1351be32aa95dc64702ba6510542",
-      "executionSet": "0x5440a17bac803bdcd97568ccffe1d4f3becb0b28ccafaa63932f651fd2be9d44",
+      "blockHash": "0xb841d5a88c99c82704de719b9d05da762286e9bb4667d42c3e45cd54dd1b763a",
+      "timestamp": {
+        "$efs:bigint": "1795595851"
+      },
+      "executionSet": "0x9c4692dc8db33e573d80dc6e90bb1cc50e17cacd6a9355556a69ae7f3c8d53a0",
       "endpoint": "local fixture"
     },
     "evidence": {
@@ -37,12 +41,12 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 0
+          "ms": 1
         },
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 2
+          "ms": 1
         }
       ],
       "requests": 4

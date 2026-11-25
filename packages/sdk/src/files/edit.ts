@@ -9,9 +9,11 @@
 //      never silently overwrites a revision the person did not see);
 //   2. the editor's own HEAD binding, whose revision the bind carries as expectedRevision: if another save by the
 //      same account lands first, the ledger refuses this one (E_CAS) and it is planned again;
-//   3. the content: inline in the revision when it fits one record body, otherwise canonical chunks (efs/chunking/1)
-//      under a files-content/1 descriptor, or a files-external/1 locator. The records are split into publications
-//      under the per-transaction gas cap, the finish (descriptor, revision, HEAD bind) kept in one publication.
+//   3. the media type: the caller's (normalized), or else the base revision's, read at the same basis;
+//   4. the content: inline in the revision when it fits one record body and declares no media type, otherwise
+//      canonical chunks (efs/chunking/1) under a files-content/1 descriptor, or a files-external/1 locator; a
+//      descriptor carries the media type. The records are split into publications under the per-transaction gas cap,
+//      the finish (descriptor, revision, HEAD bind) kept in one publication.
 // The result is always a list of parts for writer.runSequence, one part in the common case.
 import { decodeFunctionResult, encodeFunctionData, keccak256, sha256 } from "viem";
 import type { SequencePartInput } from "../actions/sequence.js";
@@ -41,7 +43,14 @@ import { ledgerReadsAbi } from "../generated/abis.js";
 import { ACTION, PURPOSES } from "../generated/constants.js";
 import { bindingKey, positionKey, recordId } from "../protocol/keys.js";
 import { chainStatus } from "../protocol/status.js";
-import { type Ctx, type FileRef, headUnderLens, type RevisionRef } from "./bytes.js";
+import {
+  type Ctx,
+  type FileRef,
+  headUnderLens,
+  type RevisionRef,
+  resolveRevision,
+} from "./bytes.js";
+import { normalizeMediaType } from "./media.js";
 
 /** Content stored elsewhere: the revision names a files-external/1 locator and its sha256. */
 export interface ExternalContent {
@@ -59,8 +68,16 @@ export interface EditFileInput {
   content: Uint8Array | ExternalContent;
   /** The Lens the person edited in, for the base check. Default: the client's default Lens. */
   lens?: Lens;
-  /** files-content/1 media code (0 = unspecified). */
-  media?: bigint;
+  /**
+   * The media type to declare, e.g. "image/png" or "text/html; charset=utf-8". The type and subtype are lowercased and
+   * the parameters kept as given; a string the chain would refuse throws MISUSE before anything is read, so it is
+   * never a revert. Omitted: keep the base revision's (read at the planning block). "": declare none (unknown).
+   *
+   * Only a descriptor carries a media type, so content small enough to sit inline is stored as one chunk under a
+   * files-content/1 descriptor when it declares one (layout "chunk": more records and gas, shown in the review). Pass
+   * "" to keep a small file inline, with no media type.
+   */
+  mediaType?: string;
 }
 
 export interface EditFileOpts extends CallOpts {
@@ -93,6 +110,8 @@ export interface EditReview {
   size: bigint;
   sha256: Hex;
   layout: EditLayout;
+  /** The media type the new revision declares ("" = none: always for inline layout). */
+  mediaType: string;
   parts: number;
   /** One approval per part, or one in all with an atomic EIP-5792 wallet. */
   prompts: { sequential: number; atomicBatch: 1 };
@@ -207,6 +226,15 @@ export async function planEditFile(
     if (content.length < 0n || content.length >= 1n << 256n)
       throw new EfsFault("MISUSE", "length must be a uint256");
   }
+  let asked: string | undefined;
+  if (input.mediaType !== undefined) {
+    const m = normalizeMediaType(input.mediaType);
+    if (!m.ok)
+      throw new EfsFault("MISUSE", `invalid media type: ${m.reason}`, {
+        details: { mediaType: input.mediaType, code: m.code },
+      });
+    asked = m.mediaType;
+  }
 
   const maxParts = o.maxParts ?? 64;
   // Refuse before chunking anything: no publication carries more than maxBodyBytesPerPublication body bytes.
@@ -224,67 +252,6 @@ export async function planEditFile(
       ),
     };
 
-  // ---- the content records (pure: no chain reads)
-  const records: PlannedAction[] = [];
-  let descriptor: { body: Uint8Array; typeId: Hex; shape: string } | undefined;
-  let layout: EditLayout;
-  let size: bigint;
-  let digest: Hex;
-  let childBody: Uint8Array;
-  if (content instanceof Uint8Array) {
-    size = BigInt(content.length);
-    digest = sha256(content);
-    if (content.length <= d.limits.maxBodyBytes - CHILD_HEADER_BYTES) {
-      layout = "inline";
-      childBody = encode.childInline(base, file, content);
-    } else {
-      const tree = chunkTree(types.bytes as Hex, types.span as Hex, content, CHUNK_PAYLOAD);
-      layout = tree.isSpan ? "span" : "chunk";
-      const seen = new Set<Hex>();
-      for (const r of tree.records) {
-        if (seen.has(r.id)) continue; // a repeated chunk or subtree: the first occurrence already published it
-        seen.add(r.id);
-        records.push(
-          publish(r.typeId, r.body, r.typeId === types.span ? "files-span/1" : "files-bytes/1"),
-        );
-      }
-      const body = encode.content(
-        tree.root,
-        tree.isSpan ? CARRIER.span : CARRIER.inlineChunk,
-        size,
-        digest,
-        input.media ?? 0n,
-      );
-      descriptor = {
-        body,
-        typeId: types.content as Hex,
-        shape: `files-content/1 carrier ${tree.isSpan ? CARRIER.span : CARRIER.inlineChunk}`,
-      };
-      childBody = encode.childContent(base, file, recordId(types.content as Hex, body));
-    }
-  } else {
-    layout = "external";
-    size = content.length;
-    digest = lower(content.sha256);
-    const sentinelBody = encode.chunk(new Uint8Array());
-    const sentinel = recordId(types.bytes as Hex, sentinelBody);
-    records.push(publish(types.bytes as Hex, sentinelBody, "files-bytes/1"));
-    const body = encode.external(sentinel, content.length, digest, content.locator);
-    if (body.length > d.limits.maxBodyBytes)
-      return {
-        kind: "efs.editPlan",
-        status: "TOO_LARGE",
-        reason: reason(
-          "LIMIT_EXCEEDED",
-          "never",
-          `the locator makes a ${body.length}-byte record; the limit is ${d.limits.maxBodyBytes}`,
-        ),
-      };
-    descriptor = { body, typeId: types.external as Hex, shape: "files-external/1" };
-    childBody = encode.childContent(base, file, recordId(types.external as Hex, body));
-  }
-  const revision = recordId(types.child as Hex, childBody) as RecordId;
-
   // ---- one basis: the Lens's HEAD (the base check) and the editor's own HEAD binding (the CAS revision)
   const pin = await efs.at("latest", o);
   if (pin.status !== "VERIFIED")
@@ -299,7 +266,13 @@ export async function planEditFile(
   type Seen =
     | { kind: "changed"; head: RevisionRef | null }
     | { kind: "refused"; reason: Reason }
-    | { kind: "ok"; lensAuthor: PrincipalId; myRevision: bigint; myState: string };
+    | {
+        kind: "ok";
+        lensAuthor: PrincipalId;
+        myRevision: bigint;
+        myState: string;
+        mediaType: string;
+      };
   const r = await onEndpoint<Seen>(
     efs._internal.pool,
     async (s) => {
@@ -326,6 +299,27 @@ export async function planEditFile(
             head: { kind: "revision", recordId: h.target as RecordId, file },
           },
         };
+      // Keep the base's media type unless the caller named one: read it here, at this basis, never guessed.
+      let mediaType = asked;
+      if (mediaType === undefined) {
+        const b = await resolveRevision(ctx, s, basis, base, file, h.author);
+        if (!b.ok) return b;
+        if (b.value.status !== "PRESENT")
+          return {
+            ok: true,
+            value: {
+              kind: "refused",
+              reason:
+                b.value.reason ??
+                reason(
+                  "NOT_YET_DECIDABLE",
+                  "transient",
+                  `the base revision reads ${b.value.status}`,
+                ),
+            },
+          };
+        mediaType = b.value.file.mediaType ?? "";
+      }
       ctx.requests += 1;
       const [out] = await callsAt(s, basis.blockHash, [
         {
@@ -373,7 +367,13 @@ export async function planEditFile(
         };
       return {
         ok: true,
-        value: { kind: "ok", lensAuthor: h.author, myRevision: revisionNow, myState: cs },
+        value: {
+          kind: "ok",
+          lensAuthor: h.author,
+          myRevision: revisionNow,
+          myState: cs,
+          mediaType,
+        },
       };
     },
     o,
@@ -384,6 +384,68 @@ export async function planEditFile(
     return { kind: "efs.editPlan", status: "BASE_CHANGED", head: seen.head, basis };
   if (seen.kind === "refused")
     return { kind: "efs.editPlan", status: "UNKNOWN", reason: seen.reason, basis };
+
+  // ---- the content records (pure: no chain reads; the media type decides whether a small file can sit inline)
+  const mediaType = seen.mediaType;
+  const records: PlannedAction[] = [];
+  let descriptor: { body: Uint8Array; typeId: Hex; shape: string } | undefined;
+  let layout: EditLayout;
+  let size: bigint;
+  let digest: Hex;
+  let childBody: Uint8Array;
+  if (content instanceof Uint8Array) {
+    size = BigInt(content.length);
+    digest = sha256(content);
+    if (mediaType === "" && content.length <= d.limits.maxBodyBytes - CHILD_HEADER_BYTES) {
+      layout = "inline";
+      childBody = encode.childInline(base, file, content);
+    } else {
+      const tree = chunkTree(types.bytes as Hex, types.span as Hex, content, CHUNK_PAYLOAD);
+      layout = tree.isSpan ? "span" : "chunk";
+      const published = new Set<Hex>();
+      for (const r of tree.records) {
+        if (published.has(r.id)) continue; // a repeated chunk or subtree: the first occurrence already published it
+        published.add(r.id);
+        records.push(
+          publish(r.typeId, r.body, r.typeId === types.span ? "files-span/1" : "files-bytes/1"),
+        );
+      }
+      const body = encode.content(
+        tree.root,
+        tree.isSpan ? CARRIER.span : CARRIER.inlineChunk,
+        size,
+        digest,
+        mediaType,
+      );
+      descriptor = {
+        body,
+        typeId: types.content as Hex,
+        shape: `files-content/1 carrier ${tree.isSpan ? CARRIER.span : CARRIER.inlineChunk}`,
+      };
+      childBody = encode.childContent(base, file, recordId(types.content as Hex, body));
+    }
+  } else {
+    layout = "external";
+    size = content.length;
+    digest = lower(content.sha256);
+    const sentinelBody = encode.chunk(new Uint8Array());
+    const sentinel = recordId(types.bytes as Hex, sentinelBody);
+    records.push(publish(types.bytes as Hex, sentinelBody, "files-bytes/1"));
+    const body = encode.external(sentinel, content.length, digest, content.locator, mediaType);
+    if (body.length > d.limits.maxBodyBytes)
+      return {
+        kind: "efs.editPlan",
+        status: "TOO_LARGE",
+        reason: reason(
+          "LIMIT_EXCEEDED",
+          "never",
+          `the locator makes a ${body.length}-byte record; the limit is ${d.limits.maxBodyBytes}`,
+        ),
+      };
+    descriptor = { body, typeId: types.external as Hex, shape: "files-external/1" };
+    childBody = encode.childContent(base, file, recordId(types.external as Hex, body));
+  }
+  const revision = recordId(types.child as Hex, childBody) as RecordId;
 
   // ---- the finish (one publication): descriptor, revision, HEAD bind
   const finish: PlannedAction[] = [];
@@ -450,6 +512,7 @@ export async function planEditFile(
     size,
     sha256: digest,
     layout,
+    mediaType, // "" whenever the layout is inline
     parts: split.parts.length,
     prompts: { sequential: split.parts.length, atomicBatch: 1 },
     gas: { perPart: split.parts.map((p) => p.gas), schedule: model.schedule },
@@ -489,6 +552,7 @@ function editEffect(r: EditReview, i: number, n: number, finish: boolean): Effec
       size: r.size.toString(),
       sha256: r.sha256,
       layout: r.layout,
+      ...(r.mediaType ? { mediaType: r.mediaType } : {}),
       part: String(i + 1),
       parts: String(n),
       stage: finish ? "finish" : "content",

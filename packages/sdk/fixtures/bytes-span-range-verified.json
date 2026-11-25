@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "07818d1e90c5bbfefb85bb47f8935a446a6da6ad",
+  "contractsCommit": "e90c7d802f3c354b93dbf9b23baa8d3c867bf79d",
   "case": "bytes-span-range-verified",
   "note": "readRange 8150..8170 across a chunk boundary",
   "result": {

@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "07818d1e90c5bbfefb85bb47f8935a446a6da6ad",
+  "contractsCommit": "e90c7d802f3c354b93dbf9b23baa8d3c867bf79d",
   "case": "open-inline",
   "note": "openFile on an inline file (docs/readme.txt)",
   "result": {
@@ -8,7 +8,7 @@
     "status": "PRESENT",
     "file": {
       "file": "0xb77c10b50e2745da91a49ed0e29b8d99d985c611eace13656fb442bde9b94065",
-      "revision": "0xbd3d9e5173a9a4d9eb77b7a89117481f16a891aafe677fc1d22c659477a59e8d",
+      "revision": "0x6ccd600cf21585ebd6a965bdee5352727c39843c09ef410016e8cdc1a48e1eb6",
       "author": "0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
       "size": {
         "$efs:bigint": "18"
@@ -29,8 +29,11 @@
       "blockNumber": {
         "$efs:bigint": "62"
       },
-      "blockHash": "0x3d61a3545a0a7443eca2824d1a25c8ea23cc1351be32aa95dc64702ba6510542",
-      "executionSet": "0x5440a17bac803bdcd97568ccffe1d4f3becb0b28ccafaa63932f651fd2be9d44",
+      "blockHash": "0xb841d5a88c99c82704de719b9d05da762286e9bb4667d42c3e45cd54dd1b763a",
+      "timestamp": {
+        "$efs:bigint": "1795595851"
+      },
+      "executionSet": "0x9c4692dc8db33e573d80dc6e90bb1cc50e17cacd6a9355556a69ae7f3c8d53a0",
       "endpoint": "local fixture"
     },
     "evidence": {
@@ -43,7 +46,7 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 3
+          "ms": 5
         }
       ],
       "requests": 3

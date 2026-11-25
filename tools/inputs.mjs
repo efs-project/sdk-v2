@@ -29,6 +29,8 @@ const SNAPSHOT = [
   "artifacts",
   "vectors/layout.json",
   "test/vectors/ids.json",
+  // Media types (contracts C4): the encodings and the accepted/refused strings, the authority for the SDK codec.
+  "test/vectors/media.json",
   // The contracts-owned fixture (a library and CLI). Vendored so SDK integration tests start their own chains from
   // this snapshot (`up --artifacts protocol-inputs/contracts`) without a contracts checkout.
   "tools/efs-fixture.mjs",

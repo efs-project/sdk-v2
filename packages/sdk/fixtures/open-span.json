@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "07818d1e90c5bbfefb85bb47f8935a446a6da6ad",
+  "contractsCommit": "e90c7d802f3c354b93dbf9b23baa8d3c867bf79d",
   "case": "open-span",
   "note": "openFile on a 20,000-byte span-tree file (docs/big.bin)",
   "result": {
@@ -8,7 +8,7 @@
     "status": "PRESENT",
     "file": {
       "file": "0xe160669d4003ff28eb89269245d4f43af8047579e0acf409c35130523007c12e",
-      "revision": "0x006be8beaf00869e91ecae5953782aafea9effbb6d1dc7a47707909a53970105",
+      "revision": "0xebc3a9818efbd7ddc6404e9631df1e819575aa221e4ee32ee7d32b8ce1a70953",
       "author": "0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
       "size": {
         "$efs:bigint": "20000"
@@ -19,17 +19,21 @@
       "locations": [
         {
           "scheme": "ledger",
-          "descriptor": "0x910909459a4a4d29a1e873aefb59745621006650cb853e2550ae6adc60375ad4"
+          "descriptor": "0xa2cc542f1827ddadba36b744fbf373a4e3b7d97d8430671de87a506958b52204"
         }
-      ]
+      ],
+      "mediaType": "application/octet-stream"
     },
     "basis": {
       "chainId": 31337,
       "blockNumber": {
         "$efs:bigint": "62"
       },
-      "blockHash": "0x3d61a3545a0a7443eca2824d1a25c8ea23cc1351be32aa95dc64702ba6510542",
-      "executionSet": "0x5440a17bac803bdcd97568ccffe1d4f3becb0b28ccafaa63932f651fd2be9d44",
+      "blockHash": "0xb841d5a88c99c82704de719b9d05da762286e9bb4667d42c3e45cd54dd1b763a",
+      "timestamp": {
+        "$efs:bigint": "1795595851"
+      },
+      "executionSet": "0x9c4692dc8db33e573d80dc6e90bb1cc50e17cacd6a9355556a69ae7f3c8d53a0",
       "endpoint": "local fixture"
     },
     "evidence": {

@@ -82,6 +82,13 @@ export interface OpenedFile {
   /** For chunk/span layouts: the root record id. */
   root?: RecordId;
   locations: readonly Location[];
+  /**
+   * The media type the revision declares (e.g. "image/png", "text/html; charset=utf-8"): a hint about the bytes, never
+   * their identity, so decide how to render from it but never trust it as proof of what the bytes are. Absent when
+   * the revision declares none: always for inline files, which have no descriptor to carry one (fall back to the
+   * name's extension).
+   */
+  mediaType?: string;
 }
 
 export type OpenResult =
@@ -242,6 +249,150 @@ export async function headUnderLens(
   };
 }
 
+/** @internal What one revision resolves to: the opened file, or why it cannot be opened. */
+export type RevisionOpen =
+  | { status: "PRESENT"; file: OpenedFile }
+  | { status: "ABSENT_PROVEN" | "MASKED" | "CONFLICT" | "UNKNOWN" | "INVALID"; reason?: Reason };
+
+/** @internal Read a revision record and its descriptor at the basis, on one endpoint session. */
+export async function resolveRevision(
+  ctx: Ctx,
+  s: Session,
+  basis: Basis,
+  revisionId: Hex,
+  fileSubject: Hex | undefined,
+  author: PrincipalId | null,
+): Promise<Step<RevisionOpen>> {
+  const efs = ctx.efs;
+  const rev = await readOne(ctx, s, basis, revisionId);
+  if (!rev.ok) return rev;
+  if (rev.value.status !== "PRESENT" || !rev.value.body) {
+    const st = rev.value.status === "ABSENT_PROVEN" ? "ABSENT_PROVEN" : "UNKNOWN";
+    return { ok: true, value: { status: st } };
+  }
+  const kind = typeName(efs, rev.value.typeId);
+  if (kind !== "files-root/1" && kind !== "files-child/1") {
+    return {
+      ok: true,
+      value: {
+        status: "INVALID",
+        reason: reason(
+          "UNSUPPORTED_PROFILE",
+          "never",
+          `record is ${kind ?? "an unknown Type"}, not a file revision`,
+        ),
+      },
+    };
+  }
+  const decoded = decodeRevision(rev.value.body, kind === "files-root/1" ? "root" : "child");
+  if (!decoded)
+    return {
+      ok: true,
+      value: {
+        status: "INVALID",
+        reason: reason("UNSUPPORTED_PROFILE", "never", "malformed revision body"),
+      },
+    };
+  const base = {
+    file: lower((fileSubject ?? decoded.file) as Hex) as SubjectId,
+    revision: revisionId as RecordId,
+    author,
+  };
+  if (decoded.form === "inline") {
+    return {
+      ok: true,
+      value: {
+        status: "PRESENT",
+        file: {
+          ...base,
+          size: BigInt(decoded.bytes.length),
+          sha256: sha256(decoded.bytes),
+          layout: "inline",
+          inline: decoded.bytes,
+          locations: [{ scheme: "ledger" }],
+        },
+      },
+    };
+  }
+  const desc = await readOne(ctx, s, basis, decoded.descriptor);
+  if (!desc.ok) return desc;
+  if (desc.value.status !== "PRESENT" || !desc.value.body)
+    return {
+      ok: true,
+      value: {
+        status: "UNKNOWN",
+        reason: reason("RPC_ERROR", "transient", "descriptor not readable"),
+      },
+    };
+  const dType = typeName(efs, desc.value.typeId);
+  const descriptor = lower(decoded.descriptor) as RecordId;
+  if (dType === "files-external/1") {
+    const ext = decodeExternal(desc.value.body);
+    if (!ext)
+      return {
+        ok: true,
+        value: {
+          status: "INVALID",
+          reason: reason("UNSUPPORTED_PROFILE", "never", "malformed external descriptor"),
+        },
+      };
+    const scheme = ext.locator.slice(0, Math.max(0, ext.locator.indexOf(":"))).toLowerCase();
+    return {
+      ok: true,
+      value: {
+        status: "PRESENT",
+        file: {
+          ...base,
+          size: ext.length,
+          sha256: ext.sha256,
+          layout: "external",
+          locations: [{ scheme, uri: ext.locator, descriptor }],
+          ...(ext.mediaType ? { mediaType: ext.mediaType } : {}),
+        },
+      },
+    };
+  }
+  if (dType === "files-content/1") {
+    const c = decodeContent(desc.value.body);
+    if (c?.cipher !== 0n)
+      return {
+        ok: true,
+        value: {
+          status: "INVALID",
+          reason: reason(
+            "UNSUPPORTED_PROFILE",
+            "never",
+            c ? "encrypted content is not supported in 0.1" : "malformed content descriptor",
+          ),
+        },
+      };
+    const layout =
+      c.carrier === CARRIER.span ? "span" : c.carrier === CARRIER.inlineChunk ? "chunk" : "remote";
+    return {
+      ok: true,
+      value: {
+        status: "PRESENT",
+        file: {
+          ...base,
+          size: c.length,
+          sha256: c.sha256,
+          layout,
+          ...(layout === "remote" ? {} : { root: lower(c.bytesRef) as RecordId }),
+          locations: layout === "remote" ? [] : [{ scheme: "ledger", descriptor }],
+          ...(c.mediaType ? { mediaType: c.mediaType } : {}),
+        },
+      },
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      status: "INVALID",
+      reason: reason("UNSUPPORTED_PROFILE", "never", `descriptor is ${dType ?? "an unknown Type"}`),
+    },
+  };
+}
+
 /** Resolve a file's HEAD revision under the Lens, then its content layout. */
 export async function openFile(
   efs: Efs,
@@ -260,10 +411,7 @@ export async function openFile(
   }
   const basis = pin.basis;
   const lens = o.lens ?? efs.lens.default;
-  type Out =
-    | { status: "PRESENT"; file: OpenedFile }
-    | { status: "ABSENT_PROVEN" | "MASKED" | "CONFLICT" | "UNKNOWN" | "INVALID"; reason?: Reason };
-  const r = await onEndpoint<Out>(
+  const r = await onEndpoint<RevisionOpen>(
     efs._internal.pool,
     async (s) => {
       let revisionId: Hex;
@@ -281,139 +429,7 @@ export async function openFile(
         revisionId = lower(target.recordId);
         fileSubject = target.file;
       }
-      const rev = await readOne(ctx, s, basis, revisionId);
-      if (!rev.ok) return rev;
-      if (rev.value.status !== "PRESENT" || !rev.value.body) {
-        const st = rev.value.status === "ABSENT_PROVEN" ? "ABSENT_PROVEN" : "UNKNOWN";
-        return { ok: true, value: { status: st } };
-      }
-      const kind = typeName(efs, rev.value.typeId);
-      if (kind !== "files-root/1" && kind !== "files-child/1") {
-        return {
-          ok: true,
-          value: {
-            status: "INVALID",
-            reason: reason(
-              "UNSUPPORTED_PROFILE",
-              "never",
-              `record is ${kind ?? "an unknown Type"}, not a file revision`,
-            ),
-          },
-        };
-      }
-      const decoded = decodeRevision(rev.value.body, kind === "files-root/1" ? "root" : "child");
-      if (!decoded)
-        return {
-          ok: true,
-          value: {
-            status: "INVALID",
-            reason: reason("UNSUPPORTED_PROFILE", "never", "malformed revision body"),
-          },
-        };
-      const base = {
-        file: lower((fileSubject ?? decoded.file) as Hex) as SubjectId,
-        revision: revisionId as RecordId,
-        author,
-      };
-      if (decoded.form === "inline") {
-        return {
-          ok: true,
-          value: {
-            status: "PRESENT",
-            file: {
-              ...base,
-              size: BigInt(decoded.bytes.length),
-              sha256: sha256(decoded.bytes),
-              layout: "inline",
-              inline: decoded.bytes,
-              locations: [{ scheme: "ledger" }],
-            },
-          },
-        };
-      }
-      const desc = await readOne(ctx, s, basis, decoded.descriptor);
-      if (!desc.ok) return desc;
-      if (desc.value.status !== "PRESENT" || !desc.value.body)
-        return {
-          ok: true,
-          value: {
-            status: "UNKNOWN",
-            reason: reason("RPC_ERROR", "transient", "descriptor not readable"),
-          },
-        };
-      const dType = typeName(efs, desc.value.typeId);
-      const descriptor = lower(decoded.descriptor) as RecordId;
-      if (dType === "files-external/1") {
-        const ext = decodeExternal(desc.value.body);
-        if (!ext)
-          return {
-            ok: true,
-            value: {
-              status: "INVALID",
-              reason: reason("UNSUPPORTED_PROFILE", "never", "malformed external descriptor"),
-            },
-          };
-        const scheme = ext.locator.slice(0, Math.max(0, ext.locator.indexOf(":"))).toLowerCase();
-        return {
-          ok: true,
-          value: {
-            status: "PRESENT",
-            file: {
-              ...base,
-              size: ext.length,
-              sha256: ext.sha256,
-              layout: "external",
-              locations: [{ scheme, uri: ext.locator, descriptor }],
-            },
-          },
-        };
-      }
-      if (dType === "files-content/1") {
-        const c = decodeContent(desc.value.body);
-        if (c?.cipher !== 0n)
-          return {
-            ok: true,
-            value: {
-              status: "INVALID",
-              reason: reason(
-                "UNSUPPORTED_PROFILE",
-                "never",
-                c ? "encrypted content is not supported in 0.1" : "malformed content descriptor",
-              ),
-            },
-          };
-        const layout =
-          c.carrier === CARRIER.span
-            ? "span"
-            : c.carrier === CARRIER.inlineChunk
-              ? "chunk"
-              : "remote";
-        return {
-          ok: true,
-          value: {
-            status: "PRESENT",
-            file: {
-              ...base,
-              size: c.length,
-              sha256: c.sha256,
-              layout,
-              ...(layout === "remote" ? {} : { root: lower(c.bytesRef) as RecordId }),
-              locations: layout === "remote" ? [] : [{ scheme: "ledger", descriptor }],
-            },
-          },
-        };
-      }
-      return {
-        ok: true,
-        value: {
-          status: "INVALID",
-          reason: reason(
-            "UNSUPPORTED_PROFILE",
-            "never",
-            `descriptor is ${dType ?? "an unknown Type"}`,
-          ),
-        },
-      };
+      return resolveRevision(ctx, s, basis, revisionId, fileSubject, author);
     },
     o,
   );
