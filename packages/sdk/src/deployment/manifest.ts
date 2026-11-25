@@ -134,6 +134,7 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
   const unit = (name: string): Obj => obj(contracts[name]) ?? {};
   const proxy = obj(obj(d["proxies"])?.["ledger"]) ?? {};
   const root = obj(d["root"]) ?? {};
+  const indexDoc = obj(d["index"]) ?? {};
   const limits = obj(d["limits"]) ?? {};
   const activation = obj(d["activation"]) ?? {};
   const typeIds = obj(d["typeIds"]) ?? {};
@@ -206,10 +207,10 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       principalId: word("root.principalId", root["principalId"]) as PrincipalId,
     },
     index: {
-      address: isAddress((obj(d["index"]) ?? {})["address"])
-        ? (lower((obj(d["index"]) ?? {})["address"] as Address) as Address)
+      address: isAddress(indexDoc["address"])
+        ? (lower(indexDoc["address"] as Address) as Address)
         : null,
-      backlinkFamily: backlinkFamily(d["index"]),
+      backlinkFamily: backlinkFamily(indexDoc),
     },
     defaultLens: defaultLens.map((p, i) => word(`defaultLensPrincipals[${i}]`, p) as PrincipalId),
     typeIds: typeIdOut,
