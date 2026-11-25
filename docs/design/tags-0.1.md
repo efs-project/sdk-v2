@@ -126,13 +126,22 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
 
 ### 5.1 The Lens rule and the three views
 
-- **Priority.** For a thing X in topic T, walk the Lens in order. The first author with a stance on (T, X) decides: a
-  number ≥ 0 shows X with that number, and a number below 0 hides it. An UNKNOWN read never counts as "said nothing".
-- **Mine:** only the Lens authors' statements.
-- **Everyone:** every author's statements, minus what a Lens author marks below 0, either at that place or at the topic
-  the entry was filed under. A denial does not travel down to child topics, and a stranger's negative number never
-  hides anything from anyone else.
-- **Raw:** nothing hidden.
+- **One rule for every view** (spec 3.1, planning 0109b4a). For a thing X shown at a place, walk the Lens in order.
+  The first author with a stance decides: a number ≥ 0 shows X with that number, and a number below 0 hides it. An
+  UNKNOWN read never counts as "said nothing".
+  - **An earlier Lens author always beats a later one, in a roll-up too.** Where `/cars` shows a thing filed under
+    `/cars/tesla`, each Lens author in turn is asked two things: a "not this" for it at `/cars` (the place being
+    viewed), then their stance where it was filed. The first answer found decides. So someone further down your Lens
+    can't hide what you filed yourself, and your own "not this" at `/cars` keeps a thing off that page even though
+    you filed it below.
+  - A denial does not travel down to child topics, and a stranger's negative number never hides anything from anyone
+    else.
+- **Mine:** that walk over the Lens alone.
+- **Everyone:** the same walk with "public" at the end. When nobody in the Lens has a stance, the row shows if anyone
+  says yes. So everything Mine shows, Everyone shows too.
+- **Raw:** no rule, nothing hidden.
+- **Every public row says who decided it** (`decider`): the Lens author and their number, or nobody in the Lens,
+  which is the public tier. The client labels public-tier rows one by one and holds back media from that tier.
 - **A stranger's "not this" can neither hide a row nor add one** (tag spec 3.2; planning 1b9a059, c0cc5a5).
   - Raw shows every row.
   - Everyone shows a row when someone says yes, and leaves it out when nobody does. The decision is exact: the
@@ -154,19 +163,32 @@ topicChildren(efs, topic, { lens?, showAll?, cursor?, limit? })
 wordPage(efs, word, { lens? })             // every place the word is used, grouped by place
 ```
 
-- **Rows carry what a client needs to order and to explain them:** the target, the number, its author, when it was
-  first stated (its sequence), and, for roll-up, the topic it was filed under.
+- **Rows carry what a client needs to order and to explain them:** the target, the number, who decided it
+  (`decider`, section 5.1), when it was first stated (its sequence), and, for roll-up, the topic it was filed under.
+  - A public row does not say who made the filing that put it at the top. Where that matters, as for a home used as
+    an inbox, it comes from the first page of `byName` at that position (section 5.6).
 - **Coverage** follows listFolder's rule: COMPLETE only for a list scanned from its start to its end. A page from a
   cursor is at most PARTIAL, and an empty PARTIAL page means "keep reading".
 - **A short page is never the end** (spec 3.3). Rows nobody says yes to, repeats and hidden rows are skipped, so a
   page can return fewer rows than asked for, or none, while more remain.
   - Every paged result says whether its list is finished, and if not, gives the point to resume from. Finished is
     claimed only when the list's end was read, never because a page came back short or empty.
-  - A read bounds its work by entries read, not by rows returned. Anyone can pad a list with rows that get skipped,
-    at about the price of a tag each, so a read that kept going until it filled a page could be made to run forever.
+  - **The chain says why a page stopped** (its scan status). Only "exhausted", meaning the list ended, finishes a
+    listing. Every other status (the entry limit was reached, or the gas reserve stopped it) carries the point to
+    resume from. The SDK keeps that in its own result and never turns a stop into an end.
+  - **Two limits** (spec 3.3, planning 0109b4a): a page read takes the rows wanted and the entries to read, and stops
+    at whichever comes first. One number can't bound both: skipping a padded stretch is cheap, and a shown row under
+    a big Lens is not. Anyone can pad a list with rows that get skipped, at about the price of a tag each, so a read
+    that kept going until it filled a page could be made to run forever.
+  - **The yes-count comes before the Lens** (planning 2be0828). A reader checks a row's yes-count first and asks the
+    Lens only about rows someone says yes to, so a skipped row costs one read whatever the size of the Lens. The
+    SDK's own merging (synonyms, removing duplicates across pages) follows the same order.
+  - **The limits are sized from the gas model:** the per-row and per-skipped-entry read costs in `gas/model.json`'s
+    `reads` section, from the release the SDK vendors. Together with the Lens size and the endpoint's per-call cap,
+    they set both limits; no constant does.
 - **Duplicates.** Roll-up lists a thing filed under `/cars/tesla` and under `/cars/ford` twice in `/cars`. A place's
   own list repeats a thing too (contracts step 3c), so exact-topic reads remove duplicates exactly as roll-ups do.
-  The SDK removes duplicates by thing, and every result says how far: `dedup: "COMPLETE" | "BOUNDED"` (with the
+  The SDK removes duplicates by thing, in Mine as in Everyone, and every result says how far: `dedup: "COMPLETE" | "BOUNDED"` (with the
   bound), so a page never claims a uniqueness it cannot guarantee. The chain's readers dedupe within a page only;
   removing duplicates across pages is the SDK's job (spec 3.3).
   - **Decide a row before marking its thing as seen** (spec 3.3). Only a row that will be shown adds its thing to
@@ -184,10 +206,11 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
     COMPLETE.
   - A serializable cursor, for resuming, carries the things already returned up to the stated bound; past it the
     result is BOUNDED.
-  - A dropped duplicate's place stays on the surviving row ("filed under tesla, ford"). Clients still dedupe what they
-    render, since they merge synonym lists anyway.
-- **Calls stay under the endpoint's gas limit.** A roll-up read under a big Lens is expensive (the contracts
-  measured about 283k gas for a page of 10 at a Lens of 1, and 15M for a page of 50 at a Lens of 64). The SDK splits
+  - The row shown is the newest filing that shows, and it names the topic it was filed under (spec 3.3). A dropped
+    duplicate's place stays on the surviving row ("filed under tesla, ford"), the list "where is this filed" shows.
+    Clients still dedupe what they render, since they merge synonym lists anyway.
+- **Calls stay under the endpoint's gas limit.** A read under a big Lens is expensive (contracts step 4 measured
+  `mine` at about 555k gas for a page of 10 at a Lens of 1, and 12.1M for a page of 50 at a Lens of 64). The SDK splits
   each read by Lens and by page so every eth_call stays under a conservative per-call cap. It starts small and backs
   off when an endpoint runs out of gas. A call that ran out of gas is UNKNOWN or PARTIAL, never an empty page, and a
   big Lens never turns into UNKNOWN just because one call was too large.
@@ -258,13 +281,16 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   and both when an address could act as either. A Safe's home is in the design and in the tests.
 - Every row says whose entry it is when it isn't the home owner's, because a reader's own `pet.jpg` at someone else's
   address would otherwise look like the owner's.
+- **A home used as an inbox.** A public row doesn't say who made the filing that put it at the top, so who left a
+  thing in someone's home comes from the first page of `byName` at that position: one author per row, with each
+  author's first statement there.
 
 ## 6. What this design guards against
 
 | Pitfall | Guard |
 | --- | --- |
 | A tag lands but a list misses it (silent absence) | planners register first; reads never treat UNKNOWN as nothing; rebuild-equals-live vectors |
-| A public page comes back short because skipped rows used up the read, and looks like the end | every paged result says finished or gives a resume point; work bounded by entries read; a thing is marked seen only once its row is shown |
+| A public page comes back short because skipped rows used up the read, and looks like the end | only "exhausted" finishes a listing, every other stop gives a resume point; two limits (rows wanted, entries to read); the yes-count is read before the Lens; a thing is marked seen only once its row is shown |
 | A deep new path doesn't fit one transaction | registration split into earlier, harmless parts; never a skipped level |
 | A word that shadows a home or a system link | refused by the SDK and by the chain |
 | Two fold tables, two ids | one pinned fold rule and shared vectors |
@@ -344,6 +370,22 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
     - a row is decided before its thing is marked as seen, and duplicates are removed by thing across pages
       (section 5.2). Test: a thing filed under two child topics, with no yes at the newer filing and a yes at the
       older one, shows once in the parent's roll-up, through the older one;
+  - **the PM's read rules for the step-4 readers** (spec planning 0109b4a, 2be0828; 3.1–3.3):
+    - one rule for every view: Mine is the Lens walk alone, Everyone adds the public tier at the end, Raw has no rule.
+      An earlier Lens author beats a later one, in a roll-up too, asked first for a "not this" at the viewed place,
+      then for their stance where the thing was filed (section 5.1). Tests: a later Lens author's "not this" at
+      `/cars` can't hide what an earlier one filed at `/cars/tesla`; an earlier author's own "not this" at `/cars`
+      hides what they filed below; everything Mine shows, Everyone shows;
+    - every public row carries `decider` (a Lens author, or the public tier), for the client to label the tier and
+      hold back its media; the filer of a home's inbox row comes from `byName`'s first page (sections 5.2, 5.6);
+    - the scan status: only "exhausted" ends a listing, and the entry-limit and gas stops carry a resume point. Two
+      limits per page, rows wanted and entries to read. Test: a list padded with all-negative pairs pages through
+      entry-limit stops, each with a resume point, until the real row;
+    - the yes-count read before the Lens, so a skipped row costs one read at any Lens size; the SDK's merging in
+      the same order. Test: paging through a padded stretch costs about the same gas at a Lens of 1 and of 64;
+    - duplicates removed by thing in Mine as in Everyone; the row shown is the newest filing that shows, naming its
+      topic, and the rest go to "where is this filed";
+    - both limits sized from the `reads` terms of `gas/model.json`, never constants;
   - **the posting store's ABI id is now `efs/posting-store/2`** (contracts step 3b amended: `retain` and the
     UNCOUNTED append tag; `/1` before), so the vendored bundle and its generated ABIs bump at this re-vendor. The SDK
     checks no store ABI id today; any check the re-vendor adds takes the id from the release;
