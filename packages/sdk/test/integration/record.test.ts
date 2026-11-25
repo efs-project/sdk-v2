@@ -14,7 +14,7 @@ import type { Hex, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { toJson } from "../../src/core/json.ts";
 import { type OpenedFile, openFile, readBytes, readRange } from "../../src/files/bytes.ts";
 import { planEditFile } from "../../src/files/edit.ts";
-import { openObject } from "../../src/files/folders.ts";
+import { listFolder, openObject } from "../../src/files/folders.ts";
 import { PROTOCOL_INPUTS } from "../../src/generated/inputs.ts";
 import { type RpcTranscript, recordingFetch, recordingProvider } from "../../src/testing/index.ts";
 import { putExternal, putInline } from "./recipes.ts";
@@ -320,85 +320,62 @@ describe.runIf(RECORD)("record RPC transcripts", () => {
         expect((await efs.pin()).status).toBe("VERIFIED");
       },
     );
+    // Object links, routed as a client does: openObject first (the id fixes the kind), then the file's own open
+    // (`opened.open`, reused for its bytes) or the folder's listing.
+    const fileOf = async (efs: ReturnType<typeof createEfs>, id: Hex): Promise<OpenedFile> => {
+      const o = await openObject(efs, id);
+      if (o.status !== "FILE") throw new Error(o.status);
+      if (o.open.status !== "PRESENT") throw new Error(o.open.status);
+      return o.open.file;
+    };
     await record(
       "open-inline",
-      "openFile(docs/readme.txt) → PRESENT inline, then readBytes → VERIFIED",
+      "openObject(docs/readme.txt) → FILE, its open PRESENT inline, then readBytes → VERIFIED",
       { file: inline },
       async (efs, steps) => {
         steps.push(
-          "openFile(efs, { kind: 'file', subject: ids.file })",
+          "openObject(efs, ids.file)  // FILE; opened = result.open",
           "readBytes(efs, opened.file)",
         );
-        const o = await openFile(efs, { kind: "file", subject: inline });
-        if (o.status !== "PRESENT") throw new Error(o.status);
-        expect((await readBytes(efs, o.file)).grade).toBe("VERIFIED");
+        expect((await readBytes(efs, await fileOf(efs, inline))).grade).toBe("VERIFIED");
       },
     );
     await record(
       "open-absent",
-      "openFile on a file nobody created → ABSENT_PROVEN",
+      "openObject on an id nobody created or published → ABSENT_PROVEN",
       { file: absent },
       async (efs, steps) => {
-        steps.push("openFile(efs, { kind: 'file', subject: ids.file })");
-        expect((await openFile(efs, { kind: "file", subject: absent })).status).toBe(
-          "ABSENT_PROVEN",
-        );
+        steps.push("openObject(efs, ids.file)  // ABSENT_PROVEN");
+        expect((await openObject(efs, absent)).status).toBe("ABSENT_PROVEN");
       },
     );
-    // An object link, routed as a client does: openFile first (PRESENT proves a file), openObject only when it isn't.
     const folderId = (deployment as unknown as { seed: { folder: { directoryRecordId: Hex } } })
       .seed.folder.directoryRecordId;
     await record(
-      "open-object-folder",
-      "an object link to a folder (docs/), routed as a client does: openFile → not PRESENT, then openObject → FOLDER " +
-        "with its owner",
-      { object: folderId },
+      "open-folder",
+      "openObject(docs/) → FOLDER with its owner, then listFolder on it (default Lens, no options) → PRESENT",
+      { folder: folderId },
       async (efs, steps) => {
-        steps.push(
-          "openFile(efs, { kind: 'file', subject: ids.object })  // not PRESENT",
-          "openObject(efs, ids.object)  // FOLDER",
-        );
-        expect(
-          (await openFile(efs, { kind: "file", subject: folderId as unknown as SubjectId })).status,
-        ).not.toBe("PRESENT");
+        steps.push("openObject(efs, ids.folder)  // FOLDER", "listFolder(efs, result.folder)");
         const o = await openObject(efs, folderId);
         if (o.status !== "FOLDER") throw new Error(o.status);
-        expect(o.folder.directory).toBe(folderId.toLowerCase());
-      },
-    );
-    const nothing = keccak256(toHex("no such object"));
-    await record(
-      "open-object-absent",
-      "an object link to an id nobody created or published, routed as a client does: openFile → ABSENT_PROVEN, " +
-        "then openObject → ABSENT_PROVEN",
-      { object: nothing },
-      async (efs, steps) => {
-        steps.push(
-          "openFile(efs, { kind: 'file', subject: ids.object })  // ABSENT_PROVEN",
-          "openObject(efs, ids.object)  // ABSENT_PROVEN",
-        );
-        expect((await openFile(efs, { kind: "file", subject: nothing as SubjectId })).status).toBe(
-          "ABSENT_PROVEN",
-        );
-        expect((await openObject(efs, nothing)).status).toBe("ABSENT_PROVEN");
+        expect((await listFolder(efs, o.folder)).status).toBe("PRESENT");
       },
     );
     await record(
       "open-span",
-      "openFile(docs/big.bin, 20,000 bytes, span tree) → PRESENT; readRange(8150, 20) across a chunk edge and readBytes → VERIFIED",
+      "openObject(docs/big.bin, 20,000 bytes, span tree) → FILE, its open PRESENT; readRange(8150, 20) across a " +
+        "chunk edge and readBytes → VERIFIED",
       { file: span },
       async (efs, steps) => {
         steps.push(
-          "openFile(efs, { kind: 'file', subject: ids.file })",
+          "openObject(efs, ids.file)  // FILE; opened = result.open",
           "readRange(efs, opened.file, { offset: 8150n, length: 20n })",
           "readBytes(efs, opened.file)",
         );
-        const o = await openFile(efs, { kind: "file", subject: span });
-        if (o.status !== "PRESENT") throw new Error(o.status);
-        expect((await readRange(efs, o.file, { offset: 8150n, length: 20n })).grade).toBe(
-          "VERIFIED",
-        );
-        expect((await readBytes(efs, o.file)).grade).toBe("VERIFIED");
+        const f = await fileOf(efs, span);
+        expect((await readRange(efs, f, { offset: 8150n, length: 20n })).grade).toBe("VERIFIED");
+        expect((await readBytes(efs, f)).grade).toBe("VERIFIED");
       },
     );
 
@@ -442,22 +419,21 @@ describe.runIf(RECORD)("record RPC transcripts", () => {
         : (globalThis.fetch as unknown as FetchLike)(url, init);
     await record(
       "open-external-https",
-      "openFile(docs/hello.txt, external at a publisher https:// URL) → readBytes with the default policy " +
+      "openObject(docs/hello.txt, external at a publisher https:// URL) → FILE, its open PRESENT → readBytes with the default policy " +
         "(POLICY_BLOCKED, blockedOrigins [https://files.example], nothing fetched) → readBytes with " +
         "{ allowOrigins: ['https://files.example'] } → VERIFIED. Route ids.httpsUrl to serve ids.httpsText.",
       { file: put.file, httpsUrl: HTTPS_URL, httpsText: "hello from a gateway\n" },
       async (efs, steps) => {
         steps.push(
-          "openFile(efs, { kind: 'file', subject: ids.file })",
+          "openObject(efs, ids.file)  // FILE; opened = result.open",
           "readBytes(efs, opened.file)  // POLICY_BLOCKED",
           "readBytes(efs, opened.file, { allowOrigins: ['https://files.example'] })  // VERIFIED",
         );
-        const o = await openFile(efs, { kind: "file", subject: put.file });
-        if (o.status !== "PRESENT") throw new Error(o.status);
-        const blocked = await readBytes(efs, o.file);
+        const f = await fileOf(efs, put.file);
+        const blocked = await readBytes(efs, f);
         expect(blocked.grade).toBe("POLICY_BLOCKED");
         expect(blocked.blockedOrigins).toEqual(["https://files.example"]);
-        const once = await readBytes(efs, o.file, { allowOrigins: ["https://files.example"] });
+        const once = await readBytes(efs, f, { allowOrigins: ["https://files.example"] });
         expect(once.grade).toBe("VERIFIED");
       },
       serveHttps,
