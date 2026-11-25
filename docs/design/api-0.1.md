@@ -682,6 +682,12 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   journal, the save answers IN_FLIGHT (reason NOT_YET_DECIDABLE, "Saved · confirming"), and `reconcileSequence` or
   `resume` settles it from the ledger later, sending nothing again. With the default, one call carries a
   part-by-part save through every part, one prompt per part; `0` returns right after the first send.
+- **`onProgress(p, e)`** (runSequence and resume) is for live UI only, e.g. "Approve part 2 of 5 in your wallet".
+  `e` is `{ kind: "wallet-request"; parts }` just before each wallet prompt (after the write-ahead record, so
+  `p.current.stage` is SUBMISSION_POSSIBLE; several parts in one EIP-5792 request; never for a local account or a
+  part that is not sent), or `{ kind: "committed"; index }` as each part commits. It is advisory: not awaited,
+  anything it throws is ignored, and a missed or extra event changes nothing. The returned `SequenceProgress`, the
+  journal and reconcile stay the truth about what was sent.
 - **A wallet that moves:** before each send the wallet's chain and accounts are re-read. If they are not the
   plan's, nothing is sent and the journal is untouched: NOT_SENT with reason WALLET_MISMATCH (`retry: "transient"`,
   `reason.wallet` = expected vs actual). Remaining parts are never sent under another account. Switch the wallet

@@ -5,7 +5,12 @@ import { readFileSync } from "node:fs";
 import { keccak256, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
-import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import {
+  createWriter,
+  memoryJournal,
+  type SequenceEvent,
+  type SequenceProgress,
+} from "../../src/actions/index.ts";
 import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Hex } from "../../src/core/hex.ts";
@@ -100,6 +105,32 @@ function wallet(
   return w as Eip1193Like & { sends: number; batches: number; account: Hex; held: Hex[] };
 }
 
+/**
+ * An onProgress that records each event as [kind, parts|index, committed, current stage], then throws (or, with
+ * `rejects`, is async and rejects): neither may break the save.
+ */
+function progressLog(k: { rejects?: boolean } = {}) {
+  const seen: unknown[][] = [];
+  const record = (p: SequenceProgress, e: SequenceEvent): void => {
+    seen.push([
+      e.kind,
+      e.kind === "wallet-request" ? e.parts : e.index,
+      p.committed,
+      p.current?.stage ?? null,
+    ]);
+  };
+  const onProgress = k.rejects
+    ? async (p: SequenceProgress, e: SequenceEvent): Promise<void> => {
+        record(p, e);
+        throw new Error("an async UI callback that rejects must not break the save");
+      }
+    : (p: SequenceProgress, e: SequenceEvent): void => {
+        record(p, e);
+        throw new Error("a UI callback that throws must not break the save");
+      };
+  return { seen, onProgress };
+}
+
 const parts = (principal: Hex, tag: string, n = 3) =>
   Array.from({ length: n }, (_, i) =>
     putInline(
@@ -164,6 +195,66 @@ describe("runSequence (fixture)", () => {
     );
   });
 
+  it("onProgress: a wallet request before each part, a commit after it; a throwing callback changes nothing", async () => {
+    const log = progressLog();
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: wallet(ERIN), account: ERIN },
+      journal: memoryJournal(),
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-progress"), {
+      onProgress: log.onProgress,
+      pollMs: 50,
+    });
+    expect(r).toMatchObject({ state: "COMPLETE", committed: 3 });
+    expect(log.seen).toEqual([
+      ["wallet-request", [0], 0, "SUBMISSION_POSSIBLE"],
+      ["committed", 0, 1, "NOT_PLANNED"],
+      ["wallet-request", [1], 1, "SUBMISSION_POSSIBLE"],
+      ["committed", 1, 2, "NOT_PLANNED"],
+      ["wallet-request", [2], 2, "SUBMISSION_POSSIBLE"],
+      ["committed", 2, 3, null],
+    ]);
+  });
+
+  it("onProgress: one wallet request for an atomic batch; none for a local account", async () => {
+    const batched = progressLog({ rejects: true });
+    const w = await createWriter(efs, {
+      authorizer: {
+        kind: "eip1193",
+        profile: "direct",
+        provider: wallet(ERIN, { atomic5792: true }),
+        account: ERIN,
+      },
+      journal: memoryJournal(),
+    });
+    expect(
+      await w.runSequence(parts(w.principal, "seq-progress-batch"), {
+        onProgress: batched.onProgress,
+        pollMs: 50,
+      }),
+    ).toMatchObject({ state: "COMPLETE", mode: "batch" });
+    expect(batched.seen.map(([k, x]) => [k, x])).toEqual([
+      ["wallet-request", [0, 1, 2]],
+      ["committed", 0],
+      ["committed", 1],
+      ["committed", 2],
+    ]);
+    const local = progressLog();
+    const l = await createWriter(efs, {
+      authorizer: { kind: "local", profile: "direct", account: dave },
+      journal: memoryJournal(),
+    });
+    expect(
+      await l.runSequence(parts(l.principal, "seq-progress-local", 2), {
+        onProgress: local.onProgress,
+      }),
+    ).toMatchObject({ state: "COMPLETE" });
+    expect(local.seen.map(([k, x]) => [k, x])).toEqual([
+      ["committed", 0],
+      ["committed", 1],
+    ]);
+  });
+
   it("a lost response is settled from the ledger and never sent twice", async () => {
     const lossy = wallet(FRANK, { loseFirst: true });
     const w = await createWriter(efs, {
@@ -183,7 +274,13 @@ describe("runSequence (fixture)", () => {
       journal,
     });
     const before = Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]));
-    const r = await w.runSequence(parts(w.principal, "seq-switch"));
+    const log = progressLog();
+    const r = await w.runSequence(parts(w.principal, "seq-switch"), { onProgress: log.onProgress });
+    // The moved wallet is never asked: one wallet request, for part 1 only.
+    expect(log.seen.map(([k, x]) => [k, x])).toEqual([
+      ["wallet-request", [0]],
+      ["committed", 0],
+    ]);
     expect(r).toMatchObject({
       state: "PARTIAL",
       total: 3,

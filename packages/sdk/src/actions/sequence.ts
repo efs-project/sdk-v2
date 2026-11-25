@@ -26,7 +26,7 @@ import {
 import type { PlanInput } from "./plan.js";
 import { waitForReceipt } from "./receipt.js";
 import { reconcileAttempt } from "./reconcile.js";
-import { type Authorizer, type SendOpts, sendPlan } from "./send.js";
+import { type Authorizer, notify, type SendOpts, sendPlan } from "./send.js";
 import type { Plan, PlanResult, PlanSequenceResult } from "./types.js";
 
 export interface SequenceOpts extends SendOpts {
@@ -40,7 +40,19 @@ export interface SequenceOpts extends SendOpts {
    */
   settleMs?: number;
   pollMs?: number;
+  /**
+   * Live progress for runSequence and resume, e.g. "Approve part 2 of 5 in your wallet": a "wallet-request" event
+   * just before each wallet prompt (after the write-ahead record), and a "committed" event as each part commits.
+   * Not awaited, and anything it throws is ignored; the returned SequenceProgress stays the outcome.
+   */
+  onProgress?: (p: SequenceProgress, e: SequenceEvent) => void;
 }
+
+export type SequenceEvent =
+  /** The wallet is being asked to approve these parts (0-based indexes; several in one EIP-5792 request). */
+  | { kind: "wallet-request"; parts: readonly number[] }
+  /** The ledger decided this part (0-based): committed. */
+  | { kind: "committed"; index: number };
 
 /** What the client shows: N, how many committed, and where the save is now. */
 export interface SequenceProgress {
@@ -115,21 +127,18 @@ function sequenceCore(efs: Efs, journal: Journal) {
     return next;
   };
 
-  const progress = async (
+  /**
+   * A SequenceProgress from the record alone, with `stage` for the first open part when the caller knows it. No
+   * journal read, so it cannot fail: the advisory onProgress events are built from this.
+   */
+  const snapshot = (
     r: SequenceRecord,
     extra: { mode?: "batch" | "sequential"; reason?: Reason } = {},
-  ): Promise<SequenceProgress> => {
+    stage?: AttemptStage | "NOT_PLANNED",
+  ): SequenceProgress => {
     const index = r.parts.findIndex((p) => !p.committed);
-    let current: SequenceProgress["current"];
-    if (index >= 0) {
-      const part = r.parts[index] as SequencePart;
-      const stage = part.planId ? (await journal.get(part.planId))?.stage : undefined;
-      current = {
-        index,
-        ...(part.planId ? { planId: part.planId } : {}),
-        stage: stage ?? "NOT_PLANNED",
-      };
-    }
+    const part = r.parts[index];
+    const known = stage ?? (part && !part.planId ? "NOT_PLANNED" : undefined);
     return {
       kind: "efs.sequence",
       sequenceId: r.sequenceId,
@@ -138,10 +147,30 @@ function sequenceCore(efs: Efs, journal: Journal) {
       final: r.state === "COMPLETE" && r.final === true,
       total: r.parts.length,
       committed: r.parts.filter((p) => p.committed).length,
-      ...(current ? { current } : {}),
+      ...(part
+        ? {
+            current: {
+              index,
+              ...(part.planId ? { planId: part.planId } : {}),
+              ...(known ? { stage: known } : {}),
+            },
+          }
+        : {}),
       ...(extra.mode ? { mode: extra.mode } : {}),
       ...(extra.reason ? { reason: extra.reason } : {}),
     };
+  };
+
+  /** The outcome: the snapshot, with the first open part's attempt stage read from the journal. */
+  const progress = async (
+    r: SequenceRecord,
+    extra: { mode?: "batch" | "sequential"; reason?: Reason } = {},
+  ): Promise<SequenceProgress> => {
+    const part = r.parts.find((p) => !p.committed);
+    const stage = part?.planId
+      ? ((await journal.get(part.planId))?.stage ?? "NOT_PLANNED")
+      : undefined;
+    return snapshot(r, extra, stage);
   };
 
   /**
@@ -199,7 +228,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
     return save({ ...r, parts });
   };
 
-  return { derive, save, progress, reconcileParts };
+  return { derive, save, progress, snapshot, reconcileParts };
 }
 
 /** STALE from a send: the ledger refuses this plan as it stands; `revert` (when known) says why, e.g. E_CAS. */
@@ -210,12 +239,56 @@ const staleReason = (sent: { reasons: readonly string[]; revert?: RevertInfo }):
 
 export function sequenceOps(d: Deps) {
   const { efs, journal } = d;
-  const { save, progress, reconcileParts } = sequenceCore(efs, journal);
+  const { save, progress, snapshot, reconcileParts } = sequenceCore(efs, journal);
+
+  /**
+   * Deliver an advisory event. The progress is built inside the guard from the record alone (no journal read), so
+   * neither building nor delivering it can throw, reject, or change what the save does.
+   */
+  const tell = (o: SequenceOpts, build: () => SequenceProgress, e: SequenceEvent): void => {
+    const on = o.onProgress;
+    if (on) notify(() => on(build(), e));
+  };
+
+  /** Send options whose wallet hook also reports a "wallet-request" for `asked` (the write-ahead is down by then). */
+  const asking = (
+    o: SequenceOpts,
+    r: SequenceRecord,
+    asked: readonly number[],
+    mode: "batch" | "sequential",
+  ): SequenceOpts =>
+    o.onProgress
+      ? {
+          ...o,
+          onWalletRequest: () => {
+            notify(o.onWalletRequest);
+            tell(o, () => snapshot(r, { mode }, "SUBMISSION_POSSIBLE"), {
+              kind: "wallet-request",
+              parts: asked,
+            });
+          },
+        }
+      : o;
+
+  /** Report each part that `after` has committed and `before` had not. */
+  const committedSince = (
+    o: SequenceOpts,
+    before: SequenceRecord,
+    after: SequenceRecord,
+    mode?: "batch" | "sequential",
+  ): void => {
+    if (!o.onProgress) return;
+    after.parts.forEach((p, index) => {
+      if (p.committed && !before.parts[index]?.committed)
+        tell(o, () => snapshot(after, mode ? { mode } : {}), { kind: "committed", index });
+    });
+  };
 
   /** Send what is left: as one EIP-5792 request when the wallet runs it atomically, else part by part. */
   const advance = async (r0: SequenceRecord, o: SequenceOpts): Promise<SequenceProgress> => {
     const settleMs = o.settleMs ?? 60_000;
     let r = await reconcileParts(r0, o, 0);
+    committedSince(o, r0, r);
     if (r.state === "IN_FLIGHT" || r.state === "COMPLETE" || r.state === "ABANDONED")
       return progress(r);
     const remaining = r.parts.map((p, i) => ({ p, i })).filter(({ p }) => !p.committed);
@@ -237,14 +310,23 @@ export function sequenceOps(d: Deps) {
         (parts[i] as SequencePart).planId = (planned.plans[k] as Plan).id;
       });
       r = await save({ ...r, parts }, "sending the remaining parts as one wallet request");
-      const sent = await sendPlansAsBatch(efs, journal, a.provider, planned.plans, o);
+      const asked = remaining.map(({ i }) => i);
+      const sent = await sendPlansAsBatch(
+        efs,
+        journal,
+        a.provider,
+        planned.plans,
+        asking(o, r, asked, "batch"),
+      );
       if (sent.status === "SUBMITTED")
         await waitForBatch(a.provider, sent.batchId, { timeoutMs: settleMs });
+      const sentAt = r;
       r = await reconcileParts(
         r,
         o,
         sent.status === "SUBMITTED" || sent.status === "AMBIGUOUS" ? settleMs : 0,
       );
+      committedSince(o, sentAt, r, "batch");
       const why =
         sent.status === "NOT_SENT" || sent.status === "AMBIGUOUS"
           ? sent.reason
@@ -266,15 +348,17 @@ export function sequenceOps(d: Deps) {
       const parts = r.parts.map((p) => ({ ...p }));
       (parts[i] as SequencePart).planId = planned.plan.id;
       r = await save({ ...r, parts }, `sending part ${i + 1} of ${r.parts.length}`);
-      const sent = await sendPlan(efs, journal, a, planned.plan, o);
+      const sent = await sendPlan(efs, journal, a, planned.plan, asking(o, r, [i], "sequential"));
       // Bounded by settleMs, like the batch wait: when it runs out the part stays SUBMITTED (in flight, journaled),
       // never failed; reconcile settles it later from the ledger.
       if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o, settleMs);
+      const sentAt = r;
       r = await reconcileParts(
         r,
         o,
         sent.status === "SUBMITTED" || sent.status === "AMBIGUOUS" ? settleMs : 0,
       );
+      committedSince(o, sentAt, r, "sequential");
       if (!(r.parts[i] as SequencePart).committed) {
         const why =
           sent.status === "NOT_SENT" || sent.status === "AMBIGUOUS"
