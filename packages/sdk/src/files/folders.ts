@@ -38,12 +38,16 @@ import { positionKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import {
   type Ctx,
+  decodeHead,
   EMPTY_BASIS,
   type Evidence,
   type FileRef,
+  headCall,
   type OpenResult,
-  openFile,
+  openResult,
+  openSelected,
   type ReadOpts,
+  type RevisionOpen,
 } from "./bytes.js";
 
 /**
@@ -1451,6 +1455,7 @@ export type ObjectOpen =
   /**
    * A created subject: a file, with the principal that created it, and the file opened under the Lens (`open`: its
    * HEAD may still be ABSENT_PROVEN under this Lens, which is "no author in your Lens has a HEAD", not "no file").
+   * `open` is read at this answer's basis, its HEAD in the same batch as the kind, with every openFile check.
    */
   | {
       kind: "efs.object";
@@ -1498,18 +1503,22 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
     };
   const basis = pin.basis;
   const dirType = lower(efs.deployment.typeIds["files-directory/1"] as Hex);
+  const lens = o.lens ?? efs.lens.default;
   type Kind =
     | { kind: "folder"; owner: PrincipalId }
-    | { kind: "file"; creator: PrincipalId }
+    | { kind: "file"; creator: PrincipalId; open: RevisionOpen }
     | { kind: "absent" }
     | { kind: "other"; typeId: Hex };
   const r = await onEndpoint<Kind>(
     efs._internal.pool,
     async (s) => {
-      ctx.requests += 2;
-      const [rec, sub] = await callsAt(s, basis.blockHash, [
+      // One round trip for the kind and, speculatively, the file's HEAD under the Lens: a file link then costs what
+      // openFile does. The HEAD answer is read only when the kind is FILE, and discarded otherwise.
+      ctx.requests += 3;
+      const [rec, sub, head] = await callsAt(s, basis.blockHash, [
         recordsCall(efs, [target]),
         subjectInfoCall(efs, target),
+        headCall(efs, lens, target),
       ]);
       if (!rec?.ok) return failed(rec);
       let statuses: readonly number[];
@@ -1533,7 +1542,14 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
       if (st !== "ABSENT_PROVEN") return badReply(`records (${st})`);
       const c = decodeCreator(sub);
       if (!c.ok) return c;
-      return { ok: true, value: c.value ? { kind: "file", creator: c.value } : { kind: "absent" } };
+      if (!c.value) return { ok: true, value: { kind: "absent" } };
+      // A created subject: its file, opened from the batched HEAD at this basis on this endpoint (every openFile check,
+      // the HEAD law included, runs in openSelected).
+      const sel = decodeHead(head);
+      if (!sel.ok) return sel;
+      const open = await openSelected(ctx, s, basis, target, sel.value);
+      if (!open.ok) return open;
+      return { ok: true, value: { kind: "file", creator: c.value, open: open.value } };
     },
     o,
   );
@@ -1565,6 +1581,6 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
       evidence,
     };
   const file: FileRef = { kind: "file", subject: target as SubjectId };
-  const open = await openFile(efs, file, o);
+  const open = openResult(v.open, basis, evidence);
   return { kind: "efs.object", status: "FILE", file, creator: v.creator, open, basis, evidence };
 }

@@ -4,9 +4,9 @@
 // the descriptor's sha256. Bytes that fail a check are never handed back.
 import { decodeFunctionResult, encodeFunctionData, sha256 } from "viem";
 import { cacheGet, cachePut } from "../cache/stores.js";
-import { callsAt } from "../chain/basis.js";
+import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Attempt, type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
-import type { FetchLike } from "../chain/rpc.js";
+import type { FetchLike, RpcOutcome } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import {
   CARRIER,
@@ -184,35 +184,41 @@ export type HeadSelection =
   | { status: "ABSENT_PROVEN" | "MASKED" }
   | { status: "UNKNOWN" | "INVALID"; reason?: Reason };
 
-/** @internal */
-export async function headUnderLens(
-  ctx: Ctx,
-  s: Session,
-  basis: Basis,
-  lens: Lens,
-  subject: Hex,
-): Promise<Step<HeadSelection>> {
-  ctx.requests += 1;
-  const data = encodeFunctionData({
-    abi: lensReaderAbi,
-    functionName: "resolve",
-    args: [lens.principals, { purpose: PURPOSES.head, subject, role: ZERO_WORD }, EMPTY_BASIS],
-  });
-  const [out] = await callsAt(s, basis.blockHash, [{ to: ctx.efs.deployment.readers.lens, data }]);
+/** @internal The LensReader.resolve call for `subject`'s HEAD under `lens`, to batch with other reads at one basis. */
+export function headCall(efs: Efs, lens: Lens, subject: Hex): CallRequest {
+  return {
+    to: efs.deployment.readers.lens as `0x${string}`,
+    data: encodeFunctionData({
+      abi: lensReaderAbi,
+      functionName: "resolve",
+      args: [lens.principals, { purpose: PURPOSES.head, subject, role: ZERO_WORD }, EMPTY_BASIS],
+    }),
+  };
+}
+
+/** @internal Decode and check a headCall reply. A reply that does not decode fails over to the next endpoint. */
+export function decodeHead(out: RpcOutcome | undefined): Step<HeadSelection> {
   if (!out?.ok)
     return {
       ok: false,
       retryElsewhere: true,
       reason: out ? out.reason : reason("RPC_UNAVAILABLE", "transient"),
     };
-  const [q, sel] = decodeFunctionResult({
-    abi: lensReaderAbi,
-    functionName: "resolve",
-    data: out.result as Hex,
-  }) as unknown as [
-    { status: number },
-    { status: number; target: Hex; principalId: Hex; revision: bigint; admission: bigint },
-  ];
+  let q: { status: number };
+  let sel: { status: number; target: Hex; principalId: Hex; revision: bigint; admission: bigint };
+  try {
+    [q, sel] = decodeFunctionResult({
+      abi: lensReaderAbi,
+      functionName: "resolve",
+      data: out.result as Hex,
+    }) as unknown as [typeof q, typeof sel];
+  } catch {
+    return {
+      ok: false,
+      retryElsewhere: true,
+      reason: reason("RPC_ERROR", "transient", "LensReader.resolve did not decode"),
+    };
+  }
   // LensReader.resolve: q.status equals the selection's status (PRESENT, MASKED, ABSENT_PROVEN, UNKNOWN), or is a
   // refusal (INVALID, LIMIT_EXCEEDED, BASIS_STALE, UNSUPPORTED). Anything else is not guessed at.
   const qs = chainStatus(q.status);
@@ -257,6 +263,47 @@ export async function headUnderLens(
       admission: BigInt(sel.admission),
     },
   };
+}
+
+/** @internal A file's HEAD under a Lens at the basis block, in its own request. */
+export async function headUnderLens(
+  ctx: Ctx,
+  s: Session,
+  basis: Basis,
+  lens: Lens,
+  subject: Hex,
+): Promise<Step<HeadSelection>> {
+  ctx.requests += 1;
+  const [out] = await callsAt(s, basis.blockHash, [headCall(ctx.efs, lens, subject)]);
+  return decodeHead(out);
+}
+
+/**
+ * @internal The file a HEAD selection opens, on this session at this basis: the selected revision checked by
+ * resolveRevision (the HEAD law included), or the selection's own status when there is no HEAD to open.
+ */
+export async function openSelected(
+  ctx: Ctx,
+  s: Session,
+  basis: Basis,
+  subject: Hex,
+  h: HeadSelection,
+): Promise<Step<RevisionOpen>> {
+  if (h.status !== "PRESENT") return { ok: true, value: h };
+  return resolveRevision(ctx, s, basis, h.target, subject, h.author);
+}
+
+/** @internal A RevisionOpen as the public OpenResult. */
+export function openResult(v: RevisionOpen, basis: Basis, evidence: Evidence): OpenResult {
+  return v.status === "PRESENT"
+    ? { kind: "efs.open", status: "PRESENT", file: v.file, basis, evidence }
+    : {
+        kind: "efs.open",
+        status: v.status,
+        ...(v.reason ? { reason: v.reason } : {}),
+        basis,
+        evidence,
+      };
 }
 
 /** @internal What one revision resolves to: the opened file, or why it cannot be opened. */
@@ -439,22 +486,12 @@ export async function openFile(
   const r = await onEndpoint<RevisionOpen>(
     efs._internal.pool,
     async (s) => {
-      let revisionId: Hex;
-      let author: PrincipalId | null = null;
-      let fileSubject: Hex | undefined;
       if (target.kind === "file") {
-        fileSubject = target.subject;
         const head = await headUnderLens(ctx, s, basis, lens, target.subject);
         if (!head.ok) return head;
-        const h = head.value;
-        if (h.status !== "PRESENT") return { ok: true, value: h };
-        revisionId = h.target;
-        author = h.author;
-      } else {
-        revisionId = lower(target.recordId);
-        fileSubject = target.file;
+        return openSelected(ctx, s, basis, target.subject, head.value);
       }
-      return resolveRevision(ctx, s, basis, revisionId, fileSubject, author);
+      return resolveRevision(ctx, s, basis, lower(target.recordId), target.file, null);
     },
     o,
   );
@@ -463,16 +500,7 @@ export async function openFile(
     requests: ctx.requests,
   };
   if (!r.ok) return { kind: "efs.open", status: "UNKNOWN", reason: r.reason, basis, evidence };
-  const v = r.value;
-  return v.status === "PRESENT"
-    ? { kind: "efs.open", status: "PRESENT", file: v.file, basis, evidence }
-    : {
-        kind: "efs.open",
-        status: v.status,
-        ...(v.reason ? { reason: v.reason } : {}),
-        basis,
-        evidence,
-      };
+  return openResult(r.value, basis, evidence);
 }
 
 // ---- reading bytes

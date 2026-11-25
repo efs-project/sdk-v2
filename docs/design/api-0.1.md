@@ -845,7 +845,10 @@ explicitly: there is no default root, and no link format names one (the Realm's 
 fixtures; folder paths will live under an address once homes land). `openObject(efs, id, { lens? })` says what an
 object link's id is, in one batched read: a folder record is `FOLDER { folder, owner }`, a created subject is
 `FILE { file, creator, open }` (opened under the Lens), anything else `ABSENT_PROVEN`; a record of another Type is
-INVALID. The kind is fixed by the id, so the answer never changes. `efs.lens.place({ reader, owner, base })` builds a place's
+INVALID. The kind is fixed by the id, so the answer never changes. The kind read carries the file's HEAD read in the
+same batch (discarded unless the id is a file), and `open` is read at that basis on that endpoint with every openFile
+check, so a file link costs the round trips of openFile alone. If the HEAD or revision can't be read on any endpoint,
+the whole answer is UNKNOWN. `efs.lens.place({ reader, owner, base })` builds a place's
 Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out), then `base`, each once.
 
 **Reads** (`@efs/sdk/files`, all at one block):
