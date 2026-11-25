@@ -60,7 +60,8 @@ export interface DeploymentInfo {
     lens: Hex;
     filesPage: Hex;
   };
-  root: { directoryRecordId: RecordId; subjectId: SubjectId; principalId: PrincipalId };
+  /** The Realm's shared root folder: its files-directory/1 record and the principal that created it. */
+  root: { directoryRecordId: RecordId; principalId: PrincipalId };
   defaultLens: readonly PrincipalId[];
   typeIds: Readonly<Record<string, Hex>>;
   limits: ProtocolLimits;
@@ -180,7 +181,6 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
     },
     root: {
       directoryRecordId: word("root.directoryRecordId", root["directoryRecordId"]) as RecordId,
-      subjectId: word("root.subjectId", root["subjectId"]) as SubjectId,
       principalId: word("root.principalId", root["principalId"]) as PrincipalId,
     },
     defaultLens: defaultLens.map((p, i) => word(`defaultLensPrincipals[${i}]`, p) as PrincipalId),

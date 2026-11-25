@@ -201,9 +201,8 @@ export function sequenceEffect(parts: readonly SequencePartInput[]): SequenceEff
       return same((e) => {
         const p = place(e);
         const directory = word(e, "directory");
-        const subject = word(e, "subject");
-        return p && directory && subject
-          ? { kind: "files.createFolder" as const, ...p, directory, subject }
+        return p && directory
+          ? { kind: "files.createFolder" as const, ...p, directory }
           : undefined;
       });
     case "files.move": {

@@ -107,7 +107,7 @@ describe("folder writes (fixture)", () => {
     ).toMatchObject({
       kind: "folder",
       author: A,
-      target: { directory: folder.directory, subject: made.review.created.subject, owner: A },
+      target: { directory: folder.directory, owner: A },
     });
     const empty = await listFolder(efs, folder, { lens: both });
     expect(empty).toMatchObject({ status: "PRESENT", rows: [], coverage: { state: "COMPLETE" } });

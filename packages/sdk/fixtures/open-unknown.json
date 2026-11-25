@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "e90c7d802f3c354b93dbf9b23baa8d3c867bf79d",
+  "contractsCommit": "cc59d0ca1f9fbcc8f554859cb2b2716da46d4d9b",
   "case": "open-unknown",
   "note": "openFile with every endpoint down",
   "result": {
@@ -21,7 +21,7 @@
             "retry": "transient",
             "detail": "fetch failed"
           },
-          "ms": 1
+          "ms": 0
         }
       ],
       "requests": 0

@@ -37,18 +37,25 @@ import { FILES, PURPOSES } from "../generated/constants.js";
 import { checkName, decodeScalars, type NameRule } from "../names/name.js";
 import { positionKey, recordId } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
-import { type Ctx, EMPTY_BASIS, type Evidence, type FileRef, type ReadOpts } from "./bytes.js";
+import {
+  type Ctx,
+  EMPTY_BASIS,
+  type Evidence,
+  type FileRef,
+  type OpenResult,
+  openFile,
+  type ReadOpts,
+} from "./bytes.js";
 
 /**
- * A folder: its files-directory/1 record id (the subject of its entries' FOLDER bindings). `subject` is the subject
- * that minted it, which is its object link (`link({ kind: "object", subject })`): set on folders this SDK lists or
- * creates. `folderOf` makes a FolderRef from a subject.
+ * A folder: its files-directory/1 record id, which is also its permanent link (`~efs/o/<directory>`) and the subject
+ * of its entries' FOLDER bindings. The record's body is (creator, salt) and only its creator may publish it, so the
+ * id names one folder of one owner forever. `openObject` tells a folder's id from a file's.
  */
 export interface FolderRef {
   kind: "folder";
   directory: RecordId;
-  subject?: SubjectId;
-  /** The principal that created it (its subject's creator), where a listing read it: the input `placeLens` takes. */
+  /** The principal that created it (the record's word 0), where a read saw it: the `owner` efs.lens.place takes. */
   owner?: PrincipalId;
 }
 /** One name in one folder. */
@@ -142,7 +149,7 @@ export type FolderPage =
   | {
       kind: "efs.folderPage";
       status: "PRESENT";
-      /** The listed folder, with its subject (object link) and its owner (the subject's creator). */
+      /** The listed folder, with its owner (the record's creator). */
       folder: FolderRef;
       rows: readonly FolderRow[];
       /**
@@ -329,16 +336,8 @@ const badReply = (what: string): Step<never> => ({
   reason: reason("RPC_ERROR", "transient", `${what} did not decode`),
 });
 
-/** The folder a subject minted: its files-directory/1 record id is derived, with no read. */
-export function folderOf(efs: Efs, subject: SubjectId): FolderRef {
-  const t = efs.deployment.typeIds["files-directory/1"] as Hex | undefined;
-  if (!t) throw misuse("this deployment has no files-directory/1 Type");
-  const s = lower(subject) as SubjectId;
-  return { kind: "folder", directory: recordId(t, encode.directory(s)), subject: s };
-}
-
 type FolderRecord =
-  | { status: "PRESENT"; directory: boolean; subject: SubjectId }
+  | { status: "PRESENT"; directory: boolean; owner: PrincipalId }
   | { status: "ABSENT_PROVEN" };
 
 /** @internal The ledger's records call for folder ids: whether each is a files-directory/1 record, and its subject. */
@@ -377,8 +376,8 @@ const decodeRecords = (
     else if (st === "PRESENT")
       res.push({
         status: "PRESENT",
-        directory: lower(h.typeId) === dirType && Number(h.length) === 32,
-        subject: lower(h.word0) as SubjectId,
+        directory: lower(h.typeId) === dirType && Number(h.length) === 64,
+        owner: lower(h.word0) as PrincipalId, // the body is (creator, salt)
       });
     else
       return {
@@ -519,43 +518,31 @@ const wordAt = (b: Uint8Array, i: number): Hex | undefined =>
   b.length >= (i + 1) * 32 ? (bytesToHex(b.subarray(i * 32, (i + 1) * 32)) as Hex) : undefined;
 
 /**
- * The details a page's rows carry beyond the reader's: each file's HEAD revision Type, each folder's owner, the
- * listed folder's owner and, with `withSize`, each file's size. Mutates `rows`; returns the listed folder's owner.
+ * The details a page's rows carry beyond the reader's: each file's HEAD revision Type and, with `withSize`, each
+ * file's size (folders' owners come with their records). Mutates `rows`.
  */
 async function pageDetails(
   ctx: Ctx,
   s: Session,
   basis: Basis,
-  folderSubject: SubjectId,
   rows: FolderRow[],
   withSize: boolean,
-): Promise<Step<{ owner: PrincipalId | null }>> {
+): Promise<Step<null>> {
   const efs = ctx.efs;
   const t = efs.deployment.typeIds as Record<string, Hex>;
   const rootType = lower(t["files-root/1"] as Hex);
   const childType = lower(t["files-child/1"] as Hex);
   const dirType = lower(t["files-directory/1"] as Hex);
   const files = rows.filter((r) => r.kind === "file" && r.head);
-  const folders = rows.filter(
-    (r) => r.kind === "folder" && r.target?.kind === "folder" && r.target.subject,
-  );
-  const calls: CallRequest[] = [subjectInfoCall(efs, folderSubject)];
-  for (const r of folders) calls.push(subjectInfoCall(efs, (r.target as FolderRef).subject as Hex));
+  for (const r of rows) if (r.kind === "folder") r.typeId = dirType;
+  const calls: CallRequest[] = [];
   const headIds = files.map((r) => (r.head as { record: Hex }).record);
   const ri = headIds.length > 0 ? calls.push(recordsCall(efs, headIds)) - 1 : -1;
   const si = calls.length;
   if (withSize) for (const id of headIds) calls.push(bodySliceCall(efs, id, 0, 128));
+  if (calls.length === 0) return { ok: true, value: null };
   ctx.requests += calls.length;
   const outs = await callsAt(s, basis.blockHash, calls);
-  const owner = decodeCreator(outs[0]);
-  if (!owner.ok) return owner;
-  for (const [i, r] of folders.entries()) {
-    const c = decodeCreator(outs[1 + i]);
-    if (!c.ok) return c;
-    r.typeId = dirType;
-    if (c.value) r.target = { ...(r.target as FolderRef), owner: c.value };
-  }
-  for (const r of rows) if (r.kind === "folder") r.typeId = dirType;
   const lengths: (number | undefined)[] = [];
   if (ri >= 0) {
     const out = outs[ri];
@@ -581,7 +568,7 @@ async function pageDetails(
       lengths.push(Number(h.length));
     }
   }
-  if (!withSize || files.length === 0) return { ok: true, value: { owner: owner.value } };
+  if (!withSize || files.length === 0) return { ok: true, value: null };
   // Inline revisions: the size is the body after the revision's header. Descriptors: their length word (word 4).
   const later: { row: FolderRow; descriptor: Hex }[] = [];
   for (const [i, r] of files.entries()) {
@@ -612,7 +599,7 @@ async function pageDetails(
       if (w !== undefined) x.row.size = BigInt(w);
     }
   }
-  return { ok: true, value: { owner: owner.value } };
+  return { ok: true, value: null };
 }
 
 /**
@@ -762,7 +749,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
         .filter((x) => x.targetKind === TARGET_RECORD)
         .map((x) => lower(x.target));
       const authorOf = new Map<Hex, PrincipalId>();
-      const subjects = new Map<Hex, SubjectId>();
+      const owners = new Map<Hex, PrincipalId>();
       if (shown.length > 0) {
         const calls: CallRequest[] = [];
         const si =
@@ -803,7 +790,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
           if (!fr.ok) return fr;
           fr.value.forEach((x, i) => {
             // The chain admits only files-directory/1 records as folder entries; anything else is not given a subject.
-            if (x.status === "PRESENT" && x.directory) subjects.set(folderIds[i] as Hex, x.subject);
+            if (x.status === "PRESENT" && x.directory) owners.set(folderIds[i] as Hex, x.owner);
           });
         }
         if (si >= 0) {
@@ -899,8 +886,8 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
         const row = toRow(raw, authorOf.get(lower(raw.position)) as PrincipalId);
         if (!row) continue;
         if (row.target?.kind === "folder") {
-          const subject = subjects.get(row.target.directory);
-          if (subject) row.target = { ...row.target, subject };
+          const owner = owners.get(row.target.directory);
+          if (owner) row.target = { ...row.target, owner };
           else row.kind = "invalid"; // a folder entry whose record is not a folder
         }
         if (want.size > 0 && !want.has(row.kind)) {
@@ -910,7 +897,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
         rows.push(row);
       }
       // Types, owners and (withSize) sizes: one more batch, and one for sizes held in descriptors.
-      const details = await pageDetails(ctx, s, basis, me.subject, rows, o.withSize === true);
+      const details = await pageDetails(ctx, s, basis, rows, o.withSize === true);
       if (!details.ok) return details;
       const cov = page.listingCoverage;
       const more = page.next !== "0x";
@@ -957,11 +944,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
         ok: true,
         value: {
           kind: "page",
-          folder: {
-            ...dir,
-            subject: me.subject,
-            ...(details.value.owner ? { owner: details.value.owner } : {}),
-          },
+          folder: { ...dir, owner: me.owner },
           rows,
           hidden,
           filtered,
@@ -1201,7 +1184,7 @@ export async function lookupAt(
       const fr = decodeRecords(ctx.efs, rec, 1);
       if (!fr.ok) return fr;
       const x = fr.value[0] as FolderRecord;
-      if (x.status === "PRESENT" && x.directory) r.target = { ...r.target, subject: x.subject };
+      if (x.status === "PRESENT" && x.directory) r.target = { ...r.target, owner: x.owner };
       else r.kind = "invalid";
     }
     selected = r;
@@ -1453,4 +1436,136 @@ export async function resolvePath(
     basis,
     evidence,
   };
+}
+
+// ---- what an id is
+
+export type ObjectOpen =
+  /** A files-directory/1 record: a folder, with the principal that created it (the record's word 0). */
+  | {
+      kind: "efs.object";
+      status: "FOLDER";
+      folder: FolderRef & { owner: PrincipalId };
+      basis: Basis;
+      evidence: Evidence;
+    }
+  /**
+   * A created subject: a file, with the principal that created it, and the file opened under the Lens (`open`: its
+   * HEAD may still be ABSENT_PROVEN under this Lens, which is "no author in your Lens has a HEAD", not "no file").
+   */
+  | {
+      kind: "efs.object";
+      status: "FILE";
+      file: FileRef;
+      creator: PrincipalId;
+      open: OpenResult;
+      basis: Basis;
+      evidence: Evidence;
+    }
+  /** Neither a folder record nor a created subject: nothing has this id. */
+  | { kind: "efs.object"; status: "ABSENT_PROVEN"; basis: Basis; evidence: Evidence }
+  /** INVALID: a record of another Type (a revision, say), or not a 32-byte id. UNKNOWN: nothing decided. */
+  | {
+      kind: "efs.object";
+      status: "UNKNOWN" | "INVALID";
+      reason: Reason;
+      basis?: Basis;
+      evidence: Evidence;
+    };
+
+/**
+ * What an object link's id is, from one batched read: a files-directory/1 record is a FOLDER; else a created
+ * subject is a FILE (then opened under the Lens); else ABSENT_PROVEN. The kind is fixed by the id itself (a folder's
+ * id is its record, which only its creator may publish), so the answer never changes after the fact.
+ */
+export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<ObjectOpen> {
+  const none: Evidence = { attempts: [], requests: 0 };
+  if (!/^0x[0-9a-fA-F]{64}$/.test(id ?? ""))
+    return {
+      kind: "efs.object",
+      status: "INVALID",
+      reason: reason("UNSUPPORTED_PROFILE", "never", "an object id is 32 bytes of hex"),
+      evidence: none,
+    };
+  const target = lower(id);
+  const pin = await efs.at("latest", o);
+  const ctx: Ctx = { efs, requests: pin.evidence.requests };
+  if (pin.status !== "VERIFIED")
+    return {
+      kind: "efs.object",
+      status: "UNKNOWN",
+      reason: pin.status === "UNKNOWN" ? pin.reason : reason("NOT_VERIFIED_DEPLOYMENT", "never"),
+      evidence: pin.evidence,
+    };
+  const basis = pin.basis;
+  const dirType = lower(efs.deployment.typeIds["files-directory/1"] as Hex);
+  type Kind =
+    | { kind: "folder"; owner: PrincipalId }
+    | { kind: "file"; creator: PrincipalId }
+    | { kind: "absent" }
+    | { kind: "other"; typeId: Hex };
+  const r = await onEndpoint<Kind>(
+    efs._internal.pool,
+    async (s) => {
+      ctx.requests += 2;
+      const [rec, sub] = await callsAt(s, basis.blockHash, [
+        recordsCall(efs, [target]),
+        subjectInfoCall(efs, target),
+      ]);
+      if (!rec?.ok) return failed(rec);
+      let statuses: readonly number[];
+      let headers: readonly { typeId: Hex; length: number; word0: Hex }[];
+      try {
+        [statuses, headers] = decodeFunctionResult({
+          abi: ledgerViewsAbi,
+          functionName: "records",
+          data: rec.result as Hex,
+        }) as unknown as [number[], { typeId: Hex; length: number; word0: Hex }[]];
+      } catch {
+        return badReply("records");
+      }
+      const st = chainStatus(statuses[0] as number);
+      const h = headers[0];
+      if (st === "PRESENT" && h) {
+        if (lower(h.typeId) === dirType && Number(h.length) === 64)
+          return { ok: true, value: { kind: "folder", owner: lower(h.word0) as PrincipalId } };
+        return { ok: true, value: { kind: "other", typeId: lower(h.typeId) } };
+      }
+      if (st !== "ABSENT_PROVEN") return badReply(`records (${st})`);
+      const c = decodeCreator(sub);
+      if (!c.ok) return c;
+      return { ok: true, value: c.value ? { kind: "file", creator: c.value } : { kind: "absent" } };
+    },
+    o,
+  );
+  const evidence: Evidence = {
+    attempts: [...pin.evidence.attempts, ...r.attempts],
+    requests: ctx.requests,
+  };
+  if (!r.ok) return { kind: "efs.object", status: "UNKNOWN", reason: r.reason, basis, evidence };
+  const v = r.value;
+  if (v.kind === "folder")
+    return {
+      kind: "efs.object",
+      status: "FOLDER",
+      folder: { kind: "folder", directory: target as RecordId, owner: v.owner },
+      basis,
+      evidence,
+    };
+  if (v.kind === "absent") return { kind: "efs.object", status: "ABSENT_PROVEN", basis, evidence };
+  if (v.kind === "other")
+    return {
+      kind: "efs.object",
+      status: "INVALID",
+      reason: reason(
+        "UNSUPPORTED_PROFILE",
+        "never",
+        `a record of Type ${v.typeId}, not a file or a folder`,
+      ),
+      basis,
+      evidence,
+    };
+  const file: FileRef = { kind: "file", subject: target as SubjectId };
+  const open = await openFile(efs, file, o);
+  return { kind: "efs.object", status: "FILE", file, creator: v.creator, open, basis, evidence };
 }
