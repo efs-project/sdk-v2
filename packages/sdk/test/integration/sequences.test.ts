@@ -107,7 +107,10 @@ describe("runSequence (fixture)", () => {
     const r = await w.runSequence(parts(w.principal, "seq-local"));
     expect(r).toMatchObject({ state: "COMPLETE", total: 3, committed: 3, mode: "sequential" });
     expect(r.current).toBeUndefined();
-    expect(await w.pendingSequences()).toEqual([]);
+    // COMPLETE but not yet final: still listed ("Saved · confirming") until a finalized block confirms it.
+    expect((await w.pendingSequences()).map((x) => [x.state, x.final])).toEqual([
+      ["COMPLETE", false],
+    ]);
   });
 
   it("a refusal at part 2 is PARTIAL (1 of 3); a reload resumes it to COMPLETE with fresh nonces", async () => {
@@ -141,7 +144,9 @@ describe("runSequence (fixture)", () => {
     const done = await again.resume(r.sequenceId);
     expect(done).toMatchObject({ state: "COMPLETE", committed: 3 });
     expect(good.sends).toBe(2);
-    expect(await again.pendingSequences()).toEqual([]);
+    expect((await again.pendingSequences()).map((x) => [x.state, x.final])).toEqual([
+      ["COMPLETE", false],
+    ]);
   });
 
   it("a lost response is settled from the ledger and never sent twice", async () => {

@@ -15,12 +15,13 @@ import type { Address, Hex } from "../core/hex.js";
 import { toJson } from "../core/json.js";
 import { setTimer, utf8Encode } from "../core/platform.js";
 import { atomicBatchSupport, sendPlansAsBatch, waitForBatch } from "./batch.js";
-import type {
-  AttemptStage,
-  Journal,
-  SequencePart,
-  SequenceRecord,
-  SequenceState,
+import {
+  type AttemptStage,
+  type Journal,
+  lockKey,
+  type SequencePart,
+  type SequenceRecord,
+  type SequenceState,
 } from "./journal.js";
 import type { PlanInput } from "./plan.js";
 import { waitForReceipt } from "./receipt.js";
@@ -40,7 +41,14 @@ export interface SequenceOpts extends SendOpts {
 export interface SequenceProgress {
   kind: "efs.sequence";
   sequenceId: Hex;
+  /** The account that started the save: only a writer for this account can resume it. */
+  account: Address;
   state: SequenceState;
+  /**
+   * COMPLETE and every part's admission at a finalized block: "Saved". COMPLETE but not final: "Saved ·
+   * confirming" (it stays in pendingSequences; reconcile it until final). False in every other state.
+   */
+  final: boolean;
   total: number;
   committed: number;
   /** The first part not yet committed: its index, plan and attempt stage (absent when COMPLETE). */
@@ -76,9 +84,8 @@ const sleep = (ms: number) =>
     setTimer(r, ms);
   });
 
-export function sequenceOps(d: Deps) {
-  const { efs, journal } = d;
-
+/** The wallet-free part: settle sequences from the ledger and describe them. Needs no account. */
+function sequenceCore(efs: Efs, journal: Journal) {
   const derive = (r: SequenceRecord): SequenceState => {
     if (r.state === "ABANDONED") return "ABANDONED";
     const k = r.parts.filter((p) => p.committed).length;
@@ -89,12 +96,14 @@ export function sequenceOps(d: Deps) {
 
   const save = async (r: SequenceRecord, detail?: string): Promise<SequenceRecord> => {
     const state = derive(r);
+    const final = state === "COMPLETE" && r.parts.every((p) => p.final !== false);
     const next: SequenceRecord =
-      state === r.state && !detail
+      state === r.state && final === (r.final === true) && !detail
         ? r
         : {
             ...r,
             state,
+            final,
             history: [...r.history, { state, at: Date.now(), ...(detail ? { detail } : {}) }],
           };
     await journal.putSequence(next);
@@ -119,7 +128,9 @@ export function sequenceOps(d: Deps) {
     return {
       kind: "efs.sequence",
       sequenceId: r.sequenceId,
+      account: r.account,
       state: r.state,
+      final: r.state === "COMPLETE" && r.final === true,
       total: r.parts.length,
       committed: r.parts.filter((p) => p.committed).length,
       ...(current ? { current } : {}),
@@ -143,33 +154,52 @@ export function sequenceOps(d: Deps) {
     for (;;) {
       let open = false;
       for (const p of parts) {
-        if (!p.planId || p.committed) continue;
+        if (!p.planId) continue;
+        if (p.committed && p.final !== false) continue; // committed at a finalized block: settled
         const attempt = await journal.get(p.planId);
         if (!attempt || attempt.stage === "PLANNED" || attempt.stage === "NOT_SENT") {
-          delete p.planId; // never broadcast: safe to plan again
-          continue;
-        }
-        if (attempt.stage === "COMMITTED") {
-          p.committed = true;
-          if (attempt.publication !== undefined) p.publication = attempt.publication;
+          if (!p.committed) delete p.planId; // never broadcast: safe to plan again
           continue;
         }
         if (attempt.stage === "NOT_COMMITTED_PROVEN") {
           delete p.planId;
+          delete p.committed;
+          continue;
+        }
+        if (attempt.stage === "COMMITTED" && attempt.final !== false) {
+          p.committed = true;
+          p.final = true;
+          if (attempt.publication !== undefined) p.publication = attempt.publication;
           continue;
         }
         const rec = await reconcileAttempt(efs, journal, p.planId, o);
         if (rec.outcome === "COMMITTED") {
           p.committed = true;
+          p.final = rec.final === true;
           if (rec.publication !== undefined) p.publication = rec.publication;
-        } else if (rec.outcome === "NOT_COMMITTED_PROVEN") delete p.planId;
-        else open = true;
+        } else if (rec.outcome === "NOT_COMMITTED_PROVEN") {
+          delete p.planId;
+          delete p.committed;
+        } else {
+          // Not decided, or reorged out after a COMMITTED: in flight again (sending it again is the user's
+          // choice, never automatic).
+          delete p.committed;
+          p.final = false;
+          open = true;
+        }
       }
       if (!open || Date.now() >= until) break;
       await sleep(o.pollMs ?? 1000);
     }
     return save({ ...r, parts });
   };
+
+  return { derive, save, progress, reconcileParts };
+}
+
+export function sequenceOps(d: Deps) {
+  const { efs, journal } = d;
+  const { save, progress, reconcileParts } = sequenceCore(efs, journal);
 
   /** Send what is left: as one EIP-5792 request when the wallet runs it atomically, else part by part. */
   const advance = async (r0: SequenceRecord, o: SequenceOpts): Promise<SequenceProgress> => {
@@ -329,3 +359,47 @@ const partInput = (p: SequencePart): SequencePartInput => ({
   bodies: p.bodies,
   effects: p.effects,
 });
+
+/** Sequences without a wallet: settle and list them before anyone connects (resume still needs the writer). */
+export interface JournalView {
+  /** Open sequences of one account, or of every account on this deployment. Never prompts; creates nothing. */
+  pendingSequences(o?: { account?: Address }): Promise<SequenceProgress[]>;
+  /** Settle a sequence from the ledger alone. Never prompts. */
+  reconcileSequence(sequenceId: Hex, o?: SequenceOpts): Promise<SequenceProgress>;
+}
+
+/**
+ * Open a journal without a writer: what an app shows after a reload, before the person reconnects ("Partially
+ * saved (2 of 5) — Continue"). Continue then connects, creates the writer for `progress.account` and resumes; a
+ * writer for another account refuses that sequence (MISUSE), never mixes the two up.
+ */
+export function openJournal(efs: Efs, config: { journal: Journal }): JournalView {
+  const core = sequenceCore(efs, config.journal);
+  const d = efs.deployment;
+  const prefix = `efs:${d.chainId}:${d.realmId}:${d.ledger}:`.toLowerCase();
+  return {
+    async pendingSequences(o = {}) {
+      const lock = o.account
+        ? lockKey({
+            chainId: d.chainId,
+            realmId: d.realmId,
+            ledger: d.ledger,
+            account: o.account.toLowerCase() as Address,
+          })
+        : undefined;
+      const open = await config.journal.openSequences(lock);
+      return Promise.all(
+        open.filter((r) => r.lock.startsWith(prefix)).map((r) => core.progress(r)),
+      );
+    },
+    async reconcileSequence(sequenceId, o = {}) {
+      const r = await config.journal.getSequence(sequenceId);
+      if (!r || !r.lock.startsWith(prefix))
+        throw new EfsFault(
+          "MISUSE",
+          `no sequence ${sequenceId} for this deployment in this journal`,
+        );
+      return core.progress(await core.reconcileParts(r, o, 0));
+    },
+  };
+}

@@ -171,6 +171,15 @@ export function journalContract(
       expect(await j.getSequence(`0x${"ee".repeat(32)}`)).toBeUndefined();
     });
 
+    it("a COMMITTED that is not final stays unresolved; final or legacy (no flag) is settled", async () => {
+      const j = await make();
+      const lock = lockKey(SAMPLE.plan);
+      await j.put(variant(SAMPLE, 21, { stage: "COMMITTED", final: false }));
+      await j.put(variant(SAMPLE, 22, { stage: "COMMITTED", final: true }));
+      await j.put(variant(SAMPLE, 23, { stage: "COMMITTED" }));
+      expect((await j.unresolved(lock)).map((r) => r.planId)).toEqual([variant(SAMPLE, 21).planId]);
+    });
+
     if (opts.reopen) {
       const reopen = opts.reopen;
       it("is durable: a fresh instance over the same store sees every record", async () => {

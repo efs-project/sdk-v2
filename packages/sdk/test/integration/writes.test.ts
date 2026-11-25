@@ -136,7 +136,8 @@ describe("write lifecycle (fixture)", () => {
     const rec = await after.reconcile(planned.plan.id);
     expect(rec.outcome).toBe("COMMITTED");
     expect((await journal.get(planned.plan.id))?.stage).toBe("COMMITTED");
-    expect(await after.pending()).toEqual([]);
+    // Committed but not final yet: still pending (reconcile keeps checking until a finalized block confirms it).
+    expect((await after.pending()).map((a) => [a.stage, a.final])).toEqual([["COMMITTED", false]]);
     // Sending the same plan again is refused by the journal: exactly one wallet broadcast happened.
     const again = await after.send(planned.plan);
     expect(again.status).toBe("AMBIGUOUS");
@@ -251,7 +252,9 @@ describe("write lifecycle (fixture)", () => {
     await rpc("evm_mine");
     const rec = await restarted.reconcile(p.plan.id);
     expect(rec.outcome).toBe("COMMITTED");
-    expect(await restarted.pending()).toEqual([]);
+    expect((await restarted.pending()).map((a) => [a.stage, a.final])).toEqual([
+      ["COMMITTED", false],
+    ]);
   });
 
   it("a publication over the per-transaction gas cap is refused before it is sent (tested against the number)", async () => {
@@ -346,7 +349,7 @@ function failingPuts(inner: Journal, fail: number[]): Journal {
     withLock: (lock, wait, fn) => inner.withLock(lock, wait, fn),
     putSequence: (r) => inner.putSequence(r),
     getSequence: (id) => inner.getSequence(id),
-    openSequences: (lock) => inner.openSequences(lock),
+    openSequences: (lock?: string) => inner.openSequences(lock),
     async put(record) {
       n++;
       if (fail.includes(n))

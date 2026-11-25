@@ -22,6 +22,11 @@ export interface AttemptRecord {
   stage: AttemptStage;
   txHash?: Hex;
   publication?: bigint;
+  /**
+   * On COMMITTED: false while the admission is not yet at a finalized block (it could still be reorged out);
+   * true once it is. Absent on records from older SDKs, which are treated as final.
+   */
+  final?: boolean;
   history: readonly { stage: AttemptStage; at: number; detail?: string }[];
   /** Unknown fields from newer SDKs are preserved here on rewrite. */
   extensions?: Record<string, unknown>;
@@ -47,6 +52,8 @@ export interface SequencePart {
   planId?: Hex;
   /** True once the ledger admitted this part's plan. */
   committed?: boolean;
+  /** True once that admission is at a finalized block. */
+  final?: boolean;
   publication?: bigint;
 }
 
@@ -61,25 +68,28 @@ export interface SequenceRecord {
   account: Address;
   parts: readonly SequencePart[];
   state: SequenceState;
+  /** COMPLETE and every part's admission at a finalized block ("Saved" rather than "Saved · confirming"). */
+  final?: boolean;
   history: readonly { state: SequenceState; at: number; detail?: string }[];
   /** Unknown fields from newer SDKs are preserved here on rewrite. */
   extensions?: Record<string, unknown>;
 }
 
+/** Open: not abandoned, and not COMPLETE-and-final (a COMPLETE save stays open until it is final). */
 export const isOpenSequence = (s: SequenceRecord): boolean =>
-  s.state !== "COMPLETE" && s.state !== "ABANDONED";
+  s.state !== "ABANDONED" && !(s.state === "COMPLETE" && s.final !== false);
 
 export interface Journal {
   /** Durable before it resolves. Replaces the record for `planId`. */
   put(record: AttemptRecord): Promise<void>;
   get(planId: Hex): Promise<AttemptRecord | undefined>;
-  /** Attempts not yet COMMITTED, NOT_COMMITTED_PROVEN or NOT_SENT, for the given lock key. */
+  /** Attempts not yet settled (see isSettled: a COMMITTED attempt not yet final counts), for the lock key. */
   unresolved(lock: string): Promise<AttemptRecord[]>;
   /** Durable before it resolves. Replaces the sequence record for `sequenceId`. */
   putSequence(record: SequenceRecord): Promise<void>;
   getSequence(sequenceId: Hex): Promise<SequenceRecord | undefined>;
-  /** Sequences neither COMPLETE nor ABANDONED, for the given lock key: what to offer to continue. */
-  openSequences(lock: string): Promise<SequenceRecord[]>;
+  /** Open sequences (isOpenSequence) for the given lock key, or for every lock when it is omitted. */
+  openSequences(lock?: string): Promise<SequenceRecord[]>;
   /** Run `fn` holding the submission lock, or return "BUSY" if `wait` is false and it is held. */
   withLock<T>(lock: string, wait: boolean | number, fn: () => Promise<T>): Promise<T | "BUSY">;
   /** True when the store survives a crash. memoryJournal is false: tests only. */
@@ -148,7 +158,7 @@ export function memoryJournal(): Journal {
     },
     async openSequences(lock) {
       return [...sequences.values()]
-        .filter((r) => r.lock === lock && isOpenSequence(r))
+        .filter((r) => (lock === undefined || r.lock === lock) && isOpenSequence(r))
         .map((r) => clone(r));
     },
     async put(record) {
@@ -160,7 +170,7 @@ export function memoryJournal(): Journal {
     },
     async unresolved(lock) {
       return [...records.values()]
-        .filter((r) => !RESOLVED.has(r.stage) && lockKey(r.plan) === lock)
+        .filter((r) => !isSettled(r) && lockKey(r.plan) === lock)
         .map((r) => clone(r));
     },
     withLock: localLocks(),
@@ -168,6 +178,14 @@ export function memoryJournal(): Journal {
 }
 
 export const isResolved = (stage: AttemptStage): boolean => RESOLVED.has(stage);
+
+/**
+ * Nothing left to check for this attempt: NOT_SENT, NOT_COMMITTED_PROVEN, or COMMITTED at a finalized block. A
+ * COMMITTED attempt that is not final yet stays unresolved, so reconcile keeps re-checking it until finality and
+ * catches a reorg that drops it.
+ */
+export const isSettled = (r: Pick<AttemptRecord, "stage" | "final">): boolean =>
+  RESOLVED.has(r.stage) && !(r.stage === "COMMITTED" && r.final === false);
 
 /** The storage form of a record (see docs/design/journal-storage.md): JSON, bigints as tagged decimal strings. */
 export function encodeJournalRecord(record: AttemptRecord): string {
