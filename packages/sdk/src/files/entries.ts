@@ -17,7 +17,12 @@
 //   restore        BIND(FOLDER, at → the target it had before it was removed), read from the binding's history
 import { decodeFunctionResult, encodeFunctionData, keccak256 } from "viem";
 import type { SequencePartInput } from "../actions/sequence.js";
-import { type PlannedAction, packBatches, splitPublications } from "../actions/split.js";
+import {
+  batchGasOf,
+  type PlannedAction,
+  packBatches,
+  splitPublications,
+} from "../actions/split.js";
 import type { EffectView } from "../actions/types.js";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
@@ -538,6 +543,7 @@ async function toParts<R extends FolderReviewBase>(
         (units[u] as Unit).effect(fin ? "finish" : "content", i + 1, n),
       ),
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
+      ...batchGasOf(part),
     };
   });
   return {

@@ -15,7 +15,7 @@
 import { type Reason, reason } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
 import type { DeploymentInfo } from "../deployment/manifest.js";
-import { ACTION } from "../generated/constants.js";
+import { ACTION, PURPOSES } from "../generated/constants.js";
 import { GAS_PLANNING, GAS_SCHEDULES, GAS_TAG_LISTS } from "../generated/gas.js";
 import type { ActionData } from "./types.js";
 
@@ -205,6 +205,20 @@ export interface SplitPart {
   gas: number;
   /** What the rule judged: the part fits when max(E, V) is within the budget. */
   rule: RuleGas;
+  /** With `model.total` (amsterdam): the whole gas shown the same way, which the block must also hold. */
+  total?: number;
+}
+
+/**
+ * What a part weighs in an atomic batch, from the planner's own pricing (rows, per-level terms, the kernel's floor):
+ * the shown gas plus whatever V adds above E, and the whole gas where the block must hold it too. Carried on each
+ * sequence part (`SequencePartInput.gas`) so packBatches never re-prices a part from its bare actions.
+ */
+export function batchGasOf(p: SplitPart): { gas: number; total?: number } {
+  return {
+    gas: p.gas + Math.max(p.rule.E, p.rule.V) - p.rule.E,
+    ...(p.total !== undefined ? { total: p.total } : {}),
+  };
 }
 
 export type SplitResult =
@@ -479,6 +493,7 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
     actions: list,
     gas: publicationGas(list, m, first && o.firstWrite === true),
     rule: ruleGas(list, m, first && o.firstWrite === true, o.typeNames),
+    ...(m.total ? { total: publicationGas(list, m.total, first && o.firstWrite === true) } : {}),
   });
   for (const u of units(actions)) {
     const alone = fits(u.list, parts.length === 0 && current.length === 0);
@@ -493,10 +508,14 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
   return { ok: true, parts, budget };
 }
 
-/** A part as a sequence keeps it: its actions and their bodies, with no shapes or bind rows. */
+/** A part as a sequence keeps it: its actions and their bodies, and the planner's own batching estimate. */
 export interface PartBody {
   actions: readonly ActionData[];
   bodies: readonly Hex[];
+  /** The planner's estimate of the part in a batch (batchGasOf), when a planner made it. */
+  gas?: number;
+  /** With an amsterdam model: the planner's whole-gas estimate. */
+  total?: number;
 }
 
 /** The planning rule's budget: ⌊txGasCap × (100 − headroomPercent) / 100⌋ (headroom as a fraction). */
@@ -521,6 +540,13 @@ export function partGas(
   m: GasModel | GasConstants,
   typeNames?: Readonly<Record<string, string>>,
 ): number {
+  // A planner's own estimate is the authority for batching: it priced rows and per-level terms bare actions lack.
+  const total = (m as GasModel).schedule === undefined;
+  if (!total && part.gas !== undefined) return part.gas;
+  if (total && part.total !== undefined) return part.total;
+  // Without one, a TAG statement's per-level terms (its topic's depth) can't be known: it is never batched.
+  if (part.actions.some((a) => a.purpose.toLowerCase() === PURPOSES.tag && isBindLike(a.kind)))
+    return Number.POSITIVE_INFINITY;
   const list: PlannedAction[] = part.actions.map((action, i) => ({
     action,
     body: part.bodies[i] ?? "0x",

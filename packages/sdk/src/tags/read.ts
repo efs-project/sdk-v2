@@ -23,6 +23,7 @@ import { utf8Encode } from "../core/platform.js";
 import { type Ctx, EMPTY_BASIS, type Evidence } from "../files/bytes.js";
 import {
   ledgerReadsAbi,
+  ledgerViewsAbi,
   topicEveryoneReaderAbi,
   topicLookupReaderAbi,
   topicMineReaderAbi,
@@ -31,7 +32,7 @@ import { PURPOSES } from "../generated/constants.js";
 import { GAS_READS } from "../generated/gas.js";
 import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
-import { positionKey } from "../protocol/keys.js";
+import { positionKey, recordId } from "../protocol/keys.js";
 import { chainStatus } from "../protocol/status.js";
 import {
   checkWord,
@@ -126,6 +127,10 @@ export type TopicPage =
         positionsEver: bigint;
         repeatsSkipped: number;
         calls: number;
+        /** Rows left out of a roll-up because a Lens author hid the child topic they were filed under. */
+        hiddenByChild: number;
+        /** Calls tried again with smaller bounds after the node refused them. */
+        backoffs: number;
       };
       basis: Basis;
       evidence: Evidence;
@@ -151,6 +156,8 @@ const SCAN: Readonly<Record<number, ScanStatus>> = {
 const GAS_RESERVE = 1_000_000n;
 /** The most reader calls one page makes (each bounded), so a heavily padded list returns a page, never loops. */
 const MAX_CALLS = 8;
+/** How many times one page halves a call's bounds after the node refuses it (out of gas). */
+const MAX_BACKOFFS = 4;
 /** The things a cursor remembers for de-duplication. */
 const SEEN_MAX = 256;
 const NO_DECIDER = 255;
@@ -370,6 +377,8 @@ export async function topicItems(
           positionsEver: bigint;
           repeatsSkipped: number;
           calls: number;
+          hiddenByChild: number;
+          backoffs: number;
         };
       }
     | { kind: "refused"; status: "UNKNOWN" | "INVALID"; reason: Reason };
@@ -386,10 +395,25 @@ export async function topicItems(
       let dropped = 0;
       let scan: ScanStatus = "LIMIT";
       let complete = false;
-      const counts = { scanned: 0, rawTotal: 0n, positionsEver: 0n, repeatsSkipped: 0, calls: 0 };
+      const parents = new Map<string, Hex>();
+      const decided = new Map<string, boolean>();
+      const counts = {
+        scanned: 0,
+        rawTotal: 0n,
+        positionsEver: 0n,
+        repeatsSkipped: 0,
+        calls: 0,
+        hiddenByChild: 0,
+        backoffs: 0,
+      };
+      // A call the node refuses (out of gas, most likely) is tried again with half the bounds, a few times, before the
+      // page is UNKNOWN: a big Lens never turns into UNKNOWN just because one call was too large.
+      let entryCap: number = callEntries;
+      let rowCap: number = b.maxRows;
+      let backoffs = 0;
       while (calls < MAX_CALLS) {
-        const limit = Math.min(callEntries, entriesWanted - read);
-        const maxRows = Math.min(b.maxRows, rowsWanted - rows.length);
+        const limit = Math.min(entryCap, entriesWanted - read);
+        const maxRows = Math.min(rowCap, rowsWanted - rows.length);
         if (limit <= 0 || maxRows <= 0) break;
         const call =
           view === "mine"
@@ -420,6 +444,18 @@ export async function topicItems(
               ]);
         ctx.requests += 1;
         const [out] = await callsAt(s, basis.blockHash, [call]);
+        if (
+          out &&
+          !out.ok &&
+          out.kind === "rpc" &&
+          backoffs < MAX_BACKOFFS &&
+          (limit > 1 || maxRows > 1)
+        ) {
+          backoffs++;
+          entryCap = Math.max(1, Math.floor(limit / 2));
+          rowCap = Math.max(1, Math.floor(maxRows / 2));
+          continue;
+        }
         const fn = view === "mine" ? "mine" : "everyone";
         const abi = view === "mine" ? topicMineReaderAbi : topicEveryoneReaderAbi;
         const dec = decoded<[RawInfo, readonly (RawMine | RawPlace)[]]>(abi, fn, out);
@@ -466,7 +502,7 @@ export async function topicItems(
         counts.repeatsSkipped += Number(info.repeatsSkipped);
         for (const x of raw) {
           // Every row is checked before it is used: its position must be its own (topic, thing); an exact read's
-          // topic must be the place; a decider must be a Lens index naming that author.
+          // topic must be the place; a decider must be a Lens index naming that author, with a number of 0 or more.
           const bad = rowFault(view, x, id, o.below === true, lensList);
           if (bad)
             return {
@@ -474,6 +510,26 @@ export async function topicItems(
               retryElsewhere: true,
               reason: reason("RPC_ERROR", "transient", bad),
             };
+        }
+        // A roll-up: each row's topic must lie below the place (walked up through its path records), and, through a
+        // Lens, a child topic a Lens author hid there hides everything filed at or below it (tag spec 3.6). Hidden
+        // rows are decided before their thing is marked as seen.
+        let hidden = new Set<string>();
+        if (o.below === true) {
+          const topics = [...new Set(raw.map((x) => lower(x.topic)).filter((t) => t !== id))];
+          const below = await chainsBelow(s, basis, ctx, id, topics, parents);
+          if (!below.ok) return below;
+          if (view !== "raw") {
+            const h = await hiddenBelow(s, basis, ctx, id, below.value, lensList, decided);
+            if (!h.ok) return h;
+            hidden = h.value;
+          }
+        }
+        for (const x of raw) {
+          if (hidden.has(lower(x.topic))) {
+            counts.hiddenByChild++;
+            continue;
+          }
           const thing = lower(x.thing);
           if (seen.has(thing)) {
             dropped++;
@@ -492,6 +548,7 @@ export async function topicItems(
         seenList.splice(0, seenList.length - SEEN_MAX);
       }
       counts.calls = calls;
+      counts.backoffs = backoffs;
       return {
         ok: true,
         value: {
@@ -569,9 +626,133 @@ function rowFault(
     const m = x as RawMine;
     if (lens[d] === undefined || lower(m.principalId) !== lens[d])
       return "a row names a deciding author who is not at that Lens index";
-  } else if (view === "everyone" && d !== NO_DECIDER && lens[d] === undefined)
-    return "a row names a deciding Lens index past the Lens";
+    if (Number(m.number) < 0) return "a shown row has a negative number";
+  } else if (view === "everyone") {
+    const p = x as RawPlace;
+    if (d !== NO_DECIDER && lens[d] === undefined)
+      return "a row names a deciding Lens index past the Lens";
+    if (d !== NO_DECIDER && Number(p.number) < 0) return "a shown row has a negative number";
+    if (BigInt(p.yes) === 0n) return "Everyone returned a row nobody says yes to";
+  }
   return null;
+}
+
+/**
+ * For each topic, the topics from just below `place` down to it, read up through its path records (each record's id
+ * recomputed from its body, so an endpoint can't invent a parent). A topic that never reaches `place` within 64
+ * levels is not below it: the endpoint's fault. `parents` caches what was read.
+ */
+async function chainsBelow(
+  s: Session,
+  basis: Basis,
+  ctx: Ctx,
+  place: Hex,
+  topics: readonly Hex[],
+  parents: Map<string, Hex>,
+): Promise<Step<Map<string, Hex[]>>> {
+  const t = topicTypesOf(ctx.efs.deployment);
+  const chains = new Map<string, Hex[]>(topics.map((x) => [x, [x]]));
+  let open = [...topics];
+  for (let depth = 0; open.length && depth < 64; depth++) {
+    const need = [
+      ...new Set(
+        open.map((x) => (chains.get(x) as Hex[])[0] as Hex).filter((x) => !parents.has(x)),
+      ),
+    ];
+    const recs = await bodies(s, basis, ctx, need, 64);
+    if (!recs.ok) return recs;
+    for (const [i, node] of need.entries()) {
+      const body = recs.value[i] as Uint8Array;
+      if (body.length !== 64 || lower(recordId(t.path, body)) !== node)
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason(
+            "RPC_ERROR",
+            "transient",
+            "a roll-up row's topic does not lie below the place",
+          ),
+        };
+      parents.set(node, lower(bytesToHex(body.subarray(0, 32))));
+    }
+    const still: Hex[] = [];
+    for (const x of open) {
+      const chain = chains.get(x) as Hex[];
+      const parent = parents.get(chain[0] as Hex) as Hex;
+      if (parent === place) continue;
+      chain.unshift(parent);
+      still.push(x);
+    }
+    open = still;
+  }
+  if (open.length)
+    return {
+      ok: false,
+      retryElsewhere: true,
+      reason: reason(
+        "RPC_ERROR",
+        "transient",
+        "a roll-up row's topic does not lie below the place",
+      ),
+    };
+  return { ok: true, value: chains };
+}
+
+/**
+ * The topics hidden from this Lens's roll-up of `place`: those at or below a child topic that the Lens hides where it
+ * hangs (the first Lens author with a stance at (TAG, parent, child) says "not this": headsAt's MASKED).
+ */
+async function hiddenBelow(
+  s: Session,
+  basis: Basis,
+  ctx: Ctx,
+  place: Hex,
+  chains: Map<string, Hex[]>,
+  lens: readonly PrincipalId[],
+  decided: Map<string, boolean>,
+): Promise<Step<Set<string>>> {
+  const d = ctx.efs.deployment;
+  const edges = new Map<string, Hex>();
+  for (const chain of chains.values())
+    chain.forEach((child, i) => {
+      const parent = i === 0 ? place : (chain[i - 1] as Hex);
+      const position = lower(positionKey(PURPOSES.tag, parent, child));
+      if (!decided.has(position)) edges.set(position, position);
+    });
+  const asks = [...edges.keys()] as Hex[];
+  if (asks.length) {
+    ctx.requests += asks.length;
+    const outs = await callsAt(
+      s,
+      basis.blockHash,
+      asks.map((p) =>
+        callOf(d.readers.ledgerViews, ledgerViewsAbi, "headsAt", [d.ledger, lens, p]),
+      ),
+    );
+    for (const [i, out] of outs.entries()) {
+      const h = decoded<[number]>(ledgerViewsAbi, "headsAt", out);
+      if (!h.ok) return h;
+      const st = chainStatus(h.value[0]);
+      if (st !== "PRESENT" && st !== "MASKED" && st !== "ABSENT_PROVEN")
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason("NOT_YET_DECIDABLE", "transient", `a child topic's stance reads ${st}`),
+        };
+      decided.set(asks[i] as string, st === "MASKED");
+    }
+  }
+  const hidden = new Set<string>();
+  for (const [topic, chain] of chains)
+    if (
+      chain.some((child, i) =>
+        decided.get(
+          lower(positionKey(PURPOSES.tag, i === 0 ? place : (chain[i - 1] as Hex), child)),
+        ),
+      )
+    )
+      hidden.add(topic);
+  return { ok: true, value: hidden };
 }
 
 function rowOf(view: TopicView, x: RawMine | RawPlace, lens: readonly PrincipalId[]): TopicRow {
@@ -760,7 +941,10 @@ async function paged<R, X>(
             "a page that is not the end gave no resume point",
           ),
         };
-      if (Number(info.scanned) === 0 && st !== "EXHAUSTED")
+      // The first page of a word page carries the root topic /<word> without reading an entry: with limit 1 it is
+      // honest that it read nothing. Every other page that is not the end must have read something.
+      const rootOnly = fn === "wordPage" && !o.cursor && raw.length > 0;
+      if (Number(info.scanned) === 0 && st !== "EXHAUSTED" && !rootOnly)
         return {
           ok: false,
           retryElsewhere: true,

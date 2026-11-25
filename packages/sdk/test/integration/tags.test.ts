@@ -5,10 +5,12 @@
 // across pages; and restore's alsoPlaced, which tags never change. Two accounts of anvil's public development
 // mnemonic (indexes 13 and 14, used by no other test file), funded here.
 import { readFileSync } from "node:fs";
-import { decodeFunctionResult, encodeFunctionResult } from "viem";
+import { decodeFunctionData, decodeFunctionResult, encodeFunctionResult } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { budgetOf, gasPlanFor, packBatches } from "../../src/actions/split.ts";
+import type { FetchLike } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Hex, PrincipalId, RecordId } from "../../src/core/hex.ts";
 import {
@@ -18,7 +20,13 @@ import {
   planRestoreEntries,
 } from "../../src/files/entries.ts";
 import type { FolderRef } from "../../src/files/folders.ts";
-import { topicLookupReaderAbi, topicMineReaderAbi } from "../../src/generated/abis.ts";
+import {
+  topicEveryoneReaderAbi,
+  topicLookupReaderAbi,
+  topicMineReaderAbi,
+} from "../../src/generated/abis.ts";
+import { PURPOSES } from "../../src/generated/constants.ts";
+import { positionKey } from "../../src/protocol/keys.ts";
 import {
   authorCount,
   homeId,
@@ -194,6 +202,8 @@ describe("tags (fixture)", () => {
     );
     expect(changed["statements"]).toMatchObject([{ number: 3, before: 75, first: false }]);
     expect(changed["newTopics"]).toEqual([]);
+    // An existing topic republishes nothing: every word page is found, not only the path records.
+    expect(changed["records"]).toBe(0);
     expect(
       await planTag(efs, wa, { topic: words, targets: [files[0] as never], number: 3 }),
     ).toMatchObject({ status: "REFUSED", refused: [{ index: 0, code: "UNCHANGED" }] });
@@ -420,5 +430,169 @@ describe("tag reads refuse a tampered endpoint (fixture)", () => {
       status: "UNKNOWN",
       reason: { code: "RPC_ERROR" },
     });
+  });
+});
+
+describe("tags: the review's cases (fixture)", () => {
+  const deep = Array.from({ length: 64 }, (_, i) => `deep${i}`);
+  it("deep first tags: every atomic batch packBatches makes stays within one transaction's budget", async () => {
+    const targets = Array.from({ length: 20 }, (_, i) => ({
+      kind: "address" as const,
+      address: `0x${(0xd00 + i).toString(16).padStart(40, "0")}` as Hex,
+    }));
+    const p = await planTag(efs, wa, { topic: deep, targets: targets as never });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect(p.review.records).toBe(0); // the topic exists already
+    expect(p.parts.length).toBeGreaterThan(1);
+    const g = gasPlanFor(efs.deployment);
+    if (!g.ok) throw new Error(g.reason.code);
+    const budget = budgetOf(g.txGasCap, g.headroom);
+    for (const part of p.parts) expect(part.gas).toBeGreaterThan(0);
+    for (const batch of packBatches(p.parts, g)) {
+      const sum = batch.reduce((n, k) => n + (p.parts[k]?.gas ?? Number.POSITIVE_INFINITY), 0);
+      if (batch.length > 1) expect(sum).toBeLessThanOrEqual(budget);
+    }
+    // Re-priced from bare actions (no per-level terms), a part with tag binds is never batched.
+    const bare = p.parts.map(({ gas: _g, total: _t, ...rest }) => rest);
+    expect(packBatches(bare, g).every((b) => b.length === 1)).toBe(true);
+    expect((await wa.runSequence(p.parts)).state).toBe("COMPLETE");
+  });
+
+  it("65 record targets: the existence reads go in chunks of 64, never a false TARGET_ABSENT", async () => {
+    const ids = [...pathIds64(), pathId(T, ["cars"])];
+    expect(ids.length).toBe(65);
+    const p = await planTag(efs, wa, {
+      topic: ["many"],
+      targets: ids.map((id) => ({ kind: "topic" as const, id })) as never,
+    });
+    expect(p.status).toBe("PLANNED");
+    const absent = await planTag(efs, wa, {
+      topic: ["many"],
+      targets: [...ids, `0x${"5e".repeat(32)}` as Hex].map((id) => ({
+        kind: "topic" as const,
+        id,
+      })) as never,
+    });
+    expect(absent).toMatchObject({
+      status: "REFUSED",
+      refused: [{ index: 65, code: "TARGET_ABSENT" }],
+    });
+  });
+  function pathIds64(): Hex[] {
+    return deep.map((_, i) => pathId(T, deep.slice(0, i + 1)));
+  }
+
+  it("a word page with limit 1: the root topic alone first (reading nothing is honest there), then the rest", async () => {
+    await run(wa, planTag(efs, wa, { topic: ["x"], targets: [files[0] as never] }) as never);
+    const first = await wordPage(efs, "x", { limit: 1 });
+    if (first.status !== "PRESENT") throw new Error(`${first.status}: ${first.reason.detail}`);
+    expect(first.rows.map((r) => r.topic)).toEqual([pathId(T, ["x"])]);
+    expect(first.finished).toBe(false);
+    const rest = await wordPage(efs, "x", { limit: 1, cursor: first.next as never });
+    expect(rest.status === "PRESENT" && rest.rows.map((r) => r.topic)).toEqual([
+      pathId(T, ["brands", "x"]),
+    ]);
+  });
+
+  it("a Lens author's hidden child topic hides everything filed at or below it from that Lens's roll-up", async () => {
+    // A says "not this" about the child /brands/z as a child of /brands: files[2] is filed only there.
+    await run(
+      wa,
+      planDeny(efs, wa, {
+        topic: ["brands"],
+        targets: [{ kind: "topic", id: pathId(T, ["brands", "z"]) } as never],
+      }) as never,
+    );
+    for (const view of ["mine", "everyone"] as const) {
+      const byA = await topicItems(efs, ["brands"], {
+        view,
+        lens: { principals: [A] },
+        below: true,
+      });
+      if (byA.status !== "PRESENT") throw new Error(byA.status);
+      expect(byA.rows.map((r) => r.thing)).not.toContain(files[2]?.subject);
+      expect(byA.rows.map((r) => r.thing)).toContain(files[3]?.subject); // filed under x and y, which show
+      expect(byA.counts.hiddenByChild).toBeGreaterThan(0);
+    }
+    // Through a Lens that hides nothing, it shows; and Raw applies no rule.
+    const byB = await topicItems(efs, ["brands"], { lens: { principals: [B] }, below: true });
+    expect(byB.status === "PRESENT" && byB.rows.map((r) => r.thing)).toContain(files[2]?.subject);
+  });
+
+  it("a read the node refuses as too big is tried again with smaller bounds before it is UNKNOWN", async () => {
+    const mineSel = sel(topicMineReaderAbi, "mine");
+    let refusals = 0;
+    const tight: FetchLike = async (url, init) => {
+      const sent = JSON.parse(init.body ?? "null");
+      const reqs = (Array.isArray(sent) ? sent : [sent]) as {
+        id: number;
+        method: string;
+        params: [{ data?: string }];
+      }[];
+      const big = reqs.filter((r) => {
+        const data = r.method === "eth_call" ? String(r.params?.[0]?.data ?? "") : "";
+        if (!data.startsWith(mineSel)) return false;
+        const { args } = decodeFunctionData({ abi: topicMineReaderAbi, data: data as Hex });
+        return Number(args[5]) > 30; // `limit` entries: three halvings from the bound of 246 get under it
+      });
+      if (!big.length) return fetch(url, init as RequestInit) as never;
+      refusals += big.length;
+      const out = reqs.map((r) => ({
+        jsonrpc: "2.0",
+        id: r.id,
+        error: { code: -32000, message: "out of gas" },
+      }));
+      const text = JSON.stringify(Array.isArray(sent) ? out : out[0]);
+      return { ok: true, status: 200, headers: new Headers(), text: async () => text } as never;
+    };
+    const small = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: tight });
+    const page = await topicItems(small, ["brands"], {
+      view: "mine",
+      lens: { principals: [A] },
+      below: true,
+    });
+    expect(page).toMatchObject({ status: "PRESENT" });
+    expect(page.status === "PRESENT" && page.counts.backoffs).toBeGreaterThan(0);
+    expect(refusals).toBeGreaterThan(0);
+  });
+
+  it("forged rows the readers would never give: UNKNOWN", async () => {
+    const zeroYes = forged(topicEveryoneReaderAbi, "everyone", (out) => [
+      out[0],
+      rowsOf(out).map((r) => ({ ...r, yes: 0n })),
+    ]);
+    expect(await topicItems(zeroYes, ["brands", "x"], { lens: { principals: [A] } })).toMatchObject(
+      {
+        status: "UNKNOWN",
+        reason: { code: "RPC_ERROR" },
+      },
+    );
+    const negative = forged(topicMineReaderAbi, "mine", (out) => [
+      out[0],
+      rowsOf(out).map((r) => ({ ...r, number: -1 })),
+    ]);
+    expect(
+      await topicItems(negative, ["brands", "x"], { view: "mine", lens: { principals: [A] } }),
+    ).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR" },
+    });
+    // A roll-up row filed at a topic that is not below the place (its position made consistent with it).
+    const elsewhere = pathId(T, ["cars", "tesla"]);
+    const outside = forged(topicMineReaderAbi, "mine", (out) => [
+      out[0],
+      rowsOf(out).map((r) => ({
+        ...r,
+        topic: elsewhere,
+        position: positionKey(PURPOSES.tag, elsewhere, r["thing"] as Hex),
+      })),
+    ]);
+    expect(
+      await topicItems(outside, ["brands"], {
+        view: "mine",
+        lens: { principals: [A] },
+        below: true,
+      }),
+    ).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
   });
 });

@@ -60,3 +60,27 @@ describe("deployment kernel floor", () => {
     );
   });
 });
+
+describe("deployment pins", () => {
+  it("refuses a contract it would read through when the document gives no code hash for it", () => {
+    const doc = raw as unknown as {
+      readers: Record<string, Record<string, unknown>>;
+      index: { reads?: Record<string, unknown>; runtimeCodehash?: string };
+    };
+    const noLookupHash = structuredClone(doc);
+    delete noLookupHash.readers["topicLookupReader"]?.["runtimeCodehash"];
+    expect(() => createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: noLookupHash })).toThrow(
+      /topicLookupReader names an address without its runtimeCodehash/,
+    );
+    const noReadsHash = structuredClone(doc);
+    delete noReadsHash.index.reads?.["runtimeCodehash"];
+    expect(() => createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: noReadsHash })).toThrow(
+      /index.reads names an address without its runtimeCodehash/,
+    );
+    const noIndexHash = structuredClone(doc);
+    delete noIndexHash.index.runtimeCodehash;
+    expect(() => createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: noIndexHash })).toThrow(
+      /index names an address without its runtimeCodehash/,
+    );
+  });
+});

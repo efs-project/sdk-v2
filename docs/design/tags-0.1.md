@@ -17,7 +17,19 @@
 >   limits per page (rows wanted, entries read); repeats removed by thing across calls and pages (`dedup`); per-call
 >   bounds from the gas model's `reads` section;
 > - `tagsOf`, `topicChildren` (each child's word read back and checked against its parent; an optional fold skips a
->   word that is not its own fold), `wordPage`, `topicPath`, and `placeCount` / `authorCount` ("about" figures).
+>   word that is not its own fold), `wordPage`, `topicPath`, and `placeCount` / `authorCount` ("about" figures);
+> - the hidden-child rule (section 5.4): in a roll-up through a Lens, a child topic the first Lens author with a
+>   stance hides where it hangs hides everything filed at or below it (`counts.hiddenByChild`);
+> - every reader reply is checked before use, and a failed check is the endpoint's fault (RPC_ERROR), never a row:
+>   - each row's position is its own (topic, thing), and an exact read's topic is the place;
+>   - a roll-up row's topic lies below the place (walked up its path records, each id recomputed);
+>   - a decider names that Lens index's author, with a number of 0 or more, and an Everyone row has a yes;
+>   - each place of a word page or of a topic's children is (its parent, that word);
+>   - a page that is not the end gives a resume point;
+> - a read the node refuses as too large (out of gas) is tried again with half the bounds, up to four times, before
+>   it is UNKNOWN;
+> - batches: each planned part carries the planner's own estimate (rows, per-level terms, the floor), which
+>   `packBatches` sums; a part with tag binds and no estimate is never batched.
 >
 > **Not built yet:**
 > - the fold rule itself (James's ruling: the planners and readers take a `fold` step meanwhile, and check every

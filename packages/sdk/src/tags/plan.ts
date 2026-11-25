@@ -14,6 +14,7 @@
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
+  batchGasOf,
   type PlannedAction,
   packBatches,
   priceAsNew,
@@ -47,6 +48,7 @@ import {
   topicTypesOf,
   untagAction,
   wordPageAction,
+  wordPageId,
 } from "./topics.js";
 
 /** Where a statement is made: a topic by its words (registered as needed), or a home (an address; no record). */
@@ -251,6 +253,8 @@ function decoded<T>(
 }
 
 type RawHead = { state: number; revision: bigint; strength: number };
+/** The most ids one records() call takes (Limits.maxReadIds). */
+const READ_IDS = 64;
 
 async function plan(
   efs: Efs,
@@ -276,6 +280,8 @@ async function plan(
   }
   const { place, words, ids } = placeOf(t, input.topic, o.fold);
   const placeId = place.id;
+  // Every word's page, so a tag on an existing topic republishes nothing.
+  const pageIds = words.map((w) => lower(wordPageId(t, w)) as Hex);
   const ancestors = ids.slice(0, -1);
   const things = input.targets.map((x, i) => ({ target: x, ...thingOf(x, i) }));
   if (new Set(things.map((x) => x.thing)).size !== things.length)
@@ -302,14 +308,27 @@ async function plan(
   const r = await onEndpoint<Seen>(
     efs._internal.pool,
     async (s: Session) => {
-      // One batch: records (topics and record targets), created subjects, heads, author counts, roll-up sizes.
-      const recordIds = [...ids, ...things.filter((x) => x.proof === "record").map((x) => x.thing)];
+      // One batch: records (every word page, every path record, record targets), created subjects, heads, author
+      // counts, roll-up sizes. records() takes at most READ_IDS ids a call, so the ids go in chunks.
+      const recordIds = [
+        ...new Set([
+          ...pageIds,
+          ...ids,
+          ...things.filter((x) => x.proof === "record").map((x) => x.thing),
+        ]),
+      ];
       const calls: CallRequest[] = [];
-      const recIdx = recordIds.length
-        ? calls.push(
-            callOf(d.readers.ledgerViews, ledgerViewsAbi, "records", [d.ledger, recordIds]),
-          ) - 1
-        : -1;
+      const chunks: { at: number; ids: Hex[] }[] = [];
+      for (let k = 0; k < recordIds.length; k += READ_IDS) {
+        const chunk = recordIds.slice(k, k + READ_IDS) as Hex[];
+        chunks.push({
+          at:
+            calls.push(
+              callOf(d.readers.ledgerViews, ledgerViewsAbi, "records", [d.ledger, chunk]),
+            ) - 1,
+          ids: chunk,
+        });
+      }
       const subjIdx = things.map((x) =>
         x.proof === "subject" ? calls.push(subjectInfoCall(efs, x.thing)) - 1 : -1,
       );
@@ -349,18 +368,26 @@ async function plan(
       ctx.requests += calls.length;
       const outs = await callsAt(s, basis.blockHash, calls);
       const present = new Set<string>();
-      if (recIdx >= 0) {
+      for (const c of chunks) {
         const rec = decoded<[readonly number[], readonly unknown[]]>(
           ledgerViewsAbi,
           "records",
-          outs[recIdx],
+          outs[c.at],
         );
         if (!rec.ok) return rec;
         const [statuses] = rec.value;
-        if (statuses.length !== recordIds.length) return badReply("records (one per id)");
-        statuses.forEach((st, i) => {
-          if (chainStatus(st) === "PRESENT") present.add(recordIds[i] as string);
-        });
+        if (statuses.length !== c.ids.length) return badReply("records (one per id)");
+        for (const [i, st] of statuses.entries()) {
+          const cs = chainStatus(st);
+          if (cs === "PRESENT") present.add(c.ids[i] as string);
+          // Anything but a proven absence is not "absent": the plan is UNKNOWN, never a false TARGET_ABSENT.
+          else if (cs !== "ABSENT_PROVEN")
+            return {
+              ok: false,
+              retryElsewhere: true,
+              reason: reason("NOT_YET_DECIDABLE", "transient", `records answered ${cs}`),
+            };
+        }
       }
       const created = new Map<number, boolean>();
       for (const [i, k] of subjIdx.entries()) {
@@ -413,9 +440,7 @@ async function plan(
   const seen = r.value;
 
   // ---- registration: each missing word page, then each missing path record, root first
-  const pages = words
-    .map((_, i) => i)
-    .filter((i) => !seen.present.has(lower(pathIds(t, [words[i] as string])[0] as Hex)));
+  const pages = words.map((_, i) => i).filter((i) => !seen.present.has(pageIds[i] as string));
   const paths = ids
     .map((id, i) => ({ id, len: i + 1 }))
     .filter((x) => x.len >= 2 && !seen.present.has(x.id));
@@ -578,6 +603,8 @@ async function plan(
       bodies: part.actions.map((a) => a.body),
       effects,
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
+      // The planner's own pricing (rows and per-level terms) is what an atomic batch is packed by.
+      ...batchGasOf(part),
     };
   });
   const review: TagReview = {

@@ -18,6 +18,7 @@
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
+  batchGasOf,
   type GasModel,
   type PlannedAction,
   packBatches,
@@ -438,6 +439,7 @@ export async function planEditFile(
         split.parts.map((p) => ({
           actions: p.actions.map((a) => a.action),
           bodies: p.actions.map((a) => a.body),
+          ...batchGasOf(p),
         })),
         gas,
       ).length,
@@ -462,6 +464,7 @@ export async function planEditFile(
         ),
       ],
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
+      ...batchGasOf(p),
     }),
   );
   return { kind: "efs.editPlan", status: "PLANNED", parts, review, basis };

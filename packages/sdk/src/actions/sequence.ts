@@ -115,7 +115,11 @@ export interface SequenceProgress {
   effect?: SequenceEffect;
 }
 
-export type SequencePartInput = Omit<PlanInput, "account" | "nonce">;
+export type SequencePartInput = Omit<PlanInput, "account" | "nonce"> & {
+  /** The planner's estimate of this part in an atomic batch (batchGasOf), and its whole gas on amsterdam. */
+  gas?: number;
+  total?: number;
+};
 
 interface Deps {
   efs: Efs;
@@ -736,6 +740,8 @@ export function sequenceOps(d: Deps) {
             bodies: p.bodies,
             effects: p.effects,
             ...(p.deadlineSeconds !== undefined ? { deadlineSeconds: p.deadlineSeconds } : {}),
+            ...(p.gas !== undefined ? { gas: p.gas } : {}),
+            ...(p.total !== undefined ? { total: p.total } : {}),
           })),
           state: "NOT_STARTED",
           history: [{ state: "NOT_STARTED", at: Date.now() }],
@@ -830,6 +836,8 @@ const partInput = (p: SequencePart): SequencePartInput => ({
   bodies: p.bodies,
   effects: p.effects,
   ...(p.deadlineSeconds !== undefined ? { deadlineSeconds: p.deadlineSeconds } : {}),
+  ...(p.gas !== undefined ? { gas: p.gas } : {}),
+  ...(p.total !== undefined ? { total: p.total } : {}),
 });
 
 /** Sequences without a wallet: settle and list them before anyone connects (resume still needs the writer). */

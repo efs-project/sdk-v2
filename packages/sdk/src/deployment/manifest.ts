@@ -340,6 +340,25 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
     executionSet: word("activation.executionSet", activation["executionSet"]),
     revision: num("activation.revision", activation["revision"]),
   };
+  // Every contract the SDK reads through is pinned by its code hash: an address the document names without one is
+  // refused, never read through unchecked.
+  const pinnedPairs: [string, Address | null, Hex | null][] = [
+    ["index", deployment.index.address, deployment.codehashes.index],
+    ["index.reads", deployment.index.reads, deployment.codehashes.indexReads],
+    ["readers.topicMineReader", deployment.readers.topicMine, deployment.codehashes.topicMine],
+    [
+      "readers.topicEveryoneReader",
+      deployment.readers.topicEveryone,
+      deployment.codehashes.topicEveryone,
+    ],
+    [
+      "readers.topicLookupReader",
+      deployment.readers.topicLookup,
+      deployment.codehashes.topicLookup,
+    ],
+  ];
+  for (const [what, address, codehash] of pinnedPairs)
+    if (address && !codehash) problems.push(`${what} names an address without its runtimeCodehash`);
   if (
     deployment.ledgerImplementation !== "0x" &&
     proxy["address"] !== undefined &&
