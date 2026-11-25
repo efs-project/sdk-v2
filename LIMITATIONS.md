@@ -3,7 +3,10 @@
 **Status: early development of EFS SDK 0.1.** Implemented: deployment pinning, verified byte reads (inline, span
 trees, external locations), names and path segments, protocol ids, the write lifecycle (plan, review, send,
 reconcile) with durable attempt journals (IndexedDB + Web Locks in browsers and workers, files in Node). **Not
-yet:** folder listings and paths (waiting on the tags-vs-directories decision), the files write planner. web3:// reads cover addresses on the client's own chain in ERC-5219 mode. ENS names, other
+yet:** folder listings and paths (waiting on the tags-vs-directories decision), creating, renaming or moving files (the files write planner covers
+editing an existing file only: `planEditFile`). An edit re-publishes every chunk of its content, including chunks
+already on chain. When the edited revision belongs to another author, only the planning-time base check guards it
+(the ledger's compare-and-swap covers the editor's own HEAD). web3:// reads cover addresses on the client's own chain in ERC-5219 mode. ENS names, other
 chains and manual-mode contracts are reported as unsupported. Streaming an external file buffers and verifies it before emitting any byte. The explicit opt-in
 `streamUnverified` plays one as it downloads and settles the grade at the end, but only for whole files. Verified
 seeking into IPFS content is planned as per-block verification against the CID (trustless-gateway raw blocks or a

@@ -162,6 +162,86 @@ const typeName = (efs: Efs, typeId: Hex): string | undefined => {
   return undefined;
 };
 
+/** @internal A file's HEAD under a Lens at the basis block (LensReader.resolve). */
+export type HeadSelection =
+  | { status: "PRESENT"; target: Hex; author: PrincipalId }
+  | { status: "ABSENT_PROVEN" | "MASKED" }
+  | { status: "UNKNOWN" | "INVALID"; reason?: Reason };
+
+/** @internal */
+export async function headUnderLens(
+  ctx: Ctx,
+  s: Session,
+  basis: Basis,
+  lens: Lens,
+  subject: Hex,
+): Promise<Step<HeadSelection>> {
+  ctx.requests += 1;
+  const data = encodeFunctionData({
+    abi: lensReaderAbi,
+    functionName: "resolve",
+    args: [lens.principals, { purpose: PURPOSES.head, subject, role: ZERO_WORD }, EMPTY_BASIS],
+  });
+  const [out] = await callsAt(s, basis.blockHash, [{ to: ctx.efs.deployment.readers.lens, data }]);
+  if (!out?.ok)
+    return {
+      ok: false,
+      retryElsewhere: true,
+      reason: out ? out.reason : reason("RPC_UNAVAILABLE", "transient"),
+    };
+  const [q, sel] = decodeFunctionResult({
+    abi: lensReaderAbi,
+    functionName: "resolve",
+    data: out.result as Hex,
+  }) as unknown as [
+    { status: number },
+    { status: number; target: Hex; principalId: Hex; revision: bigint },
+  ];
+  // LensReader.resolve: q.status equals the selection's status (PRESENT, MASKED, ABSENT_PROVEN, UNKNOWN), or is a
+  // refusal (INVALID, LIMIT_EXCEEDED, BASIS_STALE, UNSUPPORTED). Anything else is not guessed at.
+  const qs = chainStatus(q.status);
+  if (qs === "ABSENT_PROVEN" || qs === "MASKED" || qs === "UNKNOWN")
+    return { ok: true, value: { status: qs } };
+  if (qs === "BASIS_STALE")
+    return {
+      ok: false,
+      retryElsewhere: true,
+      reason: reason("BASIS_STALE", "transient", "the lens reader saw a different basis"),
+    };
+  if (qs === "INVALID" || qs === "LIMIT_EXCEEDED" || qs === "UNSUPPORTED")
+    return {
+      ok: true,
+      value: {
+        status: "INVALID",
+        reason: reason(
+          qs === "LIMIT_EXCEEDED" ? "LIMIT_EXCEEDED" : "UNSUPPORTED_PROFILE",
+          "never",
+          `lens reader refused the query: ${qs}`,
+        ),
+      },
+    };
+  if (qs !== "PRESENT" || chainStatus(sel.status) !== "PRESENT")
+    return {
+      ok: true,
+      value: {
+        status: "UNKNOWN",
+        reason: reason(
+          "RPC_ERROR",
+          "never",
+          `unexpected lens status ${qs}/${chainStatus(sel.status)}`,
+        ),
+      },
+    };
+  return {
+    ok: true,
+    value: {
+      status: "PRESENT",
+      target: lower(sel.target),
+      author: lower(sel.principalId) as PrincipalId,
+    },
+  };
+}
+
 /** Resolve a file's HEAD revision under the Lens, then its content layout. */
 export async function openFile(
   efs: Efs,
@@ -191,72 +271,12 @@ export async function openFile(
       let fileSubject: Hex | undefined;
       if (target.kind === "file") {
         fileSubject = target.subject;
-        ctx.requests += 1;
-        const data = encodeFunctionData({
-          abi: lensReaderAbi,
-          functionName: "resolve",
-          args: [
-            lens.principals,
-            { purpose: PURPOSES.head, subject: target.subject, role: ZERO_WORD },
-            EMPTY_BASIS,
-          ],
-        });
-        const [out] = await callsAt(s, basis.blockHash, [
-          { to: efs.deployment.readers.lens, data },
-        ]);
-        if (!out?.ok)
-          return {
-            ok: false,
-            retryElsewhere: true,
-            reason: out ? out.reason : reason("RPC_UNAVAILABLE", "transient"),
-          };
-        const [q, sel] = decodeFunctionResult({
-          abi: lensReaderAbi,
-          functionName: "resolve",
-          data: out.result as Hex,
-        }) as unknown as [
-          { status: number },
-          { status: number; target: Hex; principalId: Hex; revision: bigint },
-        ];
-        // LensReader.resolve: q.status equals the selection's status (PRESENT, MASKED, ABSENT_PROVEN, UNKNOWN),
-        // or is a refusal (INVALID, LIMIT_EXCEEDED, BASIS_STALE, UNSUPPORTED). Anything else is not guessed at.
-        const qs = chainStatus(q.status);
-        if (qs === "ABSENT_PROVEN" || qs === "MASKED" || qs === "UNKNOWN")
-          return { ok: true, value: { status: qs } };
-        if (qs === "BASIS_STALE")
-          return {
-            ok: false,
-            retryElsewhere: true,
-            reason: reason("BASIS_STALE", "transient", "the lens reader saw a different basis"),
-          };
-        if (qs === "INVALID" || qs === "LIMIT_EXCEEDED" || qs === "UNSUPPORTED") {
-          return {
-            ok: true,
-            value: {
-              status: "INVALID",
-              reason: reason(
-                qs === "LIMIT_EXCEEDED" ? "LIMIT_EXCEEDED" : "UNSUPPORTED_PROFILE",
-                "never",
-                `lens reader refused the query: ${qs}`,
-              ),
-            },
-          };
-        }
-        if (qs !== "PRESENT" || chainStatus(sel.status) !== "PRESENT") {
-          return {
-            ok: true,
-            value: {
-              status: "UNKNOWN",
-              reason: reason(
-                "RPC_ERROR",
-                "never",
-                `unexpected lens status ${qs}/${chainStatus(sel.status)}`,
-              ),
-            },
-          };
-        }
-        revisionId = lower(sel.target);
-        author = lower(sel.principalId) as PrincipalId;
+        const head = await headUnderLens(ctx, s, basis, lens, target.subject);
+        if (!head.ok) return head;
+        const h = head.value;
+        if (h.status !== "PRESENT") return { ok: true, value: h };
+        revisionId = h.target;
+        author = h.author;
       } else {
         revisionId = lower(target.recordId);
         fileSubject = target.file;
