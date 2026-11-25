@@ -9,9 +9,15 @@
 // calldata of the encoded call, priced as if every byte were non-zero. Plans aim at txGasCap × (1 − headroom), the
 // contracts' budget rule with their 15% default (the fit's stated error is ~6–8%). eth_estimateGas on the exact call
 // stays the authority before anything is sent (sendPlan refuses an estimate over the cap).
+//
+// The kernel's index floor is added on top (when the deployment records its work model): before the callbacks the
+// kernel reserves a prefix floor P and a final reserve F, priced per action and per bind, so a publication needs
+// visible gas V = max(K + need(P), E) + ceil(F·64/63) + tail, K being the kernel's own share of the execution gas E.
+// Until the gas model gives K (the tag release's floor.kernel), K ≤ E bounds it: a publication is planned only when
+// E + need(P) + ceil(F·64/63) + tail fits the budget. That over-splits bind-heavy batches a little, never under.
 import { type Reason, reason } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
-import type { DeploymentInfo } from "../deployment/manifest.js";
+import type { DeploymentInfo, KernelFloor } from "../deployment/manifest.js";
 import { ACTION } from "../generated/constants.js";
 import { GAS_ENVELOPE, GAS_SCHEDULES } from "../generated/gas.js";
 import type { ActionData } from "./types.js";
@@ -77,6 +83,12 @@ export interface PlannedAction {
   bindRow?: BindRow;
   /** Consecutive actions with the same group id are kept in one publication. */
   group?: number;
+  /**
+   * For a BIND, UNBIND or RELEASE: whether the writer's head at the position is UNSET (a first statement), which the
+   * kernel's floor charges fresh slots for. Absent: a BIND is taken as a first statement unless its `bindRow` is a
+   * rebind; an UNBIND or RELEASE is not (this release admits them only over the writer's own bound or masked head).
+   */
+  firstStatement?: boolean;
 }
 
 export interface BatchLimits {
@@ -89,6 +101,8 @@ export interface BatchLimits {
 
 export interface SplitOptions {
   model: GasModel;
+  /** The kernel's index floor (DeploymentInfo.kernelFloor): each publication must also leave room for it. */
+  floor?: KernelFloor;
   limits: BatchLimits;
   /** The per-transaction gas cap (EIP-7825; 2^24 unless the chain says otherwise). */
   txGasCap: bigint;
@@ -104,6 +118,8 @@ export interface SplitPart {
   actions: PlannedAction[];
   /** The planning estimate (model + intrinsic + calldata), never the authority. */
   gas: number;
+  /** The visible gas the kernel's floor needs on top of `gas` (0 without a floor). The part fits `gas + floor`. */
+  floor: number;
 }
 
 export type SplitResult =
@@ -162,6 +178,77 @@ export function publicationGas(
   return Math.ceil(gas);
 }
 
+/** The kernel's own quote of a publication's floor (LedgerIngress.indexFloor's four numbers). */
+export interface KernelQuote {
+  prefixFloor: number;
+  finalReserve: number;
+  freshSlots: number;
+  rewrites: number;
+}
+
+const ceilDiv = (a: number, b: number): number => Math.floor((a + b - 1) / b);
+/** The ingress's own spend between the kernel's forward and the index's (the contracts' floor.dispatchOverhead). */
+const DISPATCH_OVERHEAD = 2000;
+const REBIND_ROWS: ReadonlySet<BindRow> = new Set(["bindHeadRebind", "bindFolderRebind"]);
+
+/**
+ * The kernel's quote for these actions, from the deployment's work model: fresh slots for each first statement and
+ * each new record (with its references and digest specs), rewrites per publish and per bind, and the prefix floor and
+ * final reserve they price. `everyBindFirst` prices every bind as a first statement, as the kernel's own
+ * indexFloor helper does (an upper bound); planners pass what they know instead.
+ */
+export function kernelQuote(
+  actions: readonly (ActionData | PlannedAction)[],
+  f: KernelFloor,
+  o: { everyBindFirst?: boolean } = {},
+): KernelQuote {
+  const w = f.workModel;
+  let fresh10 = w.freshPerPublication;
+  let rw10 = w.rwPerPublication;
+  let binds = 0;
+  for (const x of actions) {
+    const a: PlannedAction = "action" in x ? x : { action: x, body: "0x" };
+    const k = a.action.kind;
+    if (k === ACTION.PUBLISH || k === ACTION.REUSE) {
+      const t = f.types[a.action.typeId.toLowerCase()] ?? { refs: f.maxRefs, specs: 1 };
+      rw10 += w.rwPerPublish;
+      fresh10 += w.freshPerRef * t.refs;
+      if (k === ACTION.PUBLISH && a.exists !== true)
+        fresh10 += w.freshPerPublishFresh + w.freshPerDigestSpec * t.specs;
+    } else if (isBindLike(k)) {
+      binds++;
+      rw10 += w.rwPerBind;
+      const first =
+        o.everyBindFirst === true ||
+        (a.firstStatement ??
+          (k === ACTION.BIND && !(a.bindRow !== undefined && REBIND_ROWS.has(a.bindRow))));
+      if (first) fresh10 += w.freshPerBindFresh;
+    }
+  }
+  const freshSlots = ceilDiv(fresh10, 10);
+  const rewrites = ceilDiv(rw10, 10);
+  return {
+    prefixFloor:
+      w.computeBase +
+      actions.length * w.computePerAction +
+      binds * w.computePerHookEffect +
+      freshSlots * f.floorFreshGas +
+      rewrites * f.floorRewriteGas,
+    finalReserve: w.finalComputeBase + binds * w.finalComputePerBind,
+    freshSlots,
+    rewrites,
+  };
+}
+
+/**
+ * Visible gas the floor needs beyond the execution gas, as an upper bound: the prefix floor forwarded twice at 63/64
+ * (kernel to ingress to index), the final reserve at 63/64, and the kernel's tail. With K ≤ E this bounds V − E.
+ */
+export function floorNeed(q: KernelQuote, f: KernelFloor): number {
+  const prefix = ceilDiv((ceilDiv(q.prefixFloor * 64, 63) + DISPATCH_OVERHEAD) * 64, 63);
+  return prefix + ceilDiv(q.finalReserve * 64, 63) + f.kernelTail;
+}
+
 interface Tally {
   actions: number;
   binds: number;
@@ -207,6 +294,8 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
         ),
       };
   }
+  const floorOf = (list: readonly PlannedAction[]): number =>
+    o.floor ? floorNeed(kernelQuote(list, o.floor), o.floor) : 0;
   const fits = (list: readonly PlannedAction[], first: boolean): true | Reason => {
     const t = tally(list);
     if (t.actions > L.maxActionsPerPublication)
@@ -227,12 +316,12 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
         "after-replan",
         `${t.bodyBytes} body bytes; the limit is ${L.maxBodyBytesPerPublication}`,
       );
-    const gas = publicationGas(list, m, first && o.firstWrite === true);
+    const gas = publicationGas(list, m, first && o.firstWrite === true) + floorOf(list);
     if (gas > budget)
       return reason(
         "OVER_TX_GAS_CAP",
         "after-replan",
-        `~${gas} gas; the budget is ${budget} (cap ${o.txGasCap})`,
+        `~${gas} gas with the kernel's floor; the budget is ${budget} (cap ${o.txGasCap})`,
       );
     if (m.total && blockBudget !== undefined) {
       const all = publicationGas(list, m.total, first && o.firstWrite === true);
@@ -253,12 +342,21 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
     const alone = fits(u.list, parts.length === 0 && current.length === 0);
     if (alone !== true) return { ok: false, reason: alone, at: u.start };
     if (current.length && fits([...current, ...u.list], parts.length === 0) !== true) {
-      parts.push({ actions: current, gas: gasOf(current, parts.length === 0) });
+      parts.push({
+        actions: current,
+        gas: gasOf(current, parts.length === 0),
+        floor: floorOf(current),
+      });
       current = [];
     }
     current.push(...u.list);
   }
-  if (current.length) parts.push({ actions: current, gas: gasOf(current, parts.length === 0) });
+  if (current.length)
+    parts.push({
+      actions: current,
+      gas: gasOf(current, parts.length === 0),
+      floor: floorOf(current),
+    });
   return { ok: true, parts, budget };
 }
 
@@ -270,26 +368,35 @@ export interface PartBody {
 
 /**
  * A conservative planning estimate of one part from its actions and bodies alone: new records at the dearest
- * shape, BINDs at the dearest row, and the first-write surcharge always included.
+ * shape, BINDs at the dearest row, and the first-write surcharge always included. With the kernel's floor, plus
+ * what the floor needs, every BIND taken as a first statement.
  */
-export function partGas(part: PartBody, m: GasConstants): number {
-  return publicationGas(
+export function partGas(part: PartBody, m: GasConstants, floor?: KernelFloor): number {
+  const gas = publicationGas(
     part.actions.map((action, i) => ({ action, body: part.bodies[i] ?? "0x" })),
     m,
     true,
   );
+  return floor ? gas + floorNeed(kernelQuote(part.actions, floor), floor) : gas;
 }
 
 /**
  * Consecutive parts packed into atomic EIP-5792 batches, as lists of part indexes in order. An atomic batch may run
  * as ONE transaction (EIP-7702 and ERC-4337 accounts run it that way), so it is under the same per-transaction cap
- * as one part. Each batch's summed `partGas` fits txGasCap × (1 − headroom). Where the cap counts only execution
+ * as one part. Each batch's summed `partGas` (with each part's kernel floor, when `floor` is given) fits
+ * txGasCap × (1 − headroom). Where the cap counts only execution
  * gas (`model.total`), the summed whole gas must also fit the block budget, and with no block gas limit known
  * nothing is batched. At most `maxParts` per batch. A part that fits with no neighbour goes alone.
  */
 export function packBatches(
   parts: readonly PartBody[],
-  g: { model: GasModel; txGasCap: bigint; headroom?: number; blockGasLimit?: bigint },
+  g: {
+    model: GasModel;
+    txGasCap: bigint;
+    headroom?: number;
+    blockGasLimit?: bigint;
+    floor?: KernelFloor;
+  },
   maxParts: number = Number.POSITIVE_INFINITY,
 ): number[][] {
   const keep = 1 - (g.headroom ?? 0.15);
@@ -303,7 +410,8 @@ export function packBatches(
   let gas = 0;
   let all = 0;
   parts.forEach((p, i) => {
-    const pg = partGas(p, g.model);
+    // Each call in a batch must still find its own floor: summed, a conservative bound.
+    const pg = partGas(p, g.model, g.floor);
     const pa = total ? partGas(p, total) : 0;
     const fits =
       batch.length > 0 &&
@@ -338,6 +446,8 @@ export type GasPlan =
       /** The contracts' planning headroom (GAS_ENVELOPE.headroomPercent / 100). */
       headroom: number;
       blockGasLimit?: bigint;
+      /** The kernel's index floor, when the deployment records its work model. */
+      floor?: KernelFloor;
     }
   | { ok: false; reason: Reason };
 
@@ -376,6 +486,8 @@ export function gasPlanFor(d: DeploymentInfo): GasPlan {
         `no gas model for ${chain.feeSchedule ? `fee schedule ${chain.feeSchedule}` : `hardfork ${chain.hardfork}`} in this SDK (it has ${Object.keys(all).join(", ")})`,
       ),
     };
+  const unsupported = floorUnsupported(d.kernelFloor);
+  if (unsupported) return { ok: false, reason: unsupported };
   const model: GasModel = sch.executionGas
     ? { ...sch.executionGas, schedule: name, total: sch.constants }
     : { ...sch.constants, schedule: name };
@@ -385,5 +497,19 @@ export function gasPlanFor(d: DeploymentInfo): GasPlan {
     txGasCap: chain.txGasCap,
     headroom: GAS_ENVELOPE.headroomPercent / 100,
     ...(chain.blockGasLimit !== null ? { blockGasLimit: chain.blockGasLimit } : {}),
+    ...(d.kernelFloor ? { floor: d.kernelFloor } : {}),
   };
+}
+
+/** The work-model formula kernelQuote implements. */
+export const FLOOR_FORMULA = 1;
+
+/** A refusal when the deployment's floor uses a formula this SDK cannot price, else null. */
+export function floorUnsupported(f: KernelFloor | null | undefined): Reason | null {
+  if (!f || f.workModel.formulaVersion === FLOOR_FORMULA) return null;
+  return reason(
+    "UNSUPPORTED_PROFILE",
+    "never",
+    `the kernel's work model uses formula ${f.workModel.formulaVersion}; this SDK prices formula ${FLOOR_FORMULA}`,
+  );
 }

@@ -30,3 +30,38 @@ describe("deployment index families", () => {
     ).toBeNull();
   });
 });
+
+describe("deployment kernel floor", () => {
+  const doc = raw as unknown as {
+    index: { workModel?: Record<string, number> };
+    limits: Record<string, number>;
+    typeIds: Record<string, string>;
+  };
+  it("reads the work model, the floor limits, and each Type's references and digest specs", () => {
+    const f = createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: raw }).deployment.kernelFloor;
+    expect(f?.workModel).toEqual(doc.index.workModel);
+    expect(f).toMatchObject({
+      floorFreshGas: doc.limits["floorFreshGas"],
+      floorRewriteGas: doc.limits["floorRewriteGas"],
+      kernelTail: doc.limits["kernelTail"],
+      maxRefs: doc.limits["maxRefs"],
+    });
+    const id = (name: string) => (doc.typeIds[name] as string).toLowerCase();
+    expect(f?.types[id("files-span/1")]).toEqual({ refs: 2, specs: 0 });
+    expect(f?.types[id("files-content/1")]).toEqual({ refs: 1, specs: 1 });
+    expect(f?.types[id("files-bytes/1")]).toEqual({ refs: 0, specs: 0 });
+  });
+
+  it("is null when the document records no work model, and a malformed one is refused", () => {
+    const none = structuredClone(doc);
+    delete none.index.workModel;
+    expect(
+      createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: none }).deployment.kernelFloor,
+    ).toBeNull();
+    const bad = structuredClone(doc);
+    (bad.index.workModel as Record<string, unknown>)["computeBase"] = "lots";
+    expect(() => createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: bad })).toThrow(
+      /index.workModel.computeBase/,
+    );
+  });
+});

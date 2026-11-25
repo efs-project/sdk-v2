@@ -32,6 +32,72 @@ export interface ChainFacts {
   blockGasLimit: bigint | null;
 }
 
+/**
+ * The kernel's index floor, as the deployment records it (index.workModel and the floor limits): before a
+ * publication's callbacks the kernel reserves a prefix floor and a final reserve priced from these, and refuses
+ * (E_INDEX_GAS) a call that leaves less. Planners add the gas this needs to each publication's estimate.
+ */
+export interface KernelFloor {
+  workModel: {
+    /** The quote's formula; the SDK prices formula 1 only, and plans nothing under another. */
+    formulaVersion: number;
+    freshPerPublication: number;
+    rwPerPublication: number;
+    freshPerPublishFresh: number;
+    rwPerPublish: number;
+    freshPerBindFresh: number;
+    rwPerBind: number;
+    freshPerRef: number;
+    freshPerDigestSpec: number;
+    computeBase: number;
+    computePerAction: number;
+    computePerHookEffect: number;
+    finalComputeBase: number;
+    finalComputePerBind: number;
+  };
+  floorFreshGas: number;
+  floorRewriteGas: number;
+  kernelTail: number;
+  /** A record's references, at most (a Type the SDK has no count for is priced at this). */
+  maxRefs: number;
+  /** References and digest specs per Type id (lowercase): what the kernel's quote charges per record. */
+  types: Readonly<Record<string, { refs: number; specs: number }>>;
+}
+
+/**
+ * Each Type's reference count, by name: fixed by the Type's described shape, as the contracts' gas model lists it
+ * (gas/model.json floor.types). The tag-release bundle carries the table itself; until then it is this one.
+ */
+const TYPE_REFS: Readonly<Record<string, number>> = {
+  "directory-alias/1": 0,
+  "files-bytes/1": 0,
+  "files-child/1": 1,
+  "files-content/1": 1,
+  "files-directory/1": 0,
+  "files-external/1": 1,
+  "files-name/2": 0,
+  "files-root/1": 0,
+  "files-span/1": 2,
+  "realm-notice/1": 0,
+  "text/1": 0,
+};
+const WORK_MODEL_KEYS = [
+  "formulaVersion",
+  "freshPerPublication",
+  "rwPerPublication",
+  "freshPerPublishFresh",
+  "rwPerPublish",
+  "freshPerBindFresh",
+  "rwPerBind",
+  "freshPerRef",
+  "freshPerDigestSpec",
+  "computeBase",
+  "computePerAction",
+  "computePerHookEffect",
+  "finalComputeBase",
+  "finalComputePerBind",
+] as const;
+
 export interface DeploymentInfo {
   chainId: number;
   /** Null for a document without a `chain` block: gas planning then needs an explicit model. */
@@ -76,6 +142,8 @@ export interface DeploymentInfo {
   defaultLens: readonly PrincipalId[];
   typeIds: Readonly<Record<string, Hex>>;
   limits: ProtocolLimits;
+  /** The kernel's index floor; null for a document that records no work model (plans then omit the floor). */
+  kernelFloor: KernelFloor | null;
   /** The execution set the document was written at. The pin reports the live one. */
   executionSet: Hex;
   revision: number;
@@ -97,6 +165,50 @@ const SPAN_CHUNK_BYTES = 8160;
 const ROOT_HEADER_BYTES = 64;
 
 /** Validate an efs-deployment/1 document. Pure; no network. */
+/**
+ * The kernel floor from index.workModel, the floor limits and index.digestSpecs; null when the document has no work
+ * model. A work model that is present but malformed is a problem, never a silent null.
+ */
+function kernelFloorOf(
+  index: Record<string, unknown>,
+  limits: Record<string, unknown>,
+  typeIds: Readonly<Record<string, Hex>>,
+  problems: string[],
+): KernelFloor | null {
+  const wm = index["workModel"];
+  if (wm === undefined) return null;
+  const nat = (path: string, v: unknown): number => {
+    if (typeof v === "number" && Number.isSafeInteger(v) && v >= 0) return v;
+    problems.push(`${path} must be a non-negative integer`);
+    return 0;
+  };
+  const w = (wm ?? {}) as Record<string, unknown>;
+  const workModel = Object.fromEntries(
+    WORK_MODEL_KEYS.map((k) => [k, nat(`index.workModel.${k}`, w[k])]),
+  ) as KernelFloor["workModel"];
+  const specs = new Map<string, number>();
+  const list = Array.isArray(index["digestSpecs"]) ? (index["digestSpecs"] as unknown[]) : [];
+  for (const sp of list) {
+    const t = (sp as Record<string, unknown> | null)?.["typeId"];
+    if (typeof t === "string") specs.set(t.toLowerCase(), (specs.get(t.toLowerCase()) ?? 0) + 1);
+  }
+  const maxRefs = nat("limits.maxRefs", limits["maxRefs"]);
+  const types: Record<string, { refs: number; specs: number }> = {};
+  for (const [name, id] of Object.entries(typeIds))
+    types[id.toLowerCase()] = {
+      refs: TYPE_REFS[name] ?? maxRefs,
+      specs: specs.get(id.toLowerCase()) ?? 0,
+    };
+  return {
+    workModel,
+    floorFreshGas: nat("limits.floorFreshGas", limits["floorFreshGas"]),
+    floorRewriteGas: nat("limits.floorRewriteGas", limits["floorRewriteGas"]),
+    kernelTail: nat("limits.kernelTail", limits["kernelTail"]),
+    maxRefs,
+    types,
+  };
+}
+
 /** The id of the family of `kind` over `universe` in the document's index, or null when it names none. */
 function familyOf(index: Record<string, unknown>, kind: number, universe: number): Hex | null {
   const families = index["families"];
@@ -241,6 +353,7 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       spanChunkBytes: SPAN_CHUNK_BYTES,
       maxLensPrincipals: 64,
     },
+    kernelFloor: kernelFloorOf(indexDoc, limits, typeIdOut, problems),
     executionSet: word("activation.executionSet", activation["executionSet"]),
     revision: num("activation.revision", activation["revision"]),
   };
