@@ -94,7 +94,7 @@ for c, r in rows.items():
 
 # ---- string vectors (ICU ground truth)
 def pre(s):
-    """Whitespace, then refusals. Returns (string, None) or (None, rule)."""
+    """Whitespace, then refusals. Returns (string, None) or (None, rule). Run before the fold AND again after it."""
     cps = [ord(x) for x in s]
     while cps and cps[0] in WS: cps.pop(0)
     while cps and cps[-1] in WS: cps.pop()
@@ -124,6 +124,7 @@ def post(w):
     if w.startswith("~"): return "reserved-tilde"
     if re.fullmatch(r"0x[0-9a-fA-F]{40}", w): return "address-shaped"
     if any(ord(x) < 0x20 or ord(x) == 0x7F or x == " " or "A" <= x <= "Z" for x in w): return "chain-ascii"
+    if unicodedata.category(w[0]) in ("Mn", "Mc", "Me"): return "leading-combining-mark"
     return None
 
 CASES = [
@@ -144,26 +145,71 @@ CASES = [
     ("noncharacter", "﷐"), ("slash", "cars/tesla"), ("dot", "."), ("dotdot", ".."), ("tilde", "~efs"),
     ("address", "0x" + "ab" * 20), ("address-upper", "0X" + "AB" * 20), ("too-long", "a" * 256), ("max-length", "a" * 255),
 ]
+CASES += [
+    # Compatibility mappings that produce what the earlier steps already dealt with: checked again after the fold.
+    ("diaeresis-alone", "\u00A8"), ("diaeresis-inside", "x\u00A8y"), ("arabic-salla", "\uFDFA"), ("care-of", "\u2105"),
+    ("fullwidth-tilde", "\uFF5Eefs"), ("fullwidth-slash", "cars\uFF0Ftesla"), ("fullwidth-dot", "\uFF0E"),
+    ("one-dot-leader", "\u2024"), ("two-dot-leader", "\u2025"), ("ellipsis", "\u2026"),
+    ("fullwidth-address", "\uFF10\uFF58" + "\uFF41\uFF42" * 20), ("dunder", "__init__"),
+]
 fold = os.path.join(HERE, "fold")
 env = dict(os.environ, DYLD_LIBRARY_PATH="/opt/homebrew/opt/icu4c/lib")
-inputs, prepped = [], []
-for label, s in CASES:
-    p, rule = pre(s)
-    prepped.append((label, s, p, rule))
-    inputs.append(p if p is not None else "")
-outs = subprocess.run([fold], input="\n".join(inputs) + "\n", capture_output=True, text=True, env=env, check=True).stdout.split("\n")
+def icu(words):
+    out = subprocess.run([fold], input="\n".join(words) + "\n", capture_output=True, text=True, env=env, check=True)
+    return [line.split("\t") for line in out.stdout.split("\n")[: len(words)]]
+
+def full(words, k):
+    """The whole rule over many words: whitespace + refusals, fold (A or B), whitespace + refusals again, chain rules."""
+    res = [None] * len(words)
+    first = [pre(w) for w in words]
+    todo = [i for i, (p, r) in enumerate(first) if r is None]
+    folded = icu([first[i][0] for i in todo]) if todo else []
+    for i, (p, r) in enumerate(first):
+        if r is not None: res[i] = {"refused": r}
+    for i, line in zip(todo, folded):
+        w = line[0] if k == "B" else line[2]
+        again, r = pre(w)  # what the fold produced can be whitespace, or a refused character
+        if r is not None: res[i] = {"refused": r, "afterFold": True}; continue
+        r = post(again)
+        res[i] = {"refused": r, "afterFold": True} if r else {"word": again, "hex": " ".join(f"{ord(x):04X}" for x in again)}
+    return res
+
+labels = [l for l, _ in CASES]
+inputs = [s for _, s in CASES]
+out = {k: full(inputs, k) for k in ("A", "B")}
 vectors = []
-for (label, s, p, rule), line in zip(prepped, outs):
-    v = {"label": label, "input": s, "inputHex": " ".join(f"{ord(x):04X}" for x in s)}
-    if rule:
-        v["A"] = v["B"] = {"refused": rule}
-    else:
-        b_out, _nfc, a_out = line.split("\t")
-        for k, w in (("A", a_out), ("B", b_out)):
-            r = post(w)
-            v[k] = {"refused": r} if r else {"word": w, "hex": " ".join(f"{ord(x):04X}" for x in w)}
+idem_fail = {"A": [], "B": []}
+for k in ("A", "B"):
+    words = [o["word"] for o in out[k] if "word" in o]
+    twice = full(words, k)
+    for w, o in zip(words, twice):
+        if o.get("word") != w: idem_fail[k].append(w)
+for i, (label, s) in enumerate(CASES):
+    v = {"label": label, "input": s, "inputHex": " ".join(f"{ord(x):04X}" for x in s), "A": out["A"][i], "B": out["B"][i]}
     v["same"] = v["A"] == v["B"]
     vectors.append(v)
+
+# ---- a pin upgrade (Unicode 17.0 -> 18.0): for every code point allowed under 17, is its mapping unchanged in 18?
+in17 = [c for c in rows if unicodedata.category(chr(c)) != "Cn" and allowed(c)]
+def b17(c):  # NFKC_Casefold from Python's 17.0 data: NFKC, case fold, NFKC, drop default-ignorables, until stable
+    x = chr(c)
+    for _ in range(4):
+        y = unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", x).casefold())
+        y = "".join(ch for ch in y if not (ord(ch) in rows and rows[ord(ch)][1]))
+        y = unicodedata.normalize("NFC", y)
+        if y == x: break
+        x = y
+    return tuple(ord(ch) for ch in x)
+upgrade = {"code points allowed under 17.0": len(in17), "NFC changed": 0, "lowercase changed": 0, "NFKC_Casefold changed": 0, "examples": []}
+for c in in17:
+    r = rows[c]
+    if tuple(ord(x) for x in unicodedata.normalize("NFC", chr(c))) != r[3]: upgrade["NFC changed"] += 1
+    if tuple(ord(x) for x in chr(c).lower()) != r[4]:
+        upgrade["lowercase changed"] += 1
+        if len(upgrade["examples"]) < 6: upgrade["examples"].append(("lower", f"{c:04X}"))
+    if b17(c) != r[2]:
+        upgrade["NFKC_Casefold changed"] += 1
+        if len(upgrade["examples"]) < 12: upgrade["examples"].append(("nfkc_cf", f"{c:04X}", " ".join(f"{x:04X}" for x in b17(c)), " ".join(f"{x:04X}" for x in r[2])))
 
 # ---- idempotence over single code points (and their folded outputs)
 def idem(col):
@@ -182,6 +228,9 @@ summary = {
     "differ (single code points)": {k: {"count": n, "examples": "".join(examples[k][:24])} for k, n in diff.items()},
     "idempotence failures (single code points)": {"A lowercase": idem(4), "B nfkc_cf": idem(2)},
     "vectors": len(vectors), "vectors where A and B differ": sum(1 for v in vectors if not v["same"]),
+    "idempotence failures (whole strings, the full rule twice)": {k: len(v) for k, v in idem_fail.items()},
+    "refused only after the fold": {k: sum(1 for v in vectors if v[k].get("afterFold")) for k in ("A", "B")},
+    "pin upgrade 17.0 -> 18.0": upgrade,
 }
 json.dump({"summary": summary, "vectors": vectors}, open(os.path.join(HERE, "fold-eval.json"), "w"), ensure_ascii=False, indent=1)
 print(json.dumps(summary, ensure_ascii=False, indent=1))

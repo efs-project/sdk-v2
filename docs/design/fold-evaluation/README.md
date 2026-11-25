@@ -12,7 +12,7 @@ loaded only by apps that use tags.
 
 ## What each rule does to a typed word
 
-Both rules share every step except the fold itself:
+Both rules share every step except the fold itself. `__init__`, `model__y` and `_tesla` stay exactly as typed.
 
 1. **Whitespace.**
    - Trim at both ends.
@@ -25,12 +25,19 @@ Both rules share every step except the fold itself:
      Mongolian vowel separator.
    - Controls, unassigned code points (in the pinned Unicode version), private use and noncharacters.
 3. **The fold:** A or B.
-4. **The chain's word rules:**
+4. **Steps 1 and 2 again, on the folded text.** A compatibility mapping can produce what step 1 or 2 already dealt
+   with, so they run a second time.
+5. **The word rules, on the result:**
    - 1–255 bytes;
    - no `/`;
+   - no ASCII control or ASCII space;
+   - no `A–Z` (the fold has already removed them);
    - not `.` or `..`;
    - not starting with `~`;
-   - not `0x` followed by 40 hex digits. An uppercase `0X…` folds to lowercase first, so it is refused too.
+   - not `0x` followed by 40 hex digits;
+   - not starting with a combining mark.
+
+   Every rule except the last is the chain's own. An uppercase `0X…` folds to lowercase first, so it is refused too.
 
 `mercury_(planet)` passes under both: parentheses and underscores are kept, which the `name_(qualifier)` convention
 needs.
@@ -59,6 +66,25 @@ These counts are for single code points in Unicode 18.0, out of every character 
   - Georgian Mtavruli, which both fold to Mkhedruli.
 - **Both are idempotent** on every allowed code point: folding twice changes nothing.
 
+## Checked after the fold, not only before it
+
+Under B, a compatibility mapping can turn an allowed character into one the rules refuse:
+
+| Typed | B folds it to | Result |
+| --- | --- | --- |
+| `℅` (U+2105), `cars／tesla` (fullwidth solidus) | `c/o`, `cars/tesla` | refused: a slash |
+| `～efs` (fullwidth tilde) | `~efs` | refused: a reserved first character |
+| `．`, `․`, `‥` | `.` or `..` | refused: a dot name (`…` becomes `...`, which is allowed) |
+| `０ｘａｂ…` (fullwidth) | `0xab…` | refused: address-shaped |
+| `ﷺ` (U+FDFA) | `صلى الله عليه وسلم` | `صلى_الله_عليه_وسلم`: its spaces become underscores |
+| `¨` alone (U+00A8) | a space and a combining mark | refused: a leading combining mark (`x¨y` gives `x_̈y`) |
+
+Under A, these characters stay as typed. So `cars／tesla`, `～efs` and `０ｘ…` are valid words that look like a path,
+a system link and an address: a spoof that B refuses.
+
+**Idempotence over whole strings:** running the full rule twice gives the same word for all 74 vectors, under both
+rules, including the multi-character outputs above. Two clients can't disagree about an id by folding twice.
+
 ## Stability
 
 - **Normalization (NFC, NFKC) and case folding** are covered by Unicode's stability policies: once a character is
@@ -66,7 +92,15 @@ These counts are for single code points in Unicode 18.0, out of every character 
 - **Lowercase mappings are not frozen** by a policy in the same way. A is safe only if the SDK pins its own
   lowercase table, or refuses everything assigned after the pin.
 - **Pin one Unicode version and refuse what it doesn't assign.** That rule is the same under both, and it is what
-  keeps an id from ever changing. Data versions seen here: ICU 79.1 is Unicode 18.0; Node 24 (ICU 78.3) and Python
+  keeps an id from ever changing.
+- **EFS's own freeze rule (part of `efs/fold/1`, so it doesn't lean on Unicode's policies):** once a code point is
+  allowed under a pin, its EFS mapping never changes. A newer pin only adds mappings for newly assigned code points,
+  even if Unicode later changes a property such as which characters are ignorable. ENS had to keep a legacy quirk
+  for exactly this reason.
+  - CI checks every pin upgrade: the old vectors must give the same words, and the table entry of every code point
+    allowed under the old pin must be unchanged.
+  - Tried on 17.0 to 18.0: of the 159,866 code points allowed under 17.0, none changed its NFC, lowercase or
+    NFKC_Casefold mapping. Data versions seen here: ICU 79.1 is Unicode 18.0; Node 24 (ICU 78.3) and Python
   3.15 are 17.0. Node's own `normalize("NFC")` and `toLowerCase()` match ICU on all 297,334 code points assigned in
   17.0.
 
@@ -99,8 +133,8 @@ These counts are for single code points in Unicode 18.0, out of every character 
 
 ## Files here
 
-- `vectors.json`: 62 cases, each with rule A's and rule B's output or refusal (15 differ). Generated from ICU's own
-  NFKC_Casefold, NFC and lowercase.
+- `vectors.json`: 74 cases, each with rule A's and rule B's output or refusal (26 differ; `afterFold` marks a refusal
+  that only the folded text breaks). Generated from ICU's own NFKC_Casefold, NFC and lowercase.
 - `dump.cpp`, `fold.cpp`, `analyze.py`: the generators (ICU 79.1 and Python 3.15).
 - `enginecheck.mjs`: the Node cross-check.
 - To rerun: build the two C++ tools against ICU, run `./dump > icu-dump.tsv`, then `python3 analyze.py`.
