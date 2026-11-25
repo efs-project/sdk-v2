@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Install the exact packed artifacts into fresh copies of examples/* (outside the workspace)
-// and run them. Usage: node tools/consumers.mjs [--only node,ts,browser,foundry] [--ts 7.0.2] [--keep]
+// and run them. Usage: node tools/consumers.mjs [--only node,ts,browser,foundry,fixture] [--ts 7.0.2] [--keep]
+// "fixture" starts a real chain from the packed @efs/fixture, so it needs `anvil` on PATH (the integration job).
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,7 +32,10 @@ function npmConsumer(example, extraDevDeps = {}) {
   const dir = freshCopy(example);
   const pkgPath = join(dir, "package.json");
   const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-  pkg.dependencies["@efs/sdk"] = `file:${join(PACKS, artifact("@efs/sdk").file)}`;
+  // every packed EFS dependency the example names is pointed at its tarball
+  for (const name of Object.keys(pkg.dependencies))
+    if (name.startsWith("@efs/"))
+      pkg.dependencies[name] = `file:${join(PACKS, artifact(name).file)}`;
   pkg.devDependencies = { ...pkg.devDependencies, ...extraDevDeps };
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
   // npm, not pnpm: a plain consumer, no workspace, no lifecycle scripts.
@@ -64,6 +68,12 @@ try {
   if (only.has("browser")) {
     dirs.push(npmConsumer("smoke-browser"));
     ok("smoke-browser");
+  }
+  if (only.has("fixture")) {
+    dirs.push(npmConsumer("smoke-fixture"));
+    ok(
+      "smoke-fixture (a live chain from the packed @efs/fixture, edited through the packed @efs/sdk)",
+    );
   }
   if (only.has("foundry")) {
     const dir = freshCopy("smoke-foundry");

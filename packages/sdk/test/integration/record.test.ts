@@ -7,14 +7,15 @@ import { join } from "node:path";
 import { keccak256, sha256, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
-import { createWriter, memoryJournal } from "../../src/actions/index.ts";
-import type { FetchLike } from "../../src/chain/rpc.ts";
+import { createWriter, type Journal, memoryJournal } from "../../src/actions/index.ts";
+import type { Eip1193Like, FetchLike } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Hex, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { toJson } from "../../src/core/json.ts";
 import { type OpenedFile, openFile, readBytes, readRange } from "../../src/files/bytes.ts";
+import { planEditFile } from "../../src/files/edit.ts";
 import { PROTOCOL_INPUTS } from "../../src/generated/inputs.ts";
-import { type RpcTranscript, recordingFetch } from "../../src/testing/index.ts";
+import { type RpcTranscript, recordingFetch, recordingProvider } from "../../src/testing/index.ts";
 import { putExternal, putInline } from "./recipes.ts";
 
 const RECORD = process.env["EFS_RECORD"] === "1";
@@ -421,6 +422,228 @@ describe.runIf(RECORD)("record RPC transcripts", () => {
         expect(once.grade).toBe("VERIFIED");
       },
       serveHttps,
+    );
+  });
+});
+
+/**
+ * Edit-flow transcripts for the client's e2e: an RPC half (the SDK's JSON-RPC traffic) and a wallet half (every
+ * EIP-1193 request the writer made of the wallet), recorded from one real edit of the seeded docs/readme.txt as the
+ * fixture principal (anvil #0, unlocked). Replay with replayFetch(t) for createEfs({ fetch }) and replayProvider(t) as
+ * the wallet, following `steps` exactly (same calls, same options). Chain-side events between steps (blocks mined)
+ * are already in the recorded answers. Recorded only by this tool; never edited by hand.
+ */
+describe.runIf(RECORD)("record edit-flow transcripts", () => {
+  const RPC_OUT = join(OUT, "rpc");
+  const FIXTURE_ACCOUNT = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266" as Hex; // anvil #0: the seed's author
+  const readme = subject("readme.txt");
+  const chain = async (method: string, params: unknown[] = []): Promise<unknown> => {
+    const res = await fetch(fixture.rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+    const j = (await res.json()) as { result?: unknown; error?: { message: string } };
+    if (j.error) throw new Error(j.error.message);
+    return j.result;
+  };
+  /** The wallet: anvil's unlocked account #0. `loseResponse`: broadcast, then fail as a dropped connection. */
+  const anvilWallet = (o: { loseResponse?: boolean } = {}): Eip1193Like => ({
+    async request({ method, params }: { method: string; params?: unknown }) {
+      if (method === "eth_accounts" || method === "eth_requestAccounts") return [FIXTURE_ACCOUNT];
+      const out = await chain(method, (params as unknown[] | undefined) ?? []);
+      if (method === "eth_sendTransaction" && o.loseResponse)
+        throw new Error("the connection to the wallet was lost");
+      return out;
+    },
+  });
+  const flow = async (
+    name: string,
+    note: string,
+    run: (ctx: {
+      /** A fresh client (a page load) recording into this transcript. */
+      client: () => ReturnType<typeof createEfs>;
+      wallet: (o?: { loseResponse?: boolean }) => Eip1193Like;
+      steps: string[];
+      ids: Record<string, string>;
+    }) => Promise<void>,
+  ) => {
+    const rec = recordingFetch(globalThis.fetch as unknown as FetchLike);
+    const walletCalls: NonNullable<RpcTranscript["wallet"]>[number][] = [];
+    const steps: string[] = [];
+    const ids: Record<string, string> = { file: readme, account: FIXTURE_ACCOUNT };
+    await run({
+      client: () => createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: rec.fetch }),
+      wallet: (o) => {
+        const r = recordingProvider(anvilWallet(o));
+        return {
+          // every page load's wallet appends to one list, in request order (entries are filled as they settle)
+          request: (args) => {
+            const p = r.provider.request(args);
+            walletCalls.push(...r.calls.splice(0));
+            return p;
+          },
+        };
+      },
+      steps,
+      ids,
+    });
+    const t: RpcTranscript = {
+      schema: "efs-sdk-rpc-transcript/1",
+      case: name,
+      note,
+      contractsCommit: PROTOCOL_INPUTS.contractsCommit,
+      ids,
+      steps,
+      calls: rec.calls,
+      wallet: walletCalls,
+    };
+    mkdirSync(RPC_OUT, { recursive: true });
+    writeFileSync(join(RPC_OUT, `${name}.json`), `${JSON.stringify(t, null, 2)}\n`);
+  };
+  /** open → planEditFile → (the caller sends). Returns the plan and fills ids. */
+  const planEdit = async (
+    efs: ReturnType<typeof createEfs>,
+    writer: Parameters<typeof planEditFile>[1],
+    text: string,
+    ids: Record<string, string>,
+  ) => {
+    const opened = await openFile(efs, { kind: "file", subject: readme });
+    if (opened.status !== "PRESENT") throw new Error(opened.status);
+    ids["base"] = opened.file.revision;
+    ids["text"] = text;
+    const edit = await planEditFile(efs, writer, {
+      file: { kind: "file", subject: readme },
+      base: { kind: "revision", recordId: opened.file.revision },
+      content: new TextEncoder().encode(text),
+    });
+    if (edit.status !== "PLANNED") throw new Error(edit.status);
+    expect(edit.review).toMatchObject({ parts: 1, guard: "own-head", visibleInLens: true });
+    ids["revision"] = edit.review.revision;
+    return edit;
+  };
+  const OPEN =
+    "const opened = await openFile(efs, { kind: 'file', subject: ids.file })  // PRESENT, revision ids.base";
+  const PLAN =
+    "const edit = await planEditFile(efs, writer, { file: { kind: 'file', subject: ids.file }, base: { kind: 'revision', recordId: opened.file.revision }, content: utf8(ids.text) })  // PLANNED, 1 part, review.revision = ids.revision";
+  const WRITER =
+    "const writer = await createWriter(efs, { authorizer: { kind: 'eip1193', profile: 'direct', provider: wallet }, journal })";
+
+  it("records edit-one-approval, edit-reload-resume and edit-confirming-final", async () => {
+    await flow(
+      "edit-one-approval",
+      "Edit docs/readme.txt with one wallet approval: open → planEditFile → runSequence → COMPLETE (final: false, " +
+        "'Saved · confirming') → the new HEAD reads back.",
+      async ({ client, wallet, steps, ids }) => {
+        const efs = client();
+        const journal = memoryJournal();
+        steps.push("const efs = createEfs({ rpcs: [RPC], deployment, fetch })", WRITER, OPEN, PLAN);
+        const writer = await createWriter(efs, {
+          authorizer: { kind: "eip1193", profile: "direct", provider: wallet() },
+          journal,
+        });
+        const edit = await planEdit(efs, writer, "Meeting moved to 11:00.\n", ids);
+        steps.push("await writer.runSequence(edit.parts)  // COMPLETE 1 of 1, final: false");
+        expect(await writer.runSequence(edit.parts)).toMatchObject({
+          state: "COMPLETE",
+          final: false,
+        });
+        steps.push(
+          "await openFile(efs, { kind: 'file', subject: ids.file })  // PRESENT, revision ids.revision",
+          "await readBytes(efs, reopened.file)  // VERIFIED, utf8(ids.text)",
+        );
+        const after = await openFile(efs, { kind: "file", subject: readme });
+        if (after.status !== "PRESENT") throw new Error(after.status);
+        expect(after.file.revision).toBe(ids["revision"]);
+        expect((await readBytes(efs, after.file)).grade).toBe("VERIFIED");
+      },
+    );
+
+    await flow(
+      "edit-reload-resume",
+      "The wallet broadcasts but its response is lost, and the page reloads while the transaction is pending: " +
+        "runSequence → IN_FLIGHT; after the reload, pendingSequences lists it and resume settles it from the ledger " +
+        "to COMPLETE with no second wallet request. Use settleMs: 0 on the first runSequence, as recorded.",
+      async ({ client, wallet, steps, ids }) => {
+        const journal: Journal = memoryJournal(); // the app's durable journal (IndexedDB in the client)
+        await chain("evm_setAutomine", [false]); // the transaction stays pending across the reload
+        try {
+          const efs = client();
+          steps.push(
+            "// page load 1",
+            "const efs = createEfs({ rpcs: [RPC], deployment, fetch })",
+            WRITER,
+            OPEN,
+            PLAN,
+          );
+          const writer = await createWriter(efs, {
+            authorizer: {
+              kind: "eip1193",
+              profile: "direct",
+              provider: wallet({ loseResponse: true }),
+            },
+            journal,
+          });
+          const edit = await planEdit(efs, writer, "Meeting moved to 11:30.\n", ids);
+          steps.push(
+            "await writer.runSequence(edit.parts, { settleMs: 0 })  // IN_FLIGHT: the wallet's response was lost (RESPONSE_LOST), the transaction is pending",
+          );
+          const first = await writer.runSequence(edit.parts, { settleMs: 0 });
+          expect(first).toMatchObject({ state: "IN_FLIGHT", committed: 0 });
+          await chain("evm_mine");
+        } finally {
+          await chain("evm_setAutomine", [true]);
+        }
+        const efs = client();
+        steps.push(
+          "// page load 2 (the pending transaction was mined meanwhile): a new client and writer over the same journal",
+          "const efs = createEfs({ rpcs: [RPC], deployment, fetch })",
+          WRITER,
+          "const [open] = await writer.pendingSequences()  // IN_FLIGHT, 0 of 1",
+          "await writer.resume(open.sequenceId)  // COMPLETE 1 of 1, final: false; the wallet is not asked again",
+        );
+        const writer = await createWriter(efs, {
+          authorizer: { kind: "eip1193", profile: "direct", provider: wallet() },
+          journal,
+        });
+        const [open] = await writer.pendingSequences();
+        expect(open).toMatchObject({ state: "IN_FLIGHT", committed: 0, total: 1 });
+        if (!open) throw new Error("no open sequence");
+        expect(await writer.resume(open.sequenceId)).toMatchObject({
+          state: "COMPLETE",
+          final: false,
+        });
+      },
+    );
+
+    await flow(
+      "edit-confirming-final",
+      "An edit saves ('Saved · confirming', final: false); once its block is finalized, reconcileSequence turns it " +
+        "final ('Saved') and pendingSequences no longer lists it. Neither call uses the wallet.",
+      async ({ client, wallet, steps, ids }) => {
+        const efs = client();
+        const journal = memoryJournal();
+        steps.push("const efs = createEfs({ rpcs: [RPC], deployment, fetch })", WRITER, OPEN, PLAN);
+        const writer = await createWriter(efs, {
+          authorizer: { kind: "eip1193", profile: "direct", provider: wallet() },
+          journal,
+        });
+        const edit = await planEdit(efs, writer, "Meeting moved to 12:00.\n", ids);
+        steps.push("const saved = await writer.runSequence(edit.parts)  // COMPLETE, final: false");
+        const saved = await writer.runSequence(edit.parts);
+        expect(saved).toMatchObject({ state: "COMPLETE", final: false });
+        await chain("anvil_mine", ["0x50"]); // the fixture finalizes 64 blocks behind the head
+        steps.push(
+          "// the chain finalizes the block",
+          "await writer.reconcileSequence(saved.sequenceId)  // COMPLETE, final: true",
+          "await writer.pendingSequences()  // []",
+        );
+        expect(await writer.reconcileSequence(saved.sequenceId)).toMatchObject({
+          state: "COMPLETE",
+          final: true,
+        });
+        expect(await writer.pendingSequences()).toEqual([]);
+      },
     );
   });
 });

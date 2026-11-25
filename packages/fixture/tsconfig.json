@@ -1,0 +1,11 @@
+{
+  "//": "Node-only package: emits dist/ from src/.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["es2023"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

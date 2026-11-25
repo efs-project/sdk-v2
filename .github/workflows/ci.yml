@@ -79,6 +79,9 @@ jobs:
           version: v1.8.3
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:integration
+      # the client's live-chain path from the packed tarballs: @efs/fixture starts a chain, @efs/sdk edits it
+      - run: pnpm --filter @efs/sdk build && node tools/pack.mjs --only sdk,fixture
+      - run: node tools/consumers.mjs --only fixture
 
   solidity-package:
     runs-on: ubuntu-24.04

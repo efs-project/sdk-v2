@@ -1,0 +1,42 @@
+{
+  "name": "@efs/fixture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A local EFS chain for live-chain tests: anvil, the contracts deployment and the Files seed, from the snapshot this SDK was built against. Node only.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/efs-project/sdk-v2.git",
+    "directory": "packages/fixture"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "contracts",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../tools/clean.mjs dist contracts && tsc -p tsconfig.json && node ../../tools/fixture-bundle.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test:integration": "pnpm run build && vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "dependencies": {
+    "viem": "^2.58.4"
+  }
+}

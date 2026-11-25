@@ -1,0 +1,12 @@
+{
+  "name": "efs-example-smoke-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "node index.mjs"
+  },
+  "dependencies": {
+    "@efs/fixture": "file:SET_BY_TOOLS_CONSUMERS",
+    "@efs/sdk": "file:SET_BY_TOOLS_CONSUMERS"
+  }
+}

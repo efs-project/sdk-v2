@@ -18,8 +18,8 @@ const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
 const docs = deployment.seed.folder.directoryRecordId;
 const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
 const dave = privateKeyToAccount(
-  "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a",
-); // anvil #3
+  "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
+); // anvil #3 (no other test file uses it)
 const ERIN = "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65" as Hex; // anvil #4 (unlocked on the fixture)
 const FRANK = "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc" as Hex; // anvil #5 (unlocked)
 
@@ -107,10 +107,11 @@ describe("runSequence (fixture)", () => {
     const r = await w.runSequence(parts(w.principal, "seq-local"));
     expect(r).toMatchObject({ state: "COMPLETE", total: 3, committed: 3, mode: "sequential" });
     expect(r.current).toBeUndefined();
-    // COMPLETE but not yet final: still listed ("Saved · confirming") until a finalized block confirms it.
-    expect((await w.pendingSequences()).map((x) => [x.state, x.final])).toEqual([
-      ["COMPLETE", false],
-    ]);
+    // COMPLETE but not yet final: still listed ("Saved · confirming") until a finalized block confirms it. Other test
+    // files mine blocks on this shared chain, so the save may already be final, and then it is no longer listed.
+    expect((await w.pendingSequences()).map((x) => [x.state, x.final])).toEqual(
+      r.final ? [] : [["COMPLETE", false]],
+    );
   });
 
   it("a refusal at part 2 is PARTIAL (1 of 3); a reload resumes it to COMPLETE with fresh nonces", async () => {
@@ -144,9 +145,9 @@ describe("runSequence (fixture)", () => {
     const done = await again.resume(r.sequenceId);
     expect(done).toMatchObject({ state: "COMPLETE", committed: 3 });
     expect(good.sends).toBe(2);
-    expect((await again.pendingSequences()).map((x) => [x.state, x.final])).toEqual([
-      ["COMPLETE", false],
-    ]);
+    expect((await again.pendingSequences()).map((x) => [x.state, x.final])).toEqual(
+      done.final ? [] : [["COMPLETE", false]],
+    );
   });
 
   it("a lost response is settled from the ledger and never sent twice", async () => {
