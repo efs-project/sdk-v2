@@ -15,7 +15,7 @@ import { createEfs } from "../src/client.ts";
 import type { RecordId, SubjectId } from "../src/core/hex.ts";
 import { openFile, readBytes, readRange } from "../src/files/bytes.ts";
 import { planEditFile } from "../src/files/edit.ts";
-import { openObject } from "../src/files/folders.ts";
+import { listFolder, openObject } from "../src/files/folders.ts";
 import {
   createRpcReplay,
   type RpcTranscript,
@@ -44,9 +44,8 @@ describe("RPC transcript replay", () => {
         "edit-reload-resume",
         "open-absent",
         "open-external-https",
+        "open-folder",
         "open-inline",
-        "open-object-absent",
-        "open-object-folder",
         "open-span",
         "pin-verified",
       ].map((n) => `${n}.json`),
@@ -59,64 +58,58 @@ describe("RPC transcript replay", () => {
     expect(replay.misses).toEqual([]);
   });
 
-  it("open-inline → readBytes", async () => {
+  // Object links route by openObject first: the FILE result's `open` is the file's own open, reused for its bytes.
+  const opened = async (efs: ReturnType<typeof createEfs>, id: string) => {
+    const o = await openObject(efs, id as SubjectId);
+    if (o.status !== "FILE") throw new Error(o.status);
+    if (o.open.status !== "PRESENT") throw new Error(o.open.status);
+    return o.open.file;
+  };
+
+  it("open-inline: openObject → FILE → readBytes", async () => {
     const t = load("open-inline");
     const { efs, replay } = client(t);
-    const o = await openFile(efs, { kind: "file", subject: t.ids["file"] as SubjectId });
-    expect(o.status).toBe("PRESENT");
-    if (o.status !== "PRESENT") return;
-    const b = await readBytes(efs, o.file);
+    const f = await opened(efs, t.ids["file"] as string);
+    const b = await readBytes(efs, f);
     expect(b.grade).toBe("VERIFIED");
-    expect(b.bytes?.length).toBe(Number(o.file.size));
+    expect(b.bytes?.length).toBe(Number(f.size));
     expect(replay.misses).toEqual([]);
   });
 
-  it("open-absent", async () => {
+  it("open-absent: openObject → ABSENT_PROVEN", async () => {
     const t = load("open-absent");
     const { efs, replay } = client(t);
-    expect(
-      (await openFile(efs, { kind: "file", subject: t.ids["file"] as SubjectId })).status,
-    ).toBe("ABSENT_PROVEN");
+    expect((await openObject(efs, t.ids["file"] as SubjectId)).status).toBe("ABSENT_PROVEN");
     expect(replay.misses).toEqual([]);
   });
 
-  it("open-object-folder: openFile is not PRESENT, then openObject → FOLDER with its owner", async () => {
-    const t = load("open-object-folder");
+  it("open-folder: openObject → FOLDER with its owner → listFolder", async () => {
+    const t = load("open-folder");
     const { efs, replay } = client(t);
-    const id = t.ids["object"] as RecordId;
-    expect(
-      (await openFile(efs, { kind: "file", subject: id as unknown as SubjectId })).status,
-    ).not.toBe("PRESENT");
+    const id = t.ids["folder"] as RecordId;
     const o = await openObject(efs, id);
     if (o.status !== "FOLDER") throw new Error(o.status);
     expect(o.folder.directory).toBe(id.toLowerCase());
     expect(o.folder.owner).toMatch(/^0x[0-9a-f]{64}$/);
+    const page = await listFolder(efs, o.folder);
+    if (page.status !== "PRESENT") throw new Error(page.status);
+    expect(page.rows.length).toBeGreaterThan(0);
     expect(replay.misses).toEqual([]);
   });
 
-  it("open-object-absent: openFile and openObject are both ABSENT_PROVEN", async () => {
-    const t = load("open-object-absent");
-    const { efs, replay } = client(t);
-    const id = t.ids["object"] as SubjectId;
-    expect((await openFile(efs, { kind: "file", subject: id })).status).toBe("ABSENT_PROVEN");
-    expect((await openObject(efs, id)).status).toBe("ABSENT_PROVEN");
-    expect(replay.misses).toEqual([]);
-  });
-
-  it("open-span → readRange across a chunk edge → readBytes", async () => {
+  it("open-span: openObject → FILE → readRange across a chunk edge → readBytes", async () => {
     const t = load("open-span");
     const { efs, replay } = client(t);
-    const o = await openFile(efs, { kind: "file", subject: t.ids["file"] as SubjectId });
-    if (o.status !== "PRESENT") throw new Error(o.status);
-    expect(o.file.size).toBe(20_000n);
-    const r = await readRange(efs, o.file, { offset: 8150n, length: 20n });
+    const f = await opened(efs, t.ids["file"] as string);
+    expect(f.size).toBe(20_000n);
+    const r = await readRange(efs, f, { offset: 8150n, length: 20n });
     expect(r.grade).toBe("VERIFIED");
     expect(r.bytes?.length).toBe(20);
-    expect((await readBytes(efs, o.file)).grade).toBe("VERIFIED");
+    expect((await readBytes(efs, f)).grade).toBe("VERIFIED");
     expect(replay.misses).toEqual([]);
   });
 
-  it("open-external-https: blocked by default, then allowed for one origin (the https half routed)", async () => {
+  it("open-external-https: openObject → FILE, blocked by default, then allowed for one origin (the https half routed)", async () => {
     const t = load("open-external-https");
     const text = new TextEncoder().encode(t.ids["httpsText"] as string);
     const rpc = replayFetch(t);
@@ -131,12 +124,11 @@ describe("RPC transcript replay", () => {
           }
         : rpc(url, init as never)) as never;
     const efs = createEfs({ rpcs: [RPC], deployment, fetch });
-    const o = await openFile(efs, { kind: "file", subject: t.ids["file"] as SubjectId });
-    if (o.status !== "PRESENT") throw new Error(o.status);
-    const blocked = await readBytes(efs, o.file);
+    const f = await opened(efs, t.ids["file"] as string);
+    const blocked = await readBytes(efs, f);
     expect(blocked.grade).toBe("POLICY_BLOCKED");
     expect(blocked.blockedOrigins).toEqual(["https://files.example"]);
-    expect((await readBytes(efs, o.file, { allowOrigins: ["https://files.example"] })).grade).toBe(
+    expect((await readBytes(efs, f, { allowOrigins: ["https://files.example"] })).grade).toBe(
       "VERIFIED",
     );
     expect(rpc.replay.misses).toEqual([]);

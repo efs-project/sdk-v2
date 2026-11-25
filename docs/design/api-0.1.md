@@ -420,6 +420,10 @@ export type OpenResult =
   | { kind: "efs.open"; status: "PRESENT"; file: OpenedFile; basis: Basis; lens: Lens; evidence: Evidence }
   | { kind: "efs.open"; status: "ABSENT_PROVEN" | "MASKED" | "CONFLICT" | "UNKNOWN" | "INVALID";
       reason?: Reason; basis: Basis; lens: Lens; evidence: Evidence };
+// The HEAD law: the revision a file's HEAD names must carry that file in its own file word. A HEAD bound to another
+// file's revision (the ledger admits one until the tag release refuses it) is INVALID, never that file's bytes; the
+// same for a revision link whose `file` the revision does not name. planEditFile always reads its base at the basis
+// and answers UNKNOWN (with the INVALID reason) for such a base, whether or not a media type is named.
 
 export interface Location {
   scheme: "inline" | "ledger" | "ipfs" | "ar" | "https" | "web3" | (string & Record<never, never>);

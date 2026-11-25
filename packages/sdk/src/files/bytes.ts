@@ -303,6 +303,21 @@ export async function resolveRevision(
         reason: reason("UNSUPPORTED_PROFILE", "never", "malformed revision body"),
       },
     };
+  // The HEAD law: a revision belongs to the file its own file word names. The ledger admits a HEAD bind at any subject
+  // naming any existing revision (until the tag release refuses it), and the lens reader does not check, so a HEAD (or
+  // a revision link) whose revision names another file is INVALID: never shown as this file's content.
+  if (fileSubject !== undefined && lower(decoded.file) !== lower(fileSubject))
+    return {
+      ok: true,
+      value: {
+        status: "INVALID",
+        reason: reason(
+          "UNSUPPORTED_PROFILE",
+          "never",
+          "the revision belongs to another file (its file word is not this subject)",
+        ),
+      },
+    };
   const base = {
     file: lower((fileSubject ?? decoded.file) as Hex) as SubjectId,
     revision: revisionId as RecordId,

@@ -250,27 +250,21 @@ export async function planEditFile(
             admission: h.admission,
           },
         };
-      // Keep the base's media type unless the caller named one: read it here, at this basis, never guessed.
-      let mediaType = asked;
-      if (mediaType === undefined) {
-        const b = await resolveRevision(ctx, s, basis, base, file, h.author);
-        if (!b.ok) return b;
-        if (b.value.status !== "PRESENT")
-          return {
-            ok: true,
-            value: {
-              kind: "refused",
-              reason:
-                b.value.reason ??
-                reason(
-                  "NOT_YET_DECIDABLE",
-                  "transient",
-                  `the base revision reads ${b.value.status}`,
-                ),
-            },
-          };
-        mediaType = b.value.file.mediaType ?? "";
-      }
+      // Read the base at this basis, always: it must be a revision of this file (the HEAD law; a HEAD bound to another
+      // file's revision is refused, never edited), and it gives the media type to keep unless the caller named one.
+      const b = await resolveRevision(ctx, s, basis, base, file, h.author);
+      if (!b.ok) return b;
+      if (b.value.status !== "PRESENT")
+        return {
+          ok: true,
+          value: {
+            kind: "refused",
+            reason:
+              b.value.reason ??
+              reason("NOT_YET_DECIDABLE", "transient", `the base revision reads ${b.value.status}`),
+          },
+        };
+      const mediaType = asked ?? b.value.file.mediaType ?? "";
       ctx.requests += 1;
       const [out] = await callsAt(s, basis.blockHash, [
         {
