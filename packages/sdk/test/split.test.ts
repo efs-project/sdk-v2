@@ -310,7 +310,10 @@ describe("packBatches", () => {
   });
 });
 
-/** The fixture's kernel floor (its deployment's index.workModel and floor limits; the contracts' test defaults). */
+/**
+ * The fixture's kernel floor: its deployment's index.workModel and floor limits, which are the vendored release's
+ * (cc59d0c; later releases reserve far less per bind).
+ */
 const SPAN = `0x${"5a".repeat(32)}` as Hex;
 const CONTENT = `0x${"c0".repeat(32)}` as Hex;
 const FLOOR: KernelFloor = {
