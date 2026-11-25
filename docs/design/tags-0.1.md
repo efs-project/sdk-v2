@@ -118,13 +118,14 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
   the entry was filed under. A denial does not travel down to child topics, and a stranger's negative number never
   hides anything from anyone else.
 - **Raw:** nothing hidden.
-- **A stranger's "not this" can neither hide a row nor add one** (tag spec 3.2, corrected; planning 1b9a059).
+- **A stranger's "not this" can neither hide a row nor add one** (tag spec 3.2; planning 1b9a059, c0cc5a5).
   - Raw shows every row.
-  - Everyone shows a row when someone says yes. A row where every author was read and none says yes is left out of
-    Everyone.
-  - A row is never left out because the read stopped scanning authors early. It is shown with the stances found
-    ("3 say yes, 2 say no") and marked not fully read, and the page is PARTIAL, never "nobody says yes". Otherwise
-    a few negatives posted ahead of the first real tag would hide it cheaply.
+  - Everyone shows a row when someone says yes, and leaves it out when nobody does. The decision is exact: the
+    pair's head carries how many authors currently say yes (contracts step 3c), and a row is left out only when
+    that count is zero. No author scan decides it, so a stopped scan can never drop a row, and negatives posted
+    ahead of the first real tag can't hide it.
+  - The row shows "N say yes" from that count. The "no" side is read from the pair's authors, bounded, and marked
+    when not every author was read.
 - **Public lists are newest first, meaning most recently first stated.** An entry is placed at an author's first
   statement on (topic, thing). Changing a number, or removing a tag and adding it back, never moves it up. The SDK
   offers no "recently active" order and never synthesizes one. The client labels the order "recently added".
@@ -145,8 +146,8 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
 - **Duplicates.** Roll-up lists a thing filed under `/cars/tesla` and under `/cars/ford` twice in `/cars`. A place's
   own list repeats a thing too (contracts step 3c, pending), so exact-topic reads remove duplicates exactly as
   roll-ups do. The SDK removes duplicates by thing, and every result says how far: `dedup: "COMPLETE" | "BOUNDED"`
-  (with the bound), so a page never claims a uniqueness it cannot guarantee. A place's count counts filings, not
-  distinct things.
+  (with the bound), so a page never claims a uniqueness it cannot guarantee. The chain's readers dedupe within a page
+  only; removing duplicates across pages is the SDK's job (spec 3.3).
   - **Why a place's list repeats (3c):** it takes an entry for a fresh (place, thing) pair of either sign, and one
     for any author's first yes, so nobody can get in first and keep a later tag out of "newest first". A pair with
     only negatives stays listed. A later author's first negative adds no entry; it is reached through the pair's
@@ -206,8 +207,11 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   - Group order: places the Lens has used first (by Lens count), then the rest by global count, largest first. Both
     counts are returned.
   - There is no separate per-word item list.
-- **Counts** are list lengths, and they also count removed and negative statements, so they are "about". The SDK
-  returns the count from the Lens beside the global one, because a global count alone can be inflated.
+- **Counts** are one read each (contracts step 3c). A place's head gives two: filings, and distinct things ever filed
+  there. A (place, thing) pair's head gives two: its authors, and how many of them currently say yes.
+  - The place counts include things nobody says yes to any more, and removed and negative statements. So the
+    distinct count is shown as "about N", never as the number of rows Everyone returns.
+  - The SDK returns the count from the Lens beside the global one, because a global count alone can be inflated.
 
 ### 5.5 Names
 
@@ -285,9 +289,12 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
       bound: that is a per-row UNKNOWN, not an endpoint fault. Each head (and history reply) gains the recorded
       strength as its last word, so the head ABI and its decoders change.
   - **the tag PM's read rules from the contracts 3b review** (spec planning 1b9a059):
-    - Everyone leaves out a row nobody says yes to, but never one whose author scan stopped early: that row is shown,
-      marked not fully read, and the page is PARTIAL (section 5.1). Tests: all-negative stances left out; a
-      bounded author scan that stops before a yes keeps the row;
+    - Everyone leaves out a row exactly when the pair's yes-count (its head, 3c) is zero; no author scan decides it
+      (section 5.1, spec planning c0cc5a5). Tests: an all-negative pair is left out; a pair with many negative
+      authors ahead of one yes is shown, with "1 says yes";
+    - the head counts read as one read each: filings and distinct things per place, authors and yes-count per
+      pair. The distinct count is "about N", never the number of rows Everyone returns (section 5.4);
+    - chain readers dedupe within a page only; the SDK dedupes across pages (section 5.2, spec 3.3);
     - exact-topic reads remove duplicates like roll-ups, since a place's list takes each author's first yes (3c);
       an author's negative-then-yes adds no entry, and reads don't compensate (section 5.2);
     - a Lens author's hidden child topic hides everything filed at or below it from that reader's roll-up of the
