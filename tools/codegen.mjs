@@ -146,6 +146,8 @@ const files = {};
     );
   const reserved = (name) => /_RESERVED$/.test(name);
   const fc = c.files;
+  if (!Number.isInteger(fc.mediaType?.maxLength))
+    throw new Error("codegen: constants.files.mediaType.maxLength is missing");
   let src = header(["release/release.json", "release/efs-deployment.json"]);
   src += `/** Action kinds (Actions.sol). \`*_RESERVED\` kinds are refused by the ledger. */\n`;
   src += `export const ACTION_KINDS = ${literal(c.actionKinds)} as const;\n\n`;
@@ -175,6 +177,7 @@ const files = {};
     externalVersion: fc.externalVersion,
     chunkingId: fc.chunking.id,
     chunkPayload: fc.chunking.chunkPayload,
+    mediaTypeMaxLength: fc.mediaType.maxLength,
   })} as const;\n`;
   src += `/** The largest declared length a Files body may carry (uint64). */\nexport const FILES_LENGTH_MAX = ${BigInt(fc.lengthMax)}n;\n`;
   files["constants.ts"] = src;

@@ -395,7 +395,11 @@ export interface EntryResult {
 
 export interface OpenedFile {
   file: FileRef; revision: RevisionRef; author: PrincipalId;
-  size: bigint; sha256: Hex; mediaType: string | null; mediaTypeSource: "extension" | "property" | null;
+  size: bigint; sha256: Hex;
+  /** 0.1 (contracts C4): the media type the revision's descriptor declares, lowercase type/subtype as the chain
+   *  admits it. A hint about the bytes, never their identity. Absent when none is declared, and always for inline
+   *  revisions (no descriptor carries one): fall back to the name's extension. */
+  mediaType?: string;
   layout: "inline" | "span" | "external";
   locations: readonly Location[];          // the carriers to try, in policy order
   span?: { root: RecordId; chunkSize: number };
@@ -763,7 +767,7 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
 
 ### Editing a file (`planEditFile`, 0.1)
 
-`planEditFile(efs, writer, { file, base, content, lens?, media? }, opts?)` in `@efs/sdk/files` plans a new revision
+`planEditFile(efs, writer, { file, base, content, lens?, mediaType? }, opts?)` in `@efs/sdk/files` plans a new revision
 of an existing file, opened by object link. It touches only the file and its HEAD: no name, folder or path, so it
 does not wait on the tags-vs-directories ruling. Planning reads the chain at one basis and never calls the wallet
 (only `writer.principal` is used).
@@ -780,6 +784,15 @@ type EditPlanResult =
   (`maxBodyBytes − 96`) go inline in the revision; larger bytes are chunked canonically (`efs/chunking/1`) under a
   `files-content/1` descriptor (layout `chunk` for one chunk, `span` for a tree). External content is a
   `files-external/1` locator over the empty sentinel chunk.
+- **Media type (contracts C4):** a descriptor declares it as the rest of its body (`files-content/1` after its ten
+  words, `files-external/1` after the locator; at most 255 bytes, `""` = unknown). Omitted, the edit keeps the base
+  revision's type, read at the same basis (a base that cannot be read is UNKNOWN, never "no type"). `mediaType`
+  names one: the type and subtype are lowercased, parameters kept as given, and a string the chain's grammar refuses
+  throws MISUSE (`details: { mediaType, code }`, the chain's refusal code) before anything is read, so it is never a
+  revert. `""` declares none. Only a descriptor carries a type, so bytes small enough to sit inline are stored as one
+  chunk (layout `chunk`: two more records and their gas, shown in the review) when the edit declares or keeps one;
+  `mediaType: ""` keeps a small file inline. `review.mediaType` is what the new revision declares, and
+  `OpenedFile.mediaType` reads it back.
 - **Never a silent overwrite:** first the base check (the file's HEAD under the Lens must still be `base`), then a
   compare-and-swap. The bind carries the editor's own HEAD binding revision as `expectedRevision`, so if another
   save by the same account lands first, the ledger refuses this one: `runSequence` reports reason STALE,
@@ -792,11 +805,12 @@ type EditPlanResult =
   commits. The model is `gasPlanFor(efs.deployment)` (`opts.gasModel` overrides; without either, planning is
   UNKNOWN). `opts.maxParts` (default 64) bounds the save.
 - **`review`:** `file`, `base`, the new `revision` id, `author` (the writer's principal), `size`, `sha256`,
-  `layout` (`inline` | `chunk` | `span` | `external`), `parts`, `prompts { sequential, atomicBatch: 1 }`,
+  `layout` (`inline` | `chunk` | `span` | `external`), `mediaType` (`""`: none), `parts`, `prompts { sequential, atomicBatch: 1 }`,
   `gas { perPart, schedule }`, `records`, `expectedRevision`, `guard` and `visibleInLens`. `visibleInLens` is false
   when the edited Lens leaves the author out, or puts an earlier author of this HEAD first: the save still lands,
   but that view keeps showing the other revision (`efs.lens.mineFirst(account)` puts the author first).
-- **Effects:** every part carries one `files.edit` effect with the same facts as strings, plus `part`, `parts` and
+- **Effects:** every part carries one `files.edit` effect with the same facts as strings (`mediaType` only when one is
+  declared), plus `part`, `parts` and
   `stage` (`content` stores bytes only; `finish` moves HEAD), so a resumed save can still describe itself.
 
 ## 8. Errors that do throw

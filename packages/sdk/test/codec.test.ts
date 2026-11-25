@@ -32,6 +32,7 @@ interface SeedFile {
   sentinelRecordId: Hex;
   externalRecordId: Hex;
   locator: string;
+  media?: string;
 }
 const files = deployment.seed.files as unknown as SeedFile[];
 const byName = (n: string): SeedFile => files.find((f) => f.name === n) as SeedFile;
@@ -66,11 +67,12 @@ describe("content codec vs the contracts seed", () => {
     const tree = chunkTree(T("files-bytes/1"), T("files-span/1"), payload);
     expect(tree.root).toBe(f.spanRootId);
     expect([tree.chunks, tree.spans]).toEqual([f.chunkCount, f.spanCount]);
-    const content = encode.content(tree.root, CARRIER.span, 20_000n, f.sha256);
+    expect(f.media).toBe("application/octet-stream");
+    const content = encode.content(tree.root, CARRIER.span, 20_000n, f.sha256, f.media);
     expect(recordId(T("files-content/1"), content)).toBe(f.contentRecordId);
     const rev = encode.rootContent(f.subjectId, f.contentRecordId);
     expect(recordId(T("files-root/1"), rev)).toBe(f.headRecordId);
-    expect(decodeContent(content)?.carrier).toBe(2n);
+    expect(decodeContent(content)).toMatchObject({ carrier: 2n, mediaType: f.media });
     const root = tree.records.find((r) => r.id === tree.root);
     expect(decodeSpan(root?.body ?? new Uint8Array())?.length).toBe(20_000n);
     const firstChunk = tree.records[0];
@@ -80,9 +82,10 @@ describe("content codec vs the contracts seed", () => {
     const f = byName("remote.txt");
     const sentinel = recordId(T("files-bytes/1"), encode.chunk(new Uint8Array()));
     expect(sentinel).toBe(f.sentinelRecordId);
-    const body = encode.external(sentinel, BigInt(f.length), f.sha256, f.locator);
+    expect(f.media).toBe("text/plain; charset=utf-8");
+    const body = encode.external(sentinel, BigInt(f.length), f.sha256, f.locator, f.media);
     expect(recordId(T("files-external/1"), body)).toBe(f.externalRecordId);
-    expect(decodeExternal(body)?.locator).toBe(f.locator);
+    expect(decodeExternal(body)).toMatchObject({ locator: f.locator, mediaType: f.media });
   });
   it("refuses tampered chunks and malformed bodies", () => {
     const body = encode.chunk(new Uint8Array([1, 2, 3]));

@@ -304,4 +304,87 @@ describe("planEditFile (fixture)", () => {
       }),
     ).rejects.toBeInstanceOf(EfsFault);
   });
+
+  it("media types: declared (normalized), kept from the base, cleared with an empty string, and read back", async () => {
+    // The seed declares its descriptors' media types; an inline revision has no descriptor, so it has none.
+    expect((await revisionOf(seeded("big.bin").subjectId)).mediaType).toBe(
+      "application/octet-stream",
+    );
+    expect((await revisionOf(seeded("remote.txt").subjectId)).mediaType).toBe(
+      "text/plain; charset=utf-8",
+    );
+    expect("mediaType" in (await revisionOf(seeded("readme.txt").subjectId))).toBe(false);
+
+    const w = await writerFor(carol);
+    const lens = efs.lens.mineFirst(carol.address);
+    const put = putInline(
+      efs,
+      w.principal,
+      docs,
+      "logo.svg",
+      text("<svg/>"),
+      keccak256(toHex("edit-media")),
+    );
+    const created = await w.planActions(put);
+    if (created.status !== "PLANNED") throw new Error(created.status);
+    await w.run(created.plan);
+    const file = { kind: "file" as const, subject: put.file };
+    const save = async (
+      base: RecordId,
+      content: Parameters<typeof planEditFile>[2]["content"],
+      mediaType?: string,
+    ) => {
+      const r = await planEditFile(efs, w, {
+        file,
+        base: { kind: "revision", recordId: base },
+        content,
+        lens,
+        ...(mediaType !== undefined ? { mediaType } : {}),
+      });
+      if (r.status !== "PLANNED") throw new Error(r.status);
+      expect((await w.runSequence(r.parts)).state).toBe("COMPLETE");
+      const head = await revisionOf(put.file, lens);
+      expect(head.revision).toBe(r.review.revision);
+      return { review: r.review, effect: r.parts.at(-1)?.effects[0], head };
+    };
+
+    // Declared: the type and subtype are lowercased. Small enough to sit inline, but only a descriptor carries a media
+    // type, so it is stored as one chunk under a files-content/1 descriptor.
+    const svg = text('<svg xmlns="http://www.w3.org/2000/svg"/>');
+    const typed = await save((await revisionOf(put.file, lens)).revision, svg, "Image/SVG+XML");
+    expect(typed.review).toMatchObject({ layout: "chunk", mediaType: "image/svg+xml", records: 3 });
+    expect(typed.effect?.args).toMatchObject({ layout: "chunk", mediaType: "image/svg+xml" });
+    expect(typed.head).toMatchObject({ layout: "chunk", mediaType: "image/svg+xml" });
+    expect((await readBytes(efs, typed.head)).bytes).toEqual(svg);
+
+    // Omitted: the base revision's type is kept (read at the planning block), so the file stays a chunk.
+    const kept = await save(typed.head.revision, text("<svg/>\n"));
+    expect(kept.review).toMatchObject({ layout: "chunk", mediaType: "image/svg+xml" });
+    expect(kept.head.mediaType).toBe("image/svg+xml");
+
+    // "": no media type, and the small file goes back inline.
+    const cleared = await save(kept.head.revision, text("plain"), "");
+    expect(cleared.review).toMatchObject({ layout: "inline", mediaType: "" });
+    expect(cleared.effect?.args && "mediaType" in cleared.effect.args).toBe(false);
+    expect(cleared.head.layout).toBe("inline");
+    expect("mediaType" in cleared.head).toBe(false);
+
+    // External: the type is the rest of the files-external/1 body, after the locator; parameters keep their case.
+    const payload = text("elsewhere\n");
+    const ext = await save(
+      cleared.head.revision,
+      {
+        kind: "external",
+        length: BigInt(payload.length),
+        sha256: sha256(payload),
+        locator: "ipfs://bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy",
+      },
+      "TEXT/Plain; Charset=UTF-8",
+    );
+    expect(ext.review).toMatchObject({
+      layout: "external",
+      mediaType: "text/plain; Charset=UTF-8",
+    });
+    expect(ext.head).toMatchObject({ layout: "external", mediaType: "text/plain; Charset=UTF-8" });
+  });
 });
