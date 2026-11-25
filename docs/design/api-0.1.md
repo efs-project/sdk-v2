@@ -245,8 +245,8 @@ string that an app places in its route, for example after `#/files/`:
 |---|---|---|---|
 | object | `~efs/o/0x<64 hex subject id>[?lens=<p>,<p>…]` | the current head of that subject (a file today; folders reuse the form) | the route default, or the given ordered principals |
 | revision | `~efs/v/0x<64 hex revision record id>` | exactly that revision's bytes | no |
-| home | `0x<40 hex address>[/<name>/…]` | a place under an address, then folder and file names (files-name/2, case kept) | no |
-| topic | `<word>[/<word>/…]` | a topic; one word alone is that word's page. Words are folded before lookup | no |
+| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address, then folder and file names (files-name/2, case kept) | the route default, or the given ordered principals |
+| topic | `<word>[/<word>/…][?lens=…]` | a topic; one word alone is that word's page. Words are folded before lookup | the route default, or the given ordered principals |
 
 - The first segment is `~efs`. The name profile reserves that prefix, so no path can look like a link. This
   departs from the naming review's `o/<id>` and `v/<id>`, which collide with root folders named `o` or `v`.
@@ -264,7 +264,8 @@ string that an app places in its route, for example after `#/files/`:
   space and `A–Z`. Vectors: `packages/sdk/test/vectors/links.json`.
 - `link()` formats home links from the address and names, and topic links from folded `words` (MISUSE for anything
   the grammar refuses).
-- **Lens** (naming review §6): only object links carry one, as the single parameter `lens`. Its value is an ordered,
+- **Lens** (naming review §6): object, home and topic links carry one, as the single parameter `lens` (revision
+  links never do). Its value is an ordered,
   comma-separated list of 1 to 64 principals without duplicates. An account (key principal) is written as its
   20-byte address and any other principal as its 32-byte id. `target.lens` is a `Lens` to pass to reads. Names such
   as `alice.eth` are INVALID with rule `lens-name-unsupported` in 0.1. A revision link with a query, or any other

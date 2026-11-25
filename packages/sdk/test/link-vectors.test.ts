@@ -51,5 +51,12 @@ describe("link grammar vectors", () => {
     );
     expect(() => link({ kind: "home", address, names: ["a/b"] })).toThrow(/files-name\/2/);
     expect(() => link({ kind: "home", address: "0x12" as never, names: [] })).toThrow(/20-byte/);
+    const lens = { principals: [`0x${"0".repeat(24)}${"11".repeat(20)}` as `0x${string}`] };
+    expect(link({ kind: "topic", segments: [], words: ["cars"], lens })).toBe(
+      `cars?lens=0x${"11".repeat(20)}`,
+    );
+    expect(link({ kind: "home", address, names: [], lens })).toBe(
+      `0xabcdef0123456789abcdef0123456789abcdef01?lens=0x${"11".repeat(20)}`,
+    );
   });
 });

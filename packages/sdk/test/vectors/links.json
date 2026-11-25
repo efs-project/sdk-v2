@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk/vectors/links/1",
-  "note": "The link grammar (tag model spec §5). `fold` names the fold step used: `none` (no fold given) or `ascii-test` (a stand-in for the tests only: lowercase A-Z and turn a run of spaces into one underscore; the real rule is efs/fold/1, still to be chosen). `expect` is the parse: status, then target and canonical, or rule, segment and detail.",
+  "note": "The link grammar (tag model spec §5). `fold` names the fold step used: `none` (no fold given) or `ascii-test` (a stand-in for the tests only: lowercase A-Z and turn a run of spaces into one underscore; the real rule is efs/fold/1, still to be chosen). `expect` is the parse: status, then target and canonical, or rule, segment and detail. A `?lens=` parameter (1 to 64 principals, each once: a 20-byte address for an account, else a 32-byte principal id) is the only one defined, on every kind but revisions.",
   "cases": [
     {
       "label": "object link",
@@ -125,12 +125,23 @@
       }
     },
     {
-      "label": "home takes no Lens parameter",
-      "input": "0xabcdef0123456789abcdef0123456789abcdef01/x?lens=0x01",
+      "label": "home with a Lens",
+      "input": "0xabcdef0123456789abcdef0123456789abcdef01/photos?lens=0x1111111111111111111111111111111111111111,0x2222222222222222222222222222222222222222222222222222222222222222",
       "fold": "none",
       "expect": {
-        "status": "INVALID",
-        "rule": "unsupported-parameter"
+        "status": "OK",
+        "target": {
+          "kind": "home",
+          "address": "0xabcdef0123456789abcdef0123456789abcdef01",
+          "names": ["photos"],
+          "lens": {
+            "principals": [
+              "0x0000000000000000000000001111111111111111111111111111111111111111",
+              "0x2222222222222222222222222222222222222222222222222222222222222222"
+            ]
+          }
+        },
+        "canonical": "0xabcdef0123456789abcdef0123456789abcdef01/photos?lens=0x1111111111111111111111111111111111111111,0x2222222222222222222222222222222222222222222222222222222222222222"
       }
     },
     {
@@ -298,12 +309,20 @@
       }
     },
     {
-      "label": "topic takes no Lens parameter",
-      "input": "cars?lens=0x01",
-      "fold": "none",
+      "label": "topic with a Lens",
+      "input": "Cars?lens=0x1111111111111111111111111111111111111111",
+      "fold": "ascii-test",
       "expect": {
-        "status": "INVALID",
-        "rule": "unsupported-parameter"
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["Cars"],
+          "words": ["cars"],
+          "lens": {
+            "principals": ["0x0000000000000000000000001111111111111111111111111111111111111111"]
+          }
+        },
+        "canonical": "cars?lens=0x1111111111111111111111111111111111111111"
       }
     },
     {
@@ -324,6 +343,85 @@
       "expect": {
         "status": "INVALID",
         "rule": "fragment"
+      }
+    },
+    {
+      "label": "topic with a Lens, unfolded",
+      "input": "Cars?lens=0x1111111111111111111111111111111111111111",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["Cars"],
+          "lens": {
+            "principals": ["0x0000000000000000000000001111111111111111111111111111111111111111"]
+          }
+        },
+        "canonical": "Cars?lens=0x1111111111111111111111111111111111111111"
+      }
+    },
+    {
+      "label": "an unknown parameter is still refused",
+      "input": "0xabcdef0123456789abcdef0123456789abcdef01/photos?view=all",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "unsupported-parameter"
+      }
+    },
+    {
+      "label": "a second parameter is refused",
+      "input": "cars?lens=0x1111111111111111111111111111111111111111&x=1",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "unsupported-parameter"
+      }
+    },
+    {
+      "label": "a Lens naming one principal twice",
+      "input": "cars?lens=0x1111111111111111111111111111111111111111,0x1111111111111111111111111111111111111111",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-lens"
+      }
+    },
+    {
+      "label": "an empty Lens",
+      "input": "cars?lens=",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-lens"
+      }
+    },
+    {
+      "label": "a Lens of more than 64",
+      "input": "cars?lens=0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002,0x0000000000000000000000000000000000000003,0x0000000000000000000000000000000000000004,0x0000000000000000000000000000000000000005,0x0000000000000000000000000000000000000006,0x0000000000000000000000000000000000000007,0x0000000000000000000000000000000000000008,0x0000000000000000000000000000000000000009,0x000000000000000000000000000000000000000a,0x000000000000000000000000000000000000000b,0x000000000000000000000000000000000000000c,0x000000000000000000000000000000000000000d,0x000000000000000000000000000000000000000e,0x000000000000000000000000000000000000000f,0x0000000000000000000000000000000000000010,0x0000000000000000000000000000000000000011,0x0000000000000000000000000000000000000012,0x0000000000000000000000000000000000000013,0x0000000000000000000000000000000000000014,0x0000000000000000000000000000000000000015,0x0000000000000000000000000000000000000016,0x0000000000000000000000000000000000000017,0x0000000000000000000000000000000000000018,0x0000000000000000000000000000000000000019,0x000000000000000000000000000000000000001a,0x000000000000000000000000000000000000001b,0x000000000000000000000000000000000000001c,0x000000000000000000000000000000000000001d,0x000000000000000000000000000000000000001e,0x000000000000000000000000000000000000001f,0x0000000000000000000000000000000000000020,0x0000000000000000000000000000000000000021,0x0000000000000000000000000000000000000022,0x0000000000000000000000000000000000000023,0x0000000000000000000000000000000000000024,0x0000000000000000000000000000000000000025,0x0000000000000000000000000000000000000026,0x0000000000000000000000000000000000000027,0x0000000000000000000000000000000000000028,0x0000000000000000000000000000000000000029,0x000000000000000000000000000000000000002a,0x000000000000000000000000000000000000002b,0x000000000000000000000000000000000000002c,0x000000000000000000000000000000000000002d,0x000000000000000000000000000000000000002e,0x000000000000000000000000000000000000002f,0x0000000000000000000000000000000000000030,0x0000000000000000000000000000000000000031,0x0000000000000000000000000000000000000032,0x0000000000000000000000000000000000000033,0x0000000000000000000000000000000000000034,0x0000000000000000000000000000000000000035,0x0000000000000000000000000000000000000036,0x0000000000000000000000000000000000000037,0x0000000000000000000000000000000000000038,0x0000000000000000000000000000000000000039,0x000000000000000000000000000000000000003a,0x000000000000000000000000000000000000003b,0x000000000000000000000000000000000000003c,0x000000000000000000000000000000000000003d,0x000000000000000000000000000000000000003e,0x000000000000000000000000000000000000003f,0x0000000000000000000000000000000000000040,0x0000000000000000000000000000000000000041",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-lens"
+      }
+    },
+    {
+      "label": "a name in a Lens",
+      "input": "cars?lens=alice.eth",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "lens-name-unsupported"
+      }
+    },
+    {
+      "label": "a revision takes no Lens",
+      "input": "~efs/v/0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd?lens=0x1111111111111111111111111111111111111111",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "unsupported-parameter"
       }
     }
   ]

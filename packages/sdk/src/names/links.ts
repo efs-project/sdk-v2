@@ -49,12 +49,16 @@ export interface TopicLink {
   kind: "topic";
   segments: readonly string[];
   words?: readonly string[];
+  /** The sharer's Lens (`?lens=`), when it differs from the route's default. */
+  lens?: Lens;
 }
 /** A home (an address, lowercase), then folder and file names below it, which keep their case. */
 export interface HomeLink {
   kind: "home";
   address: Address;
   names: readonly string[];
+  /** The sharer's Lens (`?lens=`), when it differs from the route's default. */
+  lens?: Lens;
 }
 /** One fold step, supplied by the caller until the fold rule is chosen: a word, or the rule the segment breaks. */
 export type FoldStep = (
@@ -117,13 +121,14 @@ export function link(target: LinkTarget): string {
   if (target.kind === "topic") {
     if (!target.words || target.words.length === 0)
       throw misuse("link: a topic link is built from its folded words");
-    return target.words
+    const path = target.words
       .map((w, i) => {
         const r = wordRule(w, false);
         if (r) throw misuse(`link: topic word ${i} breaks a word rule (${r})`, { segment: i });
         return wireSegment(utf8Encode(w));
       })
       .join("/");
+    return path + lensQuery(target.lens);
   }
   if (target.kind === "home") {
     if (!ADDRESS.test(target.address)) throw misuse("link: a home is a 20-byte address");
@@ -133,22 +138,36 @@ export function link(target: LinkTarget): string {
         throw misuse(`link: home name ${i} is not a files-name/2 name`, { segment: i });
       return wireSegment(c.bytes);
     });
-    return [target.address.toLowerCase(), ...names].join("/");
+    return [target.address.toLowerCase(), ...names].join("/") + lensQuery(target.lens);
   }
   const id = target.kind === "revision" ? target.recordId : target.subject;
   if (typeof id !== "string" || !ID.test(id))
     throw misuse("link: the id must be 0x followed by 64 hex digits", { kind: target.kind });
   if (target.kind === "revision") return `${LINK_PREFIX}/v/${id.toLowerCase()}`;
   const base = `${LINK_PREFIX}/o/${id.toLowerCase()}`;
-  const lens = target.kind === "object" ? target.lens : undefined;
-  if (!lens) return base;
+  return base + lensQuery(target.kind === "object" ? target.lens : undefined);
+}
+
+/** `?lens=<p>,<p>…` for a Lens, or "" for none: 1 to 64 principals, each once. */
+function lensQuery(lens: Lens | undefined): string {
+  if (!lens) return "";
   const ps = lens.principals;
   if (ps.length === 0 || ps.length > MAX_LINK_LENS || ps.some((p) => !ID.test(p)))
     throw misuse(`link: a Lens holds 1 to ${MAX_LINK_LENS} principal ids (0x + 64 hex)`);
   const entries = ps.map(lensEntry);
   if (new Set(entries).size !== entries.length)
     throw misuse("link: a Lens names each principal once");
-  return `${base}?lens=${entries.join(",")}`;
+  return `?lens=${entries.join(",")}`;
+}
+
+/** The query of a link: nothing, or exactly one `lens=` parameter (the only one defined). */
+function queryLens(query: string | undefined): Lens | undefined | LinkRule {
+  if (query === undefined) return undefined;
+  const m = /^lens=([^&]*)$/.exec(query);
+  if (!m) return "unsupported-parameter";
+  const value = decodeOnce(m[1] as string);
+  if (value === null) return "bad-escape";
+  return parseLens(value);
 }
 
 /** Parse a `lens=` value into principal ids, or the rule it breaks. */
@@ -193,7 +212,7 @@ export function parseLink(input: string, o: ParseLinkOpts = {}): LinkParse {
   // Route on the decoded first segment, so `%7Eefs` is the system's too.
   const head = parseSegment(wire[0] as string);
   const headText = head.ok ? (decodeScalars(head.bytes)?.text ?? "") : "";
-  if (!headText.startsWith("~")) return parsePlace(wire, q >= 0, o);
+  if (!headText.startsWith("~")) return parsePlace(wire, q >= 0 ? raw.slice(q + 1) : undefined, o);
   const segments = wire.map(decodeOnce);
   if (segments.some((x) => x === null)) return { status: "INVALID", rule: "bad-escape" };
   const [first = "", kind, id, ...rest] = segments as string[];
@@ -207,15 +226,9 @@ export function parseLink(input: string, o: ParseLinkOpts = {}): LinkParse {
     return { status: "OK", target, canonical: link(target) };
   }
   const target: ObjectLink = { kind: "object", subject: id.toLowerCase() as SubjectId };
-  if (q >= 0) {
-    const m = /^lens=([^&]*)$/.exec(raw.slice(q + 1));
-    if (!m) return { status: "INVALID", rule: "unsupported-parameter" };
-    const value = decodeOnce(m[1] as string);
-    if (value === null) return { status: "INVALID", rule: "bad-escape" };
-    const lens = parseLens(value);
-    if (typeof lens === "string") return { status: "INVALID", rule: lens };
-    target.lens = lens;
-  }
+  const lens = queryLens(q >= 0 ? raw.slice(q + 1) : undefined);
+  if (typeof lens === "string") return { status: "INVALID", rule: lens };
+  if (lens) target.lens = lens;
   return { status: "OK", target, canonical: link(target) };
 }
 
@@ -243,8 +256,9 @@ function wordRule(w: string, typed: boolean): string | null {
 }
 
 /** A home path (first segment an address) or a topic path (anything else not starting with `~`). */
-function parsePlace(wire: string[], hasQuery: boolean, o: ParseLinkOpts): LinkParse {
-  if (hasQuery) return { status: "INVALID", rule: "unsupported-parameter" }; // only object links take a Lens
+function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts): LinkParse {
+  const lens = queryLens(query); // the same single `lens=` parameter as object links
+  if (typeof lens === "string") return { status: "INVALID", rule: lens };
   const decoded: string[] = [];
   for (const [i, w] of wire.entries()) {
     const p = parseSegment(w);
@@ -265,7 +279,12 @@ function parsePlace(wire: string[], hasQuery: boolean, o: ParseLinkOpts): LinkPa
         };
       names.push(c.text);
     }
-    const target: HomeLink = { kind: "home", address: first.toLowerCase() as Address, names };
+    const target: HomeLink = {
+      kind: "home",
+      address: first.toLowerCase() as Address,
+      names,
+      ...(lens ? { lens } : {}),
+    };
     return { status: "OK", target, canonical: link(target) };
   }
   const words: string[] = [];
@@ -279,12 +298,15 @@ function parsePlace(wire: string[], hasQuery: boolean, o: ParseLinkOpts): LinkPa
     if (after) return { status: "INVALID", rule: "bad-word", segment: i, detail: after };
     words.push(f.word);
   }
-  const target: TopicLink = o.fold
-    ? { kind: "topic", segments: decoded, words }
-    : { kind: "topic", segments: decoded };
+  const target: TopicLink = {
+    kind: "topic",
+    segments: decoded,
+    ...(o.fold ? { words } : {}),
+    ...(lens ? { lens } : {}),
+  };
   const canonical = o.fold
     ? link(target)
-    : decoded.map((x) => wireSegment(utf8Encode(x))).join("/");
+    : decoded.map((x) => wireSegment(utf8Encode(x))).join("/") + lensQuery(lens);
   return { status: "OK", target, canonical };
 }
 
