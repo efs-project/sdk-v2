@@ -74,6 +74,8 @@ try {
     ok(
       "smoke-fixture (a live chain from the packed @efs/fixture, edited through the packed @efs/sdk)",
     );
+    dirs.push(npmConsumer("getting-started"));
+    ok("getting-started (the guide's walkthrough, every step asserted, on a live fixture chain)");
   }
   if (only.has("foundry")) {
     const dir = freshCopy("smoke-foundry");
