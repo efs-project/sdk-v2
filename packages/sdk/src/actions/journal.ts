@@ -52,6 +52,10 @@ export interface SequencePart {
   deadlineSeconds?: number;
   /** The plan sent (or about to be sent) for this part; a part is planned just before it is sent. */
   planId?: Hex;
+  /** That plan's deadline (unix seconds): the ledger refuses it in any block later than this. */
+  deadline?: bigint;
+  /** The latest block the last reconcile of that plan read. */
+  checkedAt?: { blockNumber: bigint; timestamp: bigint };
   /** True once the ledger admitted this part's plan. */
   committed?: boolean;
   /** True once that admission is at a finalized block. */

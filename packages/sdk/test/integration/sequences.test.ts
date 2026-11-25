@@ -338,7 +338,9 @@ describe("runSequence (fixture)", () => {
       committed: 0,
       reason: { code: "NOT_YET_DECIDABLE", retry: "after-reconcile" },
     });
-    expect(r.current).toMatchObject({ index: 0, stage: "SUBMITTED" });
+    expect(r.current).toMatchObject({ index: 0, stage: "SUBMITTED", pastDeadline: false });
+    expect(typeof r.current?.deadline).toBe("bigint");
+    expect(r.current?.checkedAt?.timestamp).toBeLessThanOrEqual(r.current?.deadline as bigint);
     expect(slow.sends).toBe(1); // part 2 waits for part 1: nothing else was sent
     // Unknown is not absence: settling from the ledger alone keeps it in flight, and lists it.
     expect(await w.reconcileSequence(r.sequenceId)).toMatchObject({
@@ -570,12 +572,19 @@ describe("runSequence (fixture)", () => {
     });
     const [recipe] = parts(w.principal, "seq-expired", 1);
     if (!recipe) throw new Error("no part");
-    const r = await w.runSequence([{ ...recipe, deadlineSeconds: 5 }], {
+    const r = await w.runSequence([{ ...recipe, deadlineSeconds: 30 }], {
       settleMs: 200,
       pollMs: 50,
     });
-    expect(r).toMatchObject({ state: "IN_FLIGHT", committed: 0 });
+    expect(r).toMatchObject({ state: "IN_FLIGHT", committed: 0, current: { pastDeadline: false } });
     await rpc("evm_increaseTime", [60]);
+    await rpc("evm_mine");
+    // The latest block is past the deadline but no finalized one is yet: still in flight, pastDeadline true (a hold
+    // can be released; nothing is proven yet).
+    const late = await w.reconcileSequence(r.sequenceId);
+    expect(late).toMatchObject({ state: "IN_FLIGHT", current: { index: 0, pastDeadline: true } });
+    expect(late.current?.checkedAt?.timestamp).toBeGreaterThan(late.current?.deadline as bigint);
+    expect(late.reason?.code).not.toBe("EXPIRED");
     await rpc("anvil_mine", ["0x50"]); // anvil finalizes 64 blocks behind: a finalized block past the deadline
     const expired = {
       state: "NOT_STARTED",
