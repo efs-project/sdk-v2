@@ -126,7 +126,10 @@ export function classifyWalletError(
           `the wallet rejected the ${method} parameters (-32602)`,
         ),
       };
-    // EIP-5792's own refusals of a wallet_sendCalls request: nothing was sent.
+    // EIP-5792's own refusals of a wallet_sendCalls request: nothing was sent. 5720 (duplicate bundle id) and 5730
+    // (unknown bundle id) are deliberately absent. 5720 means a bundle with that id may already exist, so an earlier
+    // attempt may have gone out: it must stay AMBIGUOUS (the default) and wait for reconcile. 5730 answers
+    // wallet_getCallsStatus, never a send.
     case 5740:
       return {
         notSent: reason(

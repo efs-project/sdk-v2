@@ -571,6 +571,30 @@ describe("runSequence (fixture)", () => {
     expect(await back.resume(r.sequenceId, { pollMs: 50 })).toMatchObject({ state: "COMPLETE" });
   });
 
+  it("a duplicate bundle id (5720) is never NOT_SENT: an earlier attempt may have gone out, so it waits for reconcile", async () => {
+    const dup = wallet(ERIN, { atomic5792: true, batchFailWith: 5720 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: dup, account: ERIN },
+      journal: memoryJournal(),
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-5720"), {
+      settleMs: 200,
+      pollMs: 50,
+    });
+    expect(r).toMatchObject({
+      state: "IN_FLIGHT",
+      committed: 0,
+      mode: "batch",
+      reason: { code: "RESPONSE_LOST", retry: "after-reconcile" },
+    });
+    expect((await w.pending()).map((a) => a.stage)).toEqual([
+      "SUBMISSION_POSSIBLE",
+      "SUBMISSION_POSSIBLE",
+      "SUBMISSION_POSSIBLE",
+    ]);
+    expect([dup.batches, dup.sends]).toEqual([1, 0]); // not re-sent part by part either
+  });
+
   it("a batch whose wallet lost its connection (4900) stays in flight: it may have gone out", async () => {
     const offline = wallet(ERIN, { atomic5792: true, batchFailWith: 4900 });
     const w = await createWriter(efs, {
