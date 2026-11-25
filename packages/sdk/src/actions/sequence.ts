@@ -35,7 +35,7 @@ import type { PlanInput } from "./plan.js";
 import { waitForReceipt } from "./receipt.js";
 import { reconcileAttempt } from "./reconcile.js";
 import { type Authorizer, notify, type SendOpts, sendPlan } from "./send.js";
-import type { Plan, PlanResult, PlanSequenceResult } from "./types.js";
+import type { EffectView, Plan, PlanResult, PlanSequenceResult } from "./types.js";
 
 export interface SequenceOpts extends SendOpts {
   /** "auto" (default): one EIP-5792 request when the wallet runs calls atomically; "never": part by part. */
@@ -133,21 +133,111 @@ const sleep = (ms: number) =>
 const WORD = /^0x[0-9a-fA-F]{64}$/;
 
 /**
- * The one file edit a save carries (its parts' `files.edit` effects all name the same file and revision), else
- * undefined: no edit, a malformed effect, or several different edits (nothing single to name).
+ * What a save is for, from its parts' effects: one file edit (every `files.edit` effect names the same file and
+ * revision), one created file or folder, or the entries a move, remove or restore touches (each listed once). Else
+ * undefined: no Files effect, a malformed one, or effects of different kinds (nothing single to name).
  */
 export function sequenceEffect(parts: readonly SequencePartInput[]): SequenceEffect | undefined {
-  let found: SequenceEffect | undefined;
-  for (const part of parts)
-    for (const e of part.effects) {
-      if (e.code !== "files.edit") continue;
-      const file = e.args["file"];
-      const revision = e.args["revision"];
-      if (!file || !revision || !WORD.test(file) || !WORD.test(revision)) return undefined;
-      if (found && (found.file !== file || found.revision !== revision)) return undefined;
-      found = { kind: "files.edit", file: file as Hex, revision: revision as Hex };
+  const effects = parts.flatMap((p) => p.effects).filter((e) => e.code.startsWith("files."));
+  if (effects.length === 0) return undefined;
+  const code = (effects[0] as EffectView).code;
+  if (effects.some((e) => e.code !== code)) return undefined;
+  const word = (e: EffectView, k: string): Hex | undefined => {
+    const v = e.args[k];
+    return v !== undefined && WORD.test(v) ? (v.toLowerCase() as Hex) : undefined;
+  };
+  const text = (e: EffectView, k: string): string | undefined => {
+    const v = e.args[k];
+    return typeof v === "string" && v.length > 0 ? v : undefined;
+  };
+  /** One value per save: every effect must agree on it. */
+  const same = <T>(pick: (e: EffectView) => T | undefined): T | undefined => {
+    let found: T | undefined;
+    for (const e of effects) {
+      const v = pick(e);
+      if (v === undefined) return undefined;
+      if (found !== undefined && JSON.stringify(found) !== JSON.stringify(v)) return undefined;
+      found = v;
     }
-  return found;
+    return found;
+  };
+  /** One value per entry, keyed by (folder, name), each entry once. */
+  const each = <T extends { folder: Hex; name: string }>(
+    pick: (e: EffectView) => T | undefined,
+  ): T[] | undefined => {
+    const out = new Map<string, T>();
+    for (const e of effects) {
+      const v = pick(e);
+      if (v === undefined) return undefined;
+      const key = `${v.folder}/${v.name}`;
+      const prev = out.get(key);
+      if (prev && JSON.stringify(prev) !== JSON.stringify(v)) return undefined;
+      out.set(key, v);
+    }
+    return [...out.values()];
+  };
+  const place = (e: EffectView) => {
+    const folder = word(e, "folder");
+    const name = text(e, "name");
+    return folder && name ? { folder, name } : undefined;
+  };
+  switch (code) {
+    case "files.edit":
+      return same((e) => {
+        const file = word(e, "file");
+        const revision = word(e, "revision");
+        return file && revision ? { kind: "files.edit" as const, file, revision } : undefined;
+      });
+    case "files.create":
+      return same((e) => {
+        const p = place(e);
+        const file = word(e, "file");
+        const revision = word(e, "revision");
+        return p && file && revision
+          ? { kind: "files.create" as const, ...p, file, revision }
+          : undefined;
+      });
+    case "files.createFolder":
+      return same((e) => {
+        const p = place(e);
+        const directory = word(e, "directory");
+        const subject = word(e, "subject");
+        return p && directory && subject
+          ? { kind: "files.createFolder" as const, ...p, directory, subject }
+          : undefined;
+      });
+    case "files.move": {
+      const moves = each((e) => {
+        const p = place(e);
+        const toFolder = word(e, "toFolder");
+        const toName = text(e, "toName");
+        const target = word(e, "target");
+        return p && toFolder && toName && target ? { ...p, toFolder, toName, target } : undefined;
+      });
+      return moves ? { kind: "files.move", moves } : undefined;
+    }
+    case "files.remove": {
+      const hide = same((e) =>
+        e.args["hide"] === "true" ? true : e.args["hide"] === "false" ? false : undefined,
+      );
+      const entries = each((e) => {
+        const p = place(e);
+        const target = word(e, "target");
+        return p && target ? { ...p, target } : undefined;
+      });
+      return entries && hide !== undefined ? { kind: "files.remove", hide, entries } : undefined;
+    }
+    case "files.restore": {
+      const entries = each((e) => {
+        const p = place(e);
+        const target = word(e, "target");
+        return p && target ? { ...p, target } : undefined;
+      });
+      return entries ? { kind: "files.restore", entries } : undefined;
+    }
+    default:
+      return undefined;
+  }
 }
 
 /**

@@ -49,6 +49,69 @@ describe("sequenceEffect", () => {
   });
 });
 
+describe("sequenceEffect for folder saves", () => {
+  const DIR = `0x${"dd".repeat(32)}`;
+  const fx = (code: string, args: Record<string, string>): EffectView => ({ code, args });
+  const stage = (st: string) => ({ part: "1", parts: "2", stage: st });
+
+  it("a created file: one effect, the same across its content and finish parts", () => {
+    const args = { folder: DIR, name: "a.txt", file: FILE, revision: REV };
+    expect(
+      sequenceEffect([
+        part(fx("files.create", { ...args, ...stage("content") })),
+        part(fx("files.create", { ...args, ...stage("finish") })),
+      ]),
+    ).toEqual({ kind: "files.create", folder: DIR, name: "a.txt", file: FILE, revision: REV });
+  });
+
+  it("moves, removes and restores list each entry once, across parts", () => {
+    const m = (name: string) =>
+      fx("files.move", {
+        folder: DIR,
+        name,
+        toFolder: DIR,
+        toName: `new-${name}`,
+        target: FILE,
+        ...stage("finish"),
+      });
+    expect(sequenceEffect([part(m("a"), m("b")), part(m("c"))])).toEqual({
+      kind: "files.move",
+      moves: ["a", "b", "c"].map((name) => ({
+        folder: DIR,
+        name,
+        toFolder: DIR,
+        toName: `new-${name}`,
+        target: FILE,
+      })),
+    });
+    const r = (name: string, hide: string) =>
+      fx("files.remove", { folder: DIR, name, target: FILE, hide });
+    expect(sequenceEffect([part(r("a", "false"), r("b", "false"))])).toEqual({
+      kind: "files.remove",
+      hide: false,
+      entries: [
+        { folder: DIR, name: "a", target: FILE },
+        { folder: DIR, name: "b", target: FILE },
+      ],
+    });
+    expect(sequenceEffect([part(r("a", "false"), r("b", "true"))])).toBeUndefined(); // one save, one hide
+  });
+
+  it("is undefined for mixed kinds or a malformed folder effect", () => {
+    expect(
+      sequenceEffect([
+        part(
+          edit(FILE, REV, "finish"),
+          fx("files.remove", { folder: DIR, name: "a", target: FILE, hide: "false" }),
+        ),
+      ]),
+    ).toBeUndefined();
+    expect(
+      sequenceEffect([part(fx("files.restore", { folder: "docs", name: "a", target: FILE }))]),
+    ).toBeUndefined();
+  });
+});
+
 describe("SequenceProgress.effect", () => {
   const account = "0x2a871d0798f97d79848a013d4936a73bf4cc922c" as Hex;
   const d = efs.deployment;

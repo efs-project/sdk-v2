@@ -19,6 +19,8 @@ export default defineConfig({
           environment: "node",
           include: ["test/integration/**/*.test.ts"],
           globalSetup: ["test/integration/setup.ts"],
+          // The files share one fixture chain, and several switch its automine off and on: run them one at a time.
+          fileParallelism: false,
           testTimeout: 60_000,
           hookTimeout: 180_000,
         },

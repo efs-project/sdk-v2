@@ -76,6 +76,10 @@ try {
     );
     dirs.push(npmConsumer("getting-started"));
     ok("getting-started (the guide's walkthrough, every step asserted, on a live fixture chain)");
+    dirs.push(npmConsumer("folders"));
+    ok(
+      "folders (create, list, rename, remove and restore, every step asserted, on a live fixture chain)",
+    );
   }
   if (only.has("foundry")) {
     const dir = freshCopy("smoke-foundry");

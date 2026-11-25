@@ -15,23 +15,16 @@
 //      descriptor carries the media type. The records are split into publications under the per-transaction gas cap,
 //      the finish (descriptor, revision, HEAD bind) kept in one publication.
 // The result is always a list of parts for writer.runSequence, one part in the common case.
-import { decodeFunctionResult, encodeFunctionData, keccak256, sha256 } from "viem";
+import { decodeFunctionResult, encodeFunctionData } from "viem";
 import type { SequencePartInput } from "../actions/sequence.js";
-import {
-  type GasModel,
-  gasPlanFor,
-  type PlannedAction,
-  splitPublications,
-  txGasCapOf,
-} from "../actions/split.js";
-import type { ActionData, EffectView } from "../actions/types.js";
+import { type GasModel, type PlannedAction, splitPublications } from "../actions/split.js";
+import type { EffectView } from "../actions/types.js";
 import { callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint } from "../chain/pool.js";
 import type { Efs, Lens } from "../client.js";
-import { CARRIER, CHUNK_PAYLOAD, chunkTree, encode, FORM } from "../content/codec.js";
+import { encode, FORM } from "../content/codec.js";
 import { type CallOpts, EfsFault, type Reason, reason } from "../core/errors.js";
 import {
-  bytesToHex,
   type Hex,
   lower,
   type PrincipalId,
@@ -50,16 +43,19 @@ import {
   type RevisionRef,
   resolveRevision,
 } from "./bytes.js";
-import { normalizeMediaType } from "./media.js";
+import {
+  askedMediaType,
+  blank,
+  buildContent,
+  checkContent,
+  type ExternalContent,
+  type FilesTypes,
+  gasSetup,
+  publish,
+  tooManyBytes,
+} from "./plan.js";
 
-/** Content stored elsewhere: the revision names a files-external/1 locator and its sha256. */
-export interface ExternalContent {
-  kind: "external";
-  length: bigint;
-  sha256: Hex;
-  /** Printable ASCII, e.g. "ipfs://…", "ar://…", "https://…", "web3://…". */
-  locator: string;
-}
+export type { ExternalContent } from "./plan.js";
 
 export interface EditFileInput {
   file: FileRef;
@@ -143,7 +139,19 @@ export type EditPlanResult =
       basis: Basis;
     }
   /** HEAD under the Lens is no longer `base`. `head` is what it is now; null when the file has no HEAD there. */
-  | { kind: "efs.editPlan"; status: "BASE_CHANGED"; head: RevisionRef | null; basis: Basis }
+  | {
+      kind: "efs.editPlan";
+      status: "BASE_CHANGED";
+      head: RevisionRef | null;
+      /**
+       * With a head: whose it is, and the admission that last set it. Compare `headAdmission` with the `admissions`
+       * of the basis the edit began from (OpenResult.basis): at or below it, that head was already there (for example
+       * your own version, now first because you connected); above it, someone saved after you opened the file.
+       */
+      headAuthor?: PrincipalId;
+      headAdmission?: bigint;
+      basis: Basis;
+    }
   | { kind: "efs.editPlan"; status: "TOO_LARGE"; reason: Reason }
   /** The chain could not be read (or answered something this SDK does not accept): nothing was decided. */
   | { kind: "efs.editPlan"; status: "UNKNOWN"; reason: Reason; basis?: Basis };
@@ -151,25 +159,6 @@ export type EditPlanResult =
 /** files-child/1 header: abi.encode(parent, file, form). */
 const CHILD_HEADER_BYTES = 96;
 
-const blank: ActionData = {
-  kind: 0,
-  typeId: ZERO_WORD,
-  bodyHashOrRecordId: ZERO_WORD,
-  purpose: ZERO_WORD,
-  subject: ZERO_WORD,
-  role: ZERO_WORD,
-  target: ZERO_WORD,
-  expectedRevision: 0n,
-  salt: ZERO_WORD,
-};
-const publish = (typeId: Hex, body: Uint8Array, shape: string, group?: number): PlannedAction => ({
-  action: { ...blank, kind: ACTION.PUBLISH, typeId, bodyHashOrRecordId: keccak256(body) },
-  body: bytesToHex(body),
-  shape,
-  ...(group !== undefined ? { group } : {}),
-});
-
-const printableAscii = (s: string): boolean => /^[\x20-\x7e]+$/.test(s);
 const FINISH = 1;
 
 /**
@@ -198,60 +187,19 @@ export async function planEditFile(
   if (input.base.file && lower(input.base.file) !== file)
     throw new EfsFault("MISUSE", "base is a revision of another file");
   // A media type the chain would refuse is the caller's mistake: refuse it before anything else is looked up.
-  let asked: string | undefined;
-  if (input.mediaType !== undefined) {
-    const m = normalizeMediaType(input.mediaType);
-    if (!m.ok)
-      throw new EfsFault("MISUSE", `invalid media type: ${m.reason}`, {
-        details: { mediaType: input.mediaType, code: m.code },
-      });
-    asked = m.mediaType;
-  }
+  const asked = askedMediaType(input.mediaType);
   const me = lower(writer.principal) as PrincipalId;
   const lens = input.lens ?? efs.lens.default;
-  let gas: { model: GasModel; txGasCap: bigint; headroom: number; blockGasLimit?: bigint };
-  if (o.gasModel)
-    gas = {
-      model: o.gasModel,
-      txGasCap: o.txGasCap ?? txGasCapOf(d),
-      headroom: o.headroom ?? 0.15,
-    };
-  else {
-    const g = gasPlanFor(d);
-    if (!g.ok) return { kind: "efs.editPlan", status: "UNKNOWN", reason: g.reason };
-    gas = {
-      model: g.model,
-      txGasCap: o.txGasCap ?? g.txGasCap,
-      headroom: o.headroom ?? g.headroom,
-      ...(g.blockGasLimit !== undefined ? { blockGasLimit: g.blockGasLimit } : {}),
-    };
-  }
+  const g = gasSetup(d, o);
+  if (!g.ok) return { kind: "efs.editPlan", status: "UNKNOWN", reason: g.reason };
+  const gas = g.gas;
   const model = gas.model;
   const content = input.content;
-  if (!(content instanceof Uint8Array)) {
-    if (!printableAscii(content.locator))
-      throw new EfsFault("MISUSE", "an external locator must be printable ASCII");
-    if (!/^0x[0-9a-fA-F]{64}$/.test(content.sha256))
-      throw new EfsFault("MISUSE", "sha256 must be 32 bytes of hex");
-    if (content.length < 0n || content.length >= 1n << 256n)
-      throw new EfsFault("MISUSE", "length must be a uint256");
-  }
+  checkContent(content);
 
   const maxParts = o.maxParts ?? 64;
-  // Refuse before chunking anything: no publication carries more than maxBodyBytesPerPublication body bytes.
-  if (
-    content instanceof Uint8Array &&
-    content.length > maxParts * d.limits.maxBodyBytesPerPublication
-  )
-    return {
-      kind: "efs.editPlan",
-      status: "TOO_LARGE",
-      reason: reason(
-        "LIMIT_EXCEEDED",
-        "never",
-        `${content.length} bytes need more than ${maxParts} publications (store large files externally)`,
-      ),
-    };
+  const huge = tooManyBytes(content, maxParts, d.limits.maxBodyBytesPerPublication);
+  if (huge) return { kind: "efs.editPlan", status: "TOO_LARGE", reason: huge };
 
   // ---- one basis: the Lens's HEAD (the base check) and the editor's own HEAD binding (the CAS revision)
   const pin = await efs.at("latest", o);
@@ -265,7 +213,7 @@ export async function planEditFile(
   const ctx: Ctx = { efs, requests: 0 };
   const myBinding = bindingKey(me, positionKey(PURPOSES.head, file, ZERO_WORD));
   type Seen =
-    | { kind: "changed"; head: RevisionRef | null }
+    | { kind: "changed"; head: RevisionRef | null; author?: PrincipalId; admission?: bigint }
     | { kind: "refused"; reason: Reason }
     | {
         kind: "ok";
@@ -298,6 +246,8 @@ export async function planEditFile(
           value: {
             kind: "changed",
             head: { kind: "revision", recordId: h.target as RecordId, file },
+            author: h.author,
+            admission: h.admission,
           },
         };
       // Keep the base's media type unless the caller named one: read it here, at this basis, never guessed.
@@ -382,70 +332,31 @@ export async function planEditFile(
   if (!r.ok) return { kind: "efs.editPlan", status: "UNKNOWN", reason: r.reason, basis };
   const seen = r.value;
   if (seen.kind === "changed")
-    return { kind: "efs.editPlan", status: "BASE_CHANGED", head: seen.head, basis };
+    return {
+      kind: "efs.editPlan",
+      status: "BASE_CHANGED",
+      head: seen.head,
+      ...(seen.author !== undefined ? { headAuthor: seen.author } : {}),
+      ...(seen.admission !== undefined ? { headAdmission: seen.admission } : {}),
+      basis,
+    };
   if (seen.kind === "refused")
     return { kind: "efs.editPlan", status: "UNKNOWN", reason: seen.reason, basis };
 
   // ---- the content records (pure: no chain reads; the media type decides whether a small file can sit inline)
   const mediaType = seen.mediaType;
-  const records: PlannedAction[] = [];
-  let descriptor: { body: Uint8Array; typeId: Hex; shape: string } | undefined;
-  let layout: EditLayout;
-  let size: bigint;
-  let digest: Hex;
-  let childBody: Uint8Array;
-  if (content instanceof Uint8Array) {
-    size = BigInt(content.length);
-    digest = sha256(content);
-    if (mediaType === "" && content.length <= d.limits.maxBodyBytes - CHILD_HEADER_BYTES) {
-      layout = "inline";
-      childBody = encode.childInline(base, file, content);
-    } else {
-      const tree = chunkTree(types.bytes as Hex, types.span as Hex, content, CHUNK_PAYLOAD);
-      layout = tree.isSpan ? "span" : "chunk";
-      const published = new Set<Hex>();
-      for (const r of tree.records) {
-        if (published.has(r.id)) continue; // a repeated chunk or subtree: the first occurrence already published it
-        published.add(r.id);
-        records.push(
-          publish(r.typeId, r.body, r.typeId === types.span ? "files-span/1" : "files-bytes/1"),
-        );
-      }
-      const body = encode.content(
-        tree.root,
-        tree.isSpan ? CARRIER.span : CARRIER.inlineChunk,
-        size,
-        digest,
-        mediaType,
-      );
-      descriptor = {
-        body,
-        typeId: types.content as Hex,
-        shape: `files-content/1 carrier ${tree.isSpan ? CARRIER.span : CARRIER.inlineChunk}`,
-      };
-      childBody = encode.childContent(base, file, recordId(types.content as Hex, body));
-    }
-  } else {
-    layout = "external";
-    size = content.length;
-    digest = lower(content.sha256);
-    const sentinelBody = encode.chunk(new Uint8Array());
-    const sentinel = recordId(types.bytes as Hex, sentinelBody);
-    records.push(publish(types.bytes as Hex, sentinelBody, "files-bytes/1"));
-    const body = encode.external(sentinel, content.length, digest, content.locator, mediaType);
-    if (body.length > d.limits.maxBodyBytes)
-      return {
-        kind: "efs.editPlan",
-        status: "TOO_LARGE",
-        reason: reason(
-          "LIMIT_EXCEEDED",
-          "never",
-          `the locator makes a ${body.length}-byte record; the limit is ${d.limits.maxBodyBytes}`,
-        ),
-      };
-    descriptor = { body, typeId: types.external as Hex, shape: "files-external/1" };
-    childBody = encode.childContent(base, file, recordId(types.external as Hex, body));
-  }
+  const built = buildContent(
+    types as FilesTypes,
+    content,
+    mediaType,
+    d.limits.maxBodyBytes,
+    CHILD_HEADER_BYTES,
+  );
+  if (!built.ok) return { kind: "efs.editPlan", status: "TOO_LARGE", reason: built.reason };
+  const { records, descriptor, layout, size, sha256: digest } = built;
+  const childBody = descriptor
+    ? encode.childContent(base, file, descriptor.id)
+    : encode.childInline(base, file, built.inline as Uint8Array);
   const revision = recordId(types.child as Hex, childBody) as RecordId;
 
   // ---- the finish (one publication): descriptor, revision, HEAD bind

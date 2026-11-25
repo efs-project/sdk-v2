@@ -3,7 +3,9 @@
  * `@efs/sdk/files`: verified byte reads (open a file, read ranges or the whole file, or stream verified chunks), and
  * the edit planner (planEditFile: a new revision of an existing file, for writer.runSequence), and normalizeMediaType
  * (the check planning applies to a declared media type, for validating one as it is typed).
- * Folder, directory and path reads arrive here too, once the tags-vs-directories ruling settles their shape.
+ * Folders: listFolder, lookupEntry and resolvePath read a folder under a Lens, always from a parent the caller names;
+ * planCreateFile, planCreateFolder, planMoveEntries, planRemoveEntries and planRestoreEntries plan the writer's own
+ * entries, for writer.runSequence.
  */
 
 export type {
@@ -28,6 +30,51 @@ export type {
   ExternalContent,
 } from "./edit.js";
 export { planEditFile } from "./edit.js";
+export type {
+  CreateFileInput,
+  CreateFileReview,
+  CreateFolderInput,
+  CreateFolderReview,
+  EntryRefusal,
+  FolderPlanOpts,
+  FolderPlanResult,
+  FolderReviewBase,
+  LensView,
+  MoveEntriesInput,
+  MoveInput,
+  MoveReview,
+  MoveReviewItem,
+  RemoveEntriesInput,
+  RemoveReview,
+  RemoveReviewItem,
+  RestoreEntriesInput,
+  RestoreReview,
+  RestoreReviewItem,
+} from "./entries.js";
+export {
+  planCreateFile,
+  planCreateFolder,
+  planMoveEntries,
+  planRemoveEntries,
+  planRestoreEntries,
+} from "./entries.js";
+export type {
+  EntryCandidate,
+  EntryKind,
+  EntryLookup,
+  EntryRef,
+  EntryTarget,
+  FolderCoverage,
+  FolderCursor,
+  FolderPage,
+  FolderRef,
+  FolderRow,
+  ListFolderOpts,
+  PathResolution,
+  PathStep,
+  ResolvePathOpts,
+} from "./folders.js";
+export { folderOf, listFolder, lookupEntry, resolvePath } from "./folders.js";
 export type { MediaTypeCheck } from "./media.js";
 export { MAX_MEDIA_TYPE_BYTES, normalizeMediaType } from "./media.js";
 export type { FileChunks, StreamFailure, StreamOpts } from "./stream.js";
