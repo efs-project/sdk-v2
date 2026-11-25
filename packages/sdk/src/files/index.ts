@@ -50,6 +50,9 @@ export type {
   RestoreEntriesInput,
   RestoreReview,
   RestoreReviewItem,
+  UnhideEntriesInput,
+  UnhideReview,
+  UnhideReviewItem,
 } from "./entries.js";
 export {
   planCreateFile,
@@ -57,6 +60,7 @@ export {
   planMoveEntries,
   planRemoveEntries,
   planRestoreEntries,
+  planUnhideEntries,
 } from "./entries.js";
 export type {
   EntryCandidate,
@@ -80,7 +84,7 @@ export type {
 export { listFolder, lookupEntry, openObject, openPath, resolvePath } from "./folders.js";
 export type { MediaTypeCheck } from "./media.js";
 export { MAX_MEDIA_TYPE_BYTES, normalizeMediaType } from "./media.js";
-export type { ListRemovedOpts, RemovedCursor, RemovedPage, RemovedRow } from "./removed.js";
+export type { LastBound, ListRemovedOpts, RemovedCursor, RemovedPage, RemovedRow } from "./removed.js";
 export { listRemoved } from "./removed.js";
 export type { FileChunks, StreamFailure, StreamOpts } from "./stream.js";
 export { fileChunks } from "./stream.js";

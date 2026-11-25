@@ -106,3 +106,8 @@ A lock file whose owner is gone is taken over. An owner is gone when the lock is
 longer exists, or when the lock is older than `staleLockMs` (default 30 minutes). A record that does not parse
 raises an `EfsFault`; it is never skipped. Use a local disk, one directory per user and machine. Network filesystems
 are not supported.
+
+**The tag release (contracts 2462e54).** `ActionData.salt` is `saltOrStrength` (the vendored ABI's field name: CREATE's
+salt, a BIND's or UNBIND's strength). Records written before name the field `salt`; they belong to deployments the tag
+release replaced (another ledger, another Realm), so they are never sent again, and readers that only display them may
+read either name.

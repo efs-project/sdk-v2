@@ -92,8 +92,11 @@ export interface Efs {
   readonly deployment: DeploymentInfo;           // validated from the manifest at creation; not yet pinned
   readonly limits: ProtocolLimits;               // so the UI can warn "this takes N prompts" before planning
   readonly capabilities: Capabilities;           // plain data, e.g. { tags: false, properties: false }
-  /** The cold pin: chain id, block, describe(), proxy implementation slot and five code hashes, compared with
-   *  `release`. Runs once, then reuses its result. Every read calls it implicitly. */
+  /** The cold pin: chain id, block, describe(), proxy implementation slot and the code hashes of every contract the
+   *  SDK reads through (the ledger implementation, LedgerReads, LedgerViews, the Lens and Files page readers, and,
+   *  when the document names them, the index, its reads contract and the three topic readers), compared with
+   *  `release`. One deployless eth_call returns all the hashes after a zero word (EIP-3541 refuses returned code
+   *  that starts with 0xEF). Runs once, then reuses its result. Every read calls it implicitly. */
   pin(o?: CallOpts): Promise<PinResult>;
   /** A view pinned to one basis. Reads made through `view.files` share that basis. */
   at(basis: BasisPolicy | Basis, o?: CallOpts): Promise<ViewResult>;
@@ -684,34 +687,39 @@ export interface ReconcileResult {
 
 ### Splitting a save into publications (0.1, model-independent part)
 
-`splitPublications(actions, { model, limits, txGasCap, headroom?, blockGasLimit?, firstWrite?, floor? })` in
-`@efs/sdk/actions` packs an ordered list of `PlannedAction`s (`{ action, body, shape?, exists?, bindRow?, group?,
-firstStatement? }`) into publications that each fit one transaction.
+`splitPublications(actions, { model, limits, txGasCap, headroom?, blockGasLimit?, firstWrite?, typeNames? })` in
+`@efs/sdk/actions` packs an ordered list of `PlannedAction`s (`{ action, body, shape?, exists?, bindRow?, levels?,
+group?, firstStatement? }`) into publications that each fit one transaction, by the contracts' planning rule
+(gas/model.json `planning`). The contracts' `tools/gas-plan.mjs` is the reference, and the SDK reproduces its verdicts
+on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedules (`test/floor-plan.test.ts`).
 - **Batch limits** come from the kernel's own checks (`LedgerCore._bounds`): actions ≤ `maxActionsPerPublication`;
   BIND, UNBIND and RELEASE ≤ `maxBindsPerPublication`; summed body bytes ≤ `maxBodyBytesPerPublication`; each
   body ≤ `maxBodyBytes`.
-- **Gas** comes from the contracts' fitted model (release.json `gasModel`, generated as `GAS_SCHEDULES`):
-  `fixed + Σ actions`, a new PUBLISH being `publishNew[shape] + perWord × ceil(bytes/32) + perByte × bytes`, with
-  shapes keyed as the release keys them (`files-child/1 form 0`, `files-content/1 carrier 2`, …). A BIND is priced
-  at its `bindRow` (`bindHeadFresh`, `bindHeadRebind`, `bindFolderFreshFile`, …), or the largest row when unknown;
-  `firstWrite` adds `firstWriteSurcharge` to the first part. The SDK adds the 21,000 intrinsic gas and the calldata
-  (every byte priced as non-zero), which the model excludes. Plans aim at `txGasCap × (1 − headroom)`, the
-  contracts' budget rule with their 15%.
-- **The kernel's floor** (`floor`, from `DeploymentInfo.kernelFloor`: the deployment's `index.workModel` and floor
-  limits). Before a publication's index callbacks, the kernel reserves a prefix floor and a final reserve. It prices
-  both per action and per bind, and refuses a call that leaves less (`E_INDEX_GAS`). `kernelQuote` gives the
-  kernel's own four numbers (the prefix floor, the final reserve, fresh slots, rewrites), equal to
-  `LedgerIngress.indexFloor` when every bind is taken as a first statement. A bind is a first statement unless its
-  `bindRow` is a rebind or `firstStatement` says otherwise; a RELEASE or UNBIND is not, in this release.
-  `floorNeed` turns the quote into the visible gas the floor needs on top of the execution gas.
-  - Each publication must fit `gas + floor` (`SplitPart.floor`), and `packBatches` sums both per part.
-  - Until the contracts' gas model gives the kernel's own share of the execution gas (the tag release's
-    `floor.kernel`), that share is bounded by the whole estimate. That is safe but over-splits bind-heavy batches.
-  - Why: measured on the fixture, a 64-entry remove was planned as one publication at 9.3M gas but needed
-    18.9M, over the 2^24 cap, so it could never be sent. With the floor it is planned as two parts that need at
-    most 10.9M each.
-  - A work model whose `formulaVersion` is not 1 is refused (`UNSUPPORTED_PROFILE`): nothing is planned under a
-    formula the SDK cannot price.
+- **The rule:** a publication is planned when it is inside the limits and `max(E, V) ≤ ⌊txGasCap × (100 −
+  headroomPercent) / 100⌋` (14,260,633 at 2^24 and 15%):
+  - **E**, the model's execution estimate (release.json `gasModel`, generated as `GAS_SCHEDULES`): `fixed + Σ
+    actions`, plus `firstWriteSurcharge` on the first part. A new PUBLISH is `publishNew[shape] + perWord ×
+    ceil(bytes/32) + perByte × bytes`, with shapes keyed as the release keys them (`files-child/1 form 0`,
+    `files-content/1 carrier 2`, …). A bind-kind action is priced at its `bindRow` (`bindHeadFresh`,
+    `bindFolderRebind`, `unbindFolder`, `releaseFolder`, `bindTagFresh`, `unbindTagLone`, …, plus a first tag's
+    per-level `levels`), or the dearest row of its kind when unknown. The 15% headroom covers the 21,000 intrinsic
+    gas, the calldata and the model's error.
+  - **V**, the visible gas the kernel's floor needs: `max(K + prefixNeed(P), E) + ⌈F·64/63⌉ + kernelTail`. K is the
+    kernel's own share of E (`floor.kernel`, the same model fitted with the index's callbacks removed). P and F are
+    the kernel's own quote (`kernelQuote`: prefix floor, final reserve, fresh slots, rewrites; work model formula
+    2), priced with each Type's references and digest specs (`floor.types`) and each bind's first-statement flag. A
+    bind is a first statement unless its row is a later statement's (`firstStatement` overrides); a RELEASE never
+    is.
+  - `SplitPart.rule` keeps E, K, V and the quote; `SplitPart.gas` is the figure shown to people (the model plus
+    intrinsic and calldata gas). `packBatches` sums each part's max(E, V) with its intrinsic and calldata gas, since
+    each call in an atomic batch must still find its own floor.
+  - `kernelQuote(actions, floor, { everyBindFirst: true })` equals `LedgerIngress.indexFloor`, which prices every BIND
+    and UNBIND as a first statement: an upper bound, never planned from (tested against the chain).
+  - **The deployment must price the floor the same way:** `gasPlanFor` refuses (`UNSUPPORTED_PROFILE`) when the
+    deployment's `index.workModel` or floor limits differ from the gas model's in any field, or the formula is not 2.
+  - Why it matters: on the release before this one (120,000 gas of final reserve per bind), 64-entry removes and
+    moves were planned at about 9M gas and needed 18.9M to 22.2M, over the cap. This release reserves 7,400 per bind,
+    and the rule fits each part to what the kernel actually checks.
 - **Which model:** `gasPlanFor(deployment)` takes the schedule `efs-deployment.chain.feeSchedule` names, else the one
   whose hardforks include `chain.hardfork`, with `chain.txGasCap` (always enforced; 2^24 when not stated). It
   refuses (`UNSUPPORTED_PROFILE`) rather than guess when the document has no `chain` block or names a schedule this
@@ -949,19 +957,25 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   law's, the page and Lens readers must agree on every row, and COMPLETE must hold locally.
 
 - `listRemoved(efs, { folder, author }, { limit?, cursor? })` ("Show removed"): one author's removed entries in a
-  folder, RELEASED or MASKED, each with `name`, `position`, `state`, the `target` it had before (what Restore binds
-  again), its binding `revision` and `removedAt`. Lens-independent: it reads only that author's own scope list (the
+  folder, RELEASED or MASKED, each with `name`, `position`, `state`, its binding `revision`, `removedAt`, and what it
+  pointed at before (`last`, below). Lens-independent: it reads only that author's own scope list (the
   index's kind-10 list of the positions they ever bound there, in first-bind order), a page of up to 64 entries at a
   time. The live index and its bitmap store must be the ones the deployment names, or the page is UNKNOWN. COMPLETE
   only for the whole list read from its start; an empty page that is not COMPLETE is UNKNOWN, never "nothing
   removed". Restore any row with `planRestoreEntries`.
-  `target` is always known, never null or guessed. The ledger hides (UNBIND) only a bound entry and releases only a
-  bound or hidden one, so every removed entry had a target, at most two versions back (released, hidden, bound).
-  The SDK walks that history with those rules. A history that can't be read back (`NOT_YET_DECIDABLE`) or that breaks
-  them (`RPC_ERROR`: a version that can't precede the next, another admission than asked, a target kind no folder
-  entry carries) is the endpoint's fault: the read moves to the next endpoint, and if none answers, the page is
-  UNKNOWN. A page never holds a row whose target is unknown, so an app never has to tell "can't say" apart from
-  "nothing to restore"; on UNKNOWN it shows the list as unavailable right now.
+  `last` is read from the binding's history, one version at a time back from the head, at most 32 versions:
+  - `KNOWN` with `target`: the target of the last BIND, which Restore binds again;
+  - `NEVER_BOUND`: a hide with no earlier bind by this author. Since the tag release UNBIND is admitted from every
+    state, so an author can hide someone else's entry at a name they never placed anything at (a lone hide). There
+    is nothing to restore; `planUnhideEntries` removes the hide. A released name never bound is not listed at all:
+    it changes no read;
+  - `UNKNOWN` with `reason` (`LIMIT_EXCEEDED`): a history deeper than the walk's bound (hides and releases can now
+    alternate to any depth). Only that row says so; the page stands.
+  A history that breaks the ledger's rules is the endpoint's fault (`RPC_ERROR`), the read moves to the next endpoint,
+  and if none answers, the page is UNKNOWN. The rules: a mask may follow a bind, a mask or a release, a release a bind
+  or a mask; each version's admission is the one asked for; revisions count down by one; a first version is revision
+  1 and, being a hide, names no target; a FOLDER bind's target is a file or a folder. A history that can't be read
+  back is `NOT_YET_DECIDABLE`. A target is never guessed.
 
 **Writes** (each `PLANNED { parts, review }` for `runSequence` | `REFUSED { refused }` | `TOO_LARGE` | `UNKNOWN`):
 - `planCreateFile(efs, w, { folder, name, content, mediaType?, lens?, salt? })`: CREATE, the root revision (inline,
@@ -984,14 +998,19 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
   Nothing is destroyed: the file stays reachable by its link.
 - `planRestoreEntries(efs, w, { entries, lens? })`: BIND a released or hidden entry back to the target it had before,
   read from the binding's history by the same walk listRemoved uses, so a row's `target` is exactly what Restore
-  binds. When that history can't name the target, the plan is UNKNOWN; it never binds a guessed one. Restoring a
+  binds. A `NEVER_BOUND` entry is refused `NEVER_BOUND` (Unhide it instead) and one whose history is too deep
+  `HISTORY_UNKNOWN` (with `reason`); a history the endpoint can't read makes the plan UNKNOWN. It never binds a
+  guessed target. Restoring a
   folder needs `via` (the path to its folder), with the same cycle checks as a move. Each review item carries
   `alsoPlaced`: how many live placements point at the target now, by anyone (the index's backlink count, from the
   generation the ledger names). Above 0, restoring puts it in one more place, for example after it was moved. Null
   when the index can't vouch.
+- `planUnhideEntries(efs, w, { entries, lens? })`: RELEASE your own hidden (MASKED) entries, so the Lens falls through
+  to the next author's entry at each name again. It answers a `NEVER_BOUND` row and works on any of your hides;
+  `NOT_HIDDEN` for an entry that isn't hidden, `ENTRY_ABSENT` where you have no entry. Effect `files.unhide`.
 - Every planner writes only the writer's own entries, each with a compare-and-swap on its revision. Refusal codes:
   `NAME_TAKEN_MINE` (your own entry holds the name), `NOT_YOURS` (with `author` and `admission`), `FOLDER_ABSENT`,
-  `ENTRY_ABSENT`, `NOT_REMOVED`, `PATH_CHANGED`. A batch refuses as a whole and lists every refusal by `index`
+  `ENTRY_ABSENT`, `NOT_REMOVED`, `NEVER_BOUND`, `HISTORY_UNKNOWN`, `NOT_HIDDEN`, `PATH_CHANGED`. A batch refuses as a whole and lists every refusal by `index`
   (a move's source and destination refusals both). A `salt` the writer already used is MISUSE. Another author's
   entry at the name is not a refusal: the review says what this Lens will show (`visibleInLens`, `shownInstead`,
   `hiddenBy`, and `shownAfter` for the place an entry leaves). Invalid names (checkName) and media types throw MISUSE

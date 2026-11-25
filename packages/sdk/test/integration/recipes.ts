@@ -137,6 +137,22 @@ export function releaseEntry(dir: Hex, name: string, expectedRevision: bigint) {
   };
 }
 
+/** UNBIND (hide) my FOLDER entry at `name` in `dir`, from any state: a lone hide when I never bound there. */
+export function hideEntry(dir: Hex, name: string, expectedRevision: bigint) {
+  const step = plain({
+    kind: ACTION.UNBIND,
+    purpose: PURPOSES.folder,
+    subject: dir,
+    role: keccak256(new TextEncoder().encode(name)),
+    expectedRevision,
+  });
+  return {
+    actions: [step.action],
+    bodies: [step.body],
+    effects: [{ code: "files.hide", args: { name } }],
+  };
+}
+
 /**
  * BIND my HEAD at `subject` to `target` (any record) at the binding's revision, with no Files check: the ledger admits
  * a HEAD at any subject naming any existing revision until the tag release refuses it. Tests use it for the HEAD law.

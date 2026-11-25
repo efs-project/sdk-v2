@@ -63,6 +63,11 @@ export interface Review {
   kind: "efs.review";
   effects: readonly EffectView[];
   prompts: number;
+  /**
+   * `estimate`: eth_estimateGas on the exact call (null when it failed). `floor`: the visible gas the kernel's floor
+   * needs (V of the planning rule), priced from the actions alone with every bind taken as a first statement (an upper
+   * bound); null when the deployment's gas model has no floor.
+   */
   gas: { estimate: bigint | null; floor: bigint | null };
   /** The simulated call reverted: the plan would fail as it stands (e.g. E_CAS, a stale precondition), else null. */
   wouldRevert: RevertInfo | null;

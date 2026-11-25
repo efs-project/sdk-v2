@@ -78,12 +78,20 @@ export interface EntryRefusal {
     | "ENTRY_ABSENT"
     /** Restore: your entry here is not removed. */
     | "NOT_REMOVED"
+    /** Restore: you never placed anything at this name; your hide covers someone else's entry. Unhide it instead. */
+    | "NEVER_BOUND"
+    /** Restore: the entry's history is too deep (or unreadable) to name its last target; `reason` says which. */
+    | "HISTORY_UNKNOWN"
+    /** Unhide: your entry here is not hidden. */
+    | "NOT_HIDDEN"
     /** The destination path (`via`) no longer reaches the destination folder under this Lens: resolve it again. */
     | "PATH_CHANGED";
   entry: EntryRef;
   /** NOT_YOURS: whose entry the Lens shows, and the admission that last set it (compare with Basis.admissions). */
   author?: PrincipalId;
   admission?: bigint;
+  /** HISTORY_UNKNOWN: why the history could not name the target. */
+  reason?: Reason;
 }
 
 /** What a reader with this Lens sees at a name. */
@@ -1308,6 +1316,92 @@ export async function planRemoveEntries(
   });
 }
 
+export interface UnhideEntriesInput {
+  entries: readonly EntryRef[];
+  lens?: Lens;
+}
+export interface UnhideReviewItem {
+  entry: EntryRef;
+  /** What this Lens shows at that name afterwards: the next author's entry, or nothing (null). */
+  shownAfter: { author: PrincipalId } | null;
+}
+export interface UnhideReview extends FolderReviewBase {
+  kind: "efs.unhideReview";
+  entries: readonly UnhideReviewItem[];
+}
+
+/**
+ * Plan removing your hides (RELEASE of your own MASKED entries): the Lens falls through to the next author's entry at
+ * each name again. It is the answer to a NEVER_BOUND row (a lone hide of someone else's entry), and works on any of
+ * your hidden entries; to put your own target back instead, use planRestoreEntries. A batch plans every entry or none.
+ */
+export async function planUnhideEntries(
+  efs: Efs,
+  writer: { readonly principal: PrincipalId },
+  input: UnhideEntriesInput,
+  o: FolderPlanOpts = {},
+): Promise<FolderPlanResult<UnhideReview>> {
+  if (!input.entries?.length) throw misuse("planUnhideEntries needs at least one entry");
+  const me = lower(writer.principal) as PrincipalId;
+  const principals = lensPrincipals(efs, input.lens);
+  const places = input.entries.map((e, i) => placeOf(e.folder, e.name, i));
+  if (new Set(places.map((p) => p.position)).size !== places.length)
+    throw misuse("the same entry is listed twice");
+  return atOneBasis(efs, o, async (ctx, s, basis) => {
+    const r = await readSeen(ctx, s, basis, me, principals, places, []);
+    if (!r.ok) return r;
+    const seen = r.value;
+    const refused: EntryRefusal[] = [];
+    const items: UnhideReviewItem[] = [];
+    const units: Unit[] = [];
+    for (const [i, p] of places.entries()) {
+      const st = seen.places.get(p.position) as PlaceState;
+      const state = headState(st.mine.state);
+      if (state !== "MASKED") {
+        refused.push({
+          index: i,
+          code: state === "UNSET" ? "ENTRY_ABSENT" : "NOT_HIDDEN",
+          entry: entryOf(p),
+        });
+        continue;
+      }
+      const args = effectArgs(p, {});
+      units.push({
+        effect: (stage, part, parts) => ({
+          code: "files.unhide",
+          args: { ...args, part: String(part), parts: String(parts), stage },
+          text: `Unhide ${p.name}`,
+        }),
+        actions: [
+          plain({
+            kind: ACTION.RELEASE,
+            purpose: PURPOSES.folder,
+            subject: p.folder,
+            role: p.role,
+            expectedRevision: BigInt(st.mine.revision),
+          }),
+        ],
+        finishes: true,
+      });
+      items.push({ entry: entryOf(p), shownAfter: shownAfter(principals, st, me, "RELEASED") });
+    }
+    if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
+    return {
+      ok: true,
+      value: () =>
+        toParts(
+          efs,
+          o,
+          units,
+          (base) => ({ kind: "efs.unhideReview", ...base, entries: items }),
+          me,
+          basis,
+          0,
+        ),
+    };
+  });
+}
+
 export interface RestoreEntriesInput {
   /**
    * `via` is required when the entry restored is a folder, as for planMoveEntries: the path to the entry's folder
@@ -1371,7 +1465,20 @@ export async function planRestoreEntries(
       // The target to restore: the binding's last bound version, from its history (the same walk listRemoved shows).
       const last = await lastBoundTarget(ctx, s, basis, bindingKey(me, p.position), st.mine);
       if (!last.ok) return last;
-      const target = last.value;
+      if (last.value.last === "NEVER_BOUND") {
+        refused.push({ index: i, code: "NEVER_BOUND", entry: entryOf(p) });
+        continue;
+      }
+      if (last.value.last === "UNKNOWN") {
+        refused.push({
+          index: i,
+          code: "HISTORY_UNKNOWN",
+          entry: entryOf(p),
+          reason: last.value.reason,
+        });
+        continue;
+      }
+      const target = last.value.target;
       if (target.kind === "folder") {
         const via = vias[i];
         if (!via)
