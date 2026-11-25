@@ -52,7 +52,7 @@ contract KeysTest is Test {
     function test_postingLists() public pure {
         assertEq(Keys.byTypeList(V.OUT_typeId), V.OUT_byTypeList);
         assertEq(Keys.byAuthorList(V.OUT_eoaPrincipal), V.OUT_byAuthorList);
-        assertEq(Keys.backlinkList(V.OUT_recordId), V.OUT_backlinkList);
+        assertEq(Keys.backlinkList(V.IN_purpose, V.OUT_recordId), V.OUT_backlinkList);
         assertEq(Keys.historyList(V.OUT_bindingKey), V.OUT_historyList);
         assertEq(Keys.scopeList(V.OUT_scopeKey), V.OUT_scopeList);
         assertEq(
