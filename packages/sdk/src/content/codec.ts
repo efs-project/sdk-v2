@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Files content bodies (contracts docs/LARGE-FILES.md, src/lib/EfsFiles.sol): pure decoders and encoders, plus the
-// canonical chunker (efs2/chunking/1). Every body is ABI words, optionally followed by raw bytes.
+// canonical chunker (efs/chunking/1). Every body is ABI words, optionally followed by raw bytes.
 import { sha256 } from "viem";
 import { bytesToHex, type Hex, hexToBytes } from "../core/hex.js";
 import { FILES } from "../generated/constants.js";
@@ -25,7 +25,7 @@ export const CARRIER: {
 export const HASH_SHA256: bigint = BigInt(FILES.hashAlg.SHA256);
 const CONTENT_VERSION = BigInt(FILES.contentVersion);
 const EXTERNAL_VERSION = BigInt(FILES.externalVersion);
-/** Canonical chunk payload (efs2/chunking/1): a 8,192-byte body minus the 32-byte sha256. */
+/** Canonical chunk payload (efs/chunking/1): a 8,192-byte body minus the 32-byte sha256. */
 export const CHUNK_PAYLOAD: number = FILES.chunkPayload;
 
 const word = (b: Uint8Array, i: number): Hex => bytesToHex(b.subarray(i * 32, i * 32 + 32));

@@ -78,12 +78,19 @@ export function journalContract(
       const j = await make();
       const lock = `efs:test:${name}:busy`;
       let release = (): void => {};
+      // Wait until the holder is inside the lock (a slow disk can take longer than any fixed sleep to get there).
+      let entered = (): void => {};
+      const inside = new Promise<void>((r) => (entered = r));
       const holding = j.withLock(
         lock,
         false,
-        () => new Promise<string>((r) => (release = () => r("held"))),
+        () =>
+          new Promise<string>((r) => {
+            release = () => r("held");
+            entered();
+          }),
       );
-      await sleep(20);
+      await inside;
       expect(await j.withLock(lock, false, async () => "second")).toBe("BUSY");
       release();
       expect(await holding).toBe("held");
@@ -97,8 +104,18 @@ export function journalContract(
       const j = await make();
       const lock = `efs:test:${name}:timed`;
       let release = (): void => {};
-      const holding = j.withLock(lock, false, () => new Promise<void>((r) => (release = r)));
-      await sleep(20);
+      let entered = (): void => {};
+      const inside = new Promise<void>((r) => (entered = r));
+      const holding = j.withLock(
+        lock,
+        false,
+        () =>
+          new Promise<void>((r) => {
+            release = r;
+            entered();
+          }),
+      );
+      await inside;
       expect(await j.withLock(lock, 60, async () => "late")).toBe("BUSY");
       const waiting = j.withLock(lock, 5_000, async () => "acquired");
       await sleep(30);

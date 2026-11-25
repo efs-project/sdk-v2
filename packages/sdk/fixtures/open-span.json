@@ -1,25 +1,25 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
+  "contractsCommit": "b645b61c371ad41c01b5ba6a0c0a1f2a6baa333e",
   "case": "open-span",
   "note": "openFile on a 20,000-byte span-tree file (docs/big.bin)",
   "result": {
     "kind": "efs.open",
     "status": "PRESENT",
     "file": {
-      "file": "0x266b7941094cd96560d64d8aabbd700a5bb5f04b72bfa99a0a03a9467f01622e",
-      "revision": "0x26af18f0ea1814f360e16d3d622aa7fd05efa0d9ae0ec3f6cef9e03b0b73c554",
+      "file": "0xe160669d4003ff28eb89269245d4f43af8047579e0acf409c35130523007c12e",
+      "revision": "0x006be8beaf00869e91ecae5953782aafea9effbb6d1dc7a47707909a53970105",
       "author": "0x000000000000000000000000f39fd6e51aad88f6f4ce6ab8827279cfffb92266",
       "size": {
         "$efs:bigint": "20000"
       },
       "sha256": "0xda46970b5680b20b3e17b1e9745f943c0a908418e1aa8733c70fb6239843efc9",
       "layout": "span",
-      "root": "0x00a54c17b3713c89e19198f7abe065188f7098184f4d514438ae155cecd0d92e",
+      "root": "0x26e15fbb27d2a62b1e66b1dc6a2abf8d4b77c7b9610bea404134fd4d80f7bc67",
       "locations": [
         {
           "scheme": "ledger",
-          "descriptor": "0xd41aa651b9584f9815f6160f7718eaa324687ef4fea5734c60bf6ebb6f1d5771"
+          "descriptor": "0x910909459a4a4d29a1e873aefb59745621006650cb853e2550ae6adc60375ad4"
         }
       ]
     },
@@ -28,8 +28,8 @@
       "blockNumber": {
         "$efs:bigint": "62"
       },
-      "blockHash": "0x63b16af1b71e8f4d2c01778f3dbf85ad1e933b381a935ffc97e9848d3256f835",
-      "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
+      "blockHash": "0xb2f86e0cfcaa6177250fa2d13f8f89e4a39941afa687dc5d50eadac2fab578f0",
+      "executionSet": "0x5440a17bac803bdcd97568ccffe1d4f3becb0b28ccafaa63932f651fd2be9d44",
       "endpoint": "local fixture"
     },
     "evidence": {

@@ -180,6 +180,67 @@ const files = {};
   files["constants.ts"] = src;
 }
 
+// ---- Gas model (release.json gasModel, efs-gas-model/1): planning constants per fee schedule. Every row the
+// splitter prices is required, so a renamed or missing row fails codegen instead of pricing an action at zero.
+{
+  const g = json("release/release.json").gasModel;
+  if (g?.schema !== "efs-gas-model/1")
+    throw new Error("codegen: release.json has no efs-gas-model/1 gasModel");
+  const ROWS = [
+    "fixed",
+    "perWord",
+    "perByte",
+    "publishExisting",
+    "reuse",
+    "create",
+    "bindHeadFresh",
+    "bindHeadRebind",
+    "bindFolderFreshFile",
+    "bindFolderFreshDirectory",
+    "bindFolderRebind",
+    "unbindFolder",
+    "releaseFolder",
+    "withdraw",
+    "firstWriteSurcharge",
+  ];
+  const constants = (where, c) => {
+    for (const k of ROWS)
+      if (typeof c?.[k] !== "number" || !Number.isFinite(c[k]))
+        throw new Error(`codegen: gasModel ${where}.${k} must be a number`);
+    const pn = c.publishNew ?? {};
+    if (typeof pn["files-bytes/1"] !== "number")
+      throw new Error(`codegen: gasModel ${where}.publishNew needs files-bytes/1`);
+    for (const [k, v] of Object.entries(pn))
+      if (typeof v !== "number") throw new Error(`codegen: gasModel ${where}.publishNew.${k}`);
+    return Object.fromEntries([...ROWS.map((k) => [k, c[k]]), ["publishNew", pn]]);
+  };
+  const schedules = {};
+  for (const [name, sch] of Object.entries(g.schedules ?? {})) {
+    if (!Array.isArray(sch.hardforks) || !sch.hardforks.length)
+      throw new Error(`codegen: gasModel schedule ${name} names no hardforks`);
+    schedules[name] = {
+      hardforks: sch.hardforks,
+      constants: constants(`${name}.constants`, sch.constants),
+      ...(sch.executionGas
+        ? { executionGas: constants(`${name}.executionGas`, sch.executionGas) }
+        : {}),
+      maxAbsErrorPercent: sch.maxAbsErrorPercent,
+    };
+  }
+  if (!schedules.prague) throw new Error("codegen: gasModel has no prague schedule");
+  const env = g.envelope ?? {};
+  if (typeof env.txGasCap !== "number" || typeof env.headroomPercent !== "number")
+    throw new Error("codegen: gasModel.envelope needs txGasCap and headroomPercent");
+  let src = header(["release/release.json"]);
+  src +=
+    "/**\n * The contracts' fitted gas model, by fee schedule (release.json gasModel). Planning only; eth_estimateGas on\n * the exact call decides before sending. `executionGas` is set where the per-transaction cap counts execution gas\n * only (then `constants`, all gas, must also fit the block). Never apply one schedule's constants to another.\n */\n";
+  src += `export const GAS_SCHEDULES = ${literal(schedules)} as const;\n\n`;
+  src +=
+    "/** The per-transaction gas cap (EIP-7825) and the planning headroom the contracts use. */\n";
+  src += `export const GAS_ENVELOPE = ${literal({ txGasCap: env.txGasCap, headroomPercent: env.headroomPercent })} as const;\n`;
+  files["gas.ts"] = src;
+}
+
 // ---- Protocol inputs provenance (what this SDK build was generated from)
 {
   let src = header([]);

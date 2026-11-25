@@ -22,8 +22,21 @@ export interface ProtocolLimits {
   maxLensPrincipals: number;
 }
 
+/**
+ * Chain facts the deployment document records (efs-deployment.chain): a snapshot from when the instance was
+ * deployed. `feeSchedule` names the gas model the SDK plans with; the per-transaction cap is always enforced.
+ */
+export interface ChainFacts {
+  hardfork: string;
+  feeSchedule: string | null;
+  txGasCap: bigint;
+  blockGasLimit: bigint | null;
+}
+
 export interface DeploymentInfo {
   chainId: number;
+  /** Null for a document without a `chain` block: gas planning then needs an explicit model. */
+  chain: ChainFacts | null;
   realmId: Hex;
   realmOrigin: Hex;
   layoutId: Hex;
@@ -64,7 +77,9 @@ type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj | undefined =>
   v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : undefined;
 
-/** The chunk payload size of canonical chunking (efs2/chunking/1): 8,192-byte bodies minus the 32-byte sha256. */
+/** EIP-7825's per-transaction gas cap, for a `chain` block that does not state one. */
+const TX_GAS_CAP_DEFAULT = 16_777_216n;
+/** The chunk payload size of canonical chunking (efs/chunking/1): 8,192-byte bodies minus the 32-byte sha256. */
 const SPAN_CHUNK_BYTES = 8160;
 /** Bytes a files-root/1 inline body spends before the file bytes (abi.encode(file, form)). */
 const ROOT_HEADER_BYTES = 64;
@@ -105,8 +120,34 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
     ? (d["defaultLensPrincipals"] as unknown[])
     : [];
   const maxBody = num("limits.maxBody", limits["maxBody"]);
+  let chain: ChainFacts | null = null;
+  if (d["chain"] !== undefined) {
+    const c = obj(d["chain"]);
+    const gasNum = (path: string, v: unknown, required: boolean): bigint | null => {
+      if (v === undefined && !required) return null;
+      if (typeof v !== "number" || !Number.isSafeInteger(v) || v <= 0) {
+        problems.push(`${path} must be a positive integer`);
+        return null;
+      }
+      return BigInt(v);
+    };
+    if (!c || typeof c["hardfork"] !== "string" || !c["hardfork"])
+      problems.push("chain.hardfork must be a non-empty string");
+    else {
+      const fee = c["feeSchedule"];
+      if (fee !== undefined && (typeof fee !== "string" || !fee))
+        problems.push("chain.feeSchedule must be a non-empty string");
+      chain = {
+        hardfork: c["hardfork"] as string,
+        feeSchedule: typeof fee === "string" && fee ? fee : null,
+        txGasCap: gasNum("chain.txGasCap", c["txGasCap"], false) ?? TX_GAS_CAP_DEFAULT,
+        blockGasLimit: gasNum("chain.blockGasLimit", c["blockGasLimit"], false),
+      };
+    }
+  }
   const deployment: DeploymentInfo = {
     chainId: num("chainId", d["chainId"]),
+    chain,
     realmId: word("realmId", d["realmId"]),
     realmOrigin: word("realmOrigin", d["realmOrigin"]),
     layoutId: word("layoutId", d["layoutId"]),

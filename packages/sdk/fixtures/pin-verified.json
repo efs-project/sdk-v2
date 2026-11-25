@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "010f6c4e14d8a7c144b8db84d221568c627e5ec3",
+  "contractsCommit": "b645b61c371ad41c01b5ba6a0c0a1f2a6baa333e",
   "case": "pin-verified",
   "note": "efs.pin() against the true deployment document",
   "result": {
@@ -11,14 +11,14 @@
       "blockNumber": {
         "$efs:bigint": "62"
       },
-      "blockHash": "0x63b16af1b71e8f4d2c01778f3dbf85ad1e933b381a935ffc97e9848d3256f835",
-      "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
+      "blockHash": "0xb2f86e0cfcaa6177250fa2d13f8f89e4a39941afa687dc5d50eadac2fab578f0",
+      "executionSet": "0x5440a17bac803bdcd97568ccffe1d4f3becb0b28ccafaa63932f651fd2be9d44",
       "endpoint": "local fixture"
     },
     "live": {
-      "executionSet": "0x29dfa39d2daf11e62e1c9c3b46522e8004c4a4167ff9692f8fa178bce06893ca",
+      "executionSet": "0x5440a17bac803bdcd97568ccffe1d4f3becb0b28ccafaa63932f651fd2be9d44",
       "revision": 1,
-      "layoutId": "0x61a441c149dcbe899e7243167ec95077ad34211feeb9232959903c20a6c6484a",
+      "layoutId": "0x9d4ccbe1ae4334a5bb9aeed2d233ce33a92dbde2df0e4437297fca2e06529deb",
       "capabilities": 0,
       "frozen": false,
       "admissions": {
@@ -30,7 +30,7 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 23
+          "ms": 19
         }
       ],
       "requests": 2

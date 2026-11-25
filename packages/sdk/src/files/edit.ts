@@ -9,18 +9,24 @@
 //      never silently overwrites a revision the person did not see);
 //   2. the editor's own HEAD binding, whose revision the bind carries as expectedRevision: if another save by the
 //      same account lands first, the ledger refuses this one (E_CAS) and it is planned again;
-//   3. the content: inline in the revision when it fits one record body, otherwise canonical chunks (efs2/chunking/1)
+//   3. the content: inline in the revision when it fits one record body, otherwise canonical chunks (efs/chunking/1)
 //      under a files-content/1 descriptor, or a files-external/1 locator. The records are split into publications
 //      under the per-transaction gas cap, the finish (descriptor, revision, HEAD bind) kept in one publication.
 // The result is always a list of parts for writer.runSequence, one part in the common case.
 import { decodeFunctionResult, encodeFunctionData, keccak256, sha256 } from "viem";
 import type { SequencePartInput } from "../actions/sequence.js";
-import { type GasModel, type PlannedAction, splitPublications } from "../actions/split.js";
+import {
+  type GasModel,
+  gasPlanFor,
+  type PlannedAction,
+  splitPublications,
+  txGasCapOf,
+} from "../actions/split.js";
 import type { ActionData, EffectView } from "../actions/types.js";
 import { callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint } from "../chain/pool.js";
 import type { Efs, Lens } from "../client.js";
-import { CARRIER, CHUNK_PAYLOAD, chunkTree, encode } from "../content/codec.js";
+import { CARRIER, CHUNK_PAYLOAD, chunkTree, encode, FORM } from "../content/codec.js";
 import { type CallOpts, EfsFault, type Reason, reason } from "../core/errors.js";
 import {
   bytesToHex,
@@ -59,13 +65,13 @@ export interface EditFileInput {
 
 export interface EditFileOpts extends CallOpts {
   /**
-   * The fitted gas model for this chain's fee schedule. Default: the contracts' fitted prague constants, until the
-   * contracts release carries a gas model of its own.
+   * The gas model to split with. Default: the contracts' fitted model for this deployment's fee schedule
+   * (gasPlanFor: release.json gasModel by efs-deployment.chain.feeSchedule). Without either, planning is UNKNOWN.
    */
   gasModel?: GasModel;
-  /** The per-transaction gas cap (EIP-7825). Default 2^24. */
+  /** The per-transaction gas cap (EIP-7825). Default: the deployment's chain.txGasCap (2^24). */
   txGasCap?: bigint;
-  /** Plan each part to txGasCap / (1 + headroom). Default 0.15. */
+  /** Plan each part to txGasCap × (1 − headroom). Default: the contracts' 15%. */
   headroom?: number;
   /** Refuse (TOO_LARGE) rather than plan more parts than this. Default 64 (about 0.5 MB on chain). */
   maxParts?: number;
@@ -123,28 +129,6 @@ export type EditPlanResult =
   /** The chain could not be read (or answered something this SDK does not accept): nothing was decided. */
   | { kind: "efs.editPlan"; status: "UNKNOWN"; reason: Reason; basis?: Basis };
 
-/** The contracts dev's fitted prague constants (±10%), used until release.json carries `gasModel`. */
-const PRAGUE_FITTED: GasModel = {
-  schedule: "prague",
-  fixed: 390_000,
-  perWord: 22_100,
-  perByte: 21,
-  publishNew: {
-    "files-bytes/1": 260_000,
-    "files-span/1": 260_000,
-    "files-content/1": 260_000,
-    "files-external/1": 260_000,
-    "files-child/1": 260_000,
-  },
-  publishExisting: 300_000,
-  reuse: 100_000,
-  create: 200_000,
-  bind: 310_000,
-  unbind: 450_000,
-  release: 450_000,
-  withdraw: 200_000,
-};
-const TX_GAS_CAP = 16_777_216n;
 /** files-child/1 header: abi.encode(parent, file, form). */
 const CHILD_HEADER_BYTES = 96;
 
@@ -196,7 +180,24 @@ export async function planEditFile(
     throw new EfsFault("MISUSE", "base is a revision of another file");
   const me = lower(writer.principal) as PrincipalId;
   const lens = input.lens ?? efs.lens.default;
-  const model = o.gasModel ?? PRAGUE_FITTED;
+  let gas: { model: GasModel; txGasCap: bigint; headroom: number; blockGasLimit?: bigint };
+  if (o.gasModel)
+    gas = {
+      model: o.gasModel,
+      txGasCap: o.txGasCap ?? txGasCapOf(d),
+      headroom: o.headroom ?? 0.15,
+    };
+  else {
+    const g = gasPlanFor(d);
+    if (!g.ok) return { kind: "efs.editPlan", status: "UNKNOWN", reason: g.reason };
+    gas = {
+      model: g.model,
+      txGasCap: o.txGasCap ?? g.txGasCap,
+      headroom: o.headroom ?? g.headroom,
+      ...(g.blockGasLimit !== undefined ? { blockGasLimit: g.blockGasLimit } : {}),
+    };
+  }
+  const model = gas.model;
   const content = input.content;
   if (!(content instanceof Uint8Array)) {
     if (!printableAscii(content.locator))
@@ -254,7 +255,11 @@ export async function planEditFile(
         digest,
         input.media ?? 0n,
       );
-      descriptor = { body, typeId: types.content as Hex, shape: "files-content/1" };
+      descriptor = {
+        body,
+        typeId: types.content as Hex,
+        shape: `files-content/1 carrier ${tree.isSpan ? CARRIER.span : CARRIER.inlineChunk}`,
+      };
       childBody = encode.childContent(base, file, recordId(types.content as Hex, body));
     }
   } else {
@@ -294,7 +299,7 @@ export async function planEditFile(
   type Seen =
     | { kind: "changed"; head: RevisionRef | null }
     | { kind: "refused"; reason: Reason }
-    | { kind: "ok"; lensAuthor: PrincipalId; myRevision: bigint };
+    | { kind: "ok"; lensAuthor: PrincipalId; myRevision: bigint; myState: string };
   const r = await onEndpoint<Seen>(
     efs._internal.pool,
     async (s) => {
@@ -366,7 +371,10 @@ export async function planEditFile(
             reason: reason("RPC_ERROR", "transient", `the editor's HEAD binding reads ${cs}`),
           },
         };
-      return { ok: true, value: { kind: "ok", lensAuthor: h.author, myRevision: revisionNow } };
+      return {
+        ok: true,
+        value: { kind: "ok", lensAuthor: h.author, myRevision: revisionNow, myState: cs },
+      };
     },
     o,
   );
@@ -381,7 +389,14 @@ export async function planEditFile(
   const finish: PlannedAction[] = [];
   if (descriptor)
     finish.push(publish(descriptor.typeId, descriptor.body, descriptor.shape, FINISH));
-  finish.push(publish(types.child as Hex, childBody, "files-child/1", FINISH));
+  finish.push(
+    publish(
+      types.child as Hex,
+      childBody,
+      `files-child/1 form ${descriptor ? FORM.content : FORM.inline}`,
+      FINISH,
+    ),
+  );
   finish.push({
     action: {
       ...blank,
@@ -394,12 +409,22 @@ export async function planEditFile(
     },
     body: "0x",
     group: FINISH,
+    // a never-bound HEAD is a fresh bind, a bound one a rebind; a masked or released one is priced at the larger
+    ...(seen.myState === "ABSENT_PROVEN"
+      ? { bindRow: "bindHeadFresh" as const }
+      : seen.myState === "PRESENT"
+        ? { bindRow: "bindHeadRebind" as const }
+        : {}),
   });
   const split = splitPublications([...records, ...finish], {
     model,
     limits: d.limits,
-    txGasCap: o.txGasCap ?? TX_GAS_CAP,
-    ...(o.headroom !== undefined ? { headroom: o.headroom } : {}),
+    txGasCap: gas.txGasCap,
+    headroom: gas.headroom,
+    ...(gas.blockGasLimit !== undefined ? { blockGasLimit: gas.blockGasLimit } : {}),
+    // Priced as if this were the principal's first publication ever (the surcharge is ~0.1% of the cap): planning
+    // does not read the nonce, and an under-estimate is the one error a split must not make.
+    firstWrite: true,
   });
   if (!split.ok) return { kind: "efs.editPlan", status: "TOO_LARGE", reason: split.reason };
   if (split.parts.length > maxParts)

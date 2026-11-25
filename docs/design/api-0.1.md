@@ -104,7 +104,7 @@ export interface ProtocolLimits {
   maxInlineBytes: number;            // largest inline file body (maxBody minus the header)
   maxActionsPerPublication: number;  // 64
   maxBodyBytesPerPublication: number;// 16 384 on the fixture
-  spanChunkBytes: number;            // 8 160 (efs2/chunking/1)
+  spanChunkBytes: number;            // 8 160 (efs/chunking/1)
   maxLensPrincipals: number;         // 64
 }
 export interface Capabilities { tags: boolean; properties: boolean; lists: boolean; homes: boolean; web3Gateway: boolean }
@@ -617,16 +617,24 @@ export interface ReconcileResult {
 
 ### Splitting a save into publications (0.1, model-independent part)
 
-`splitPublications(actions, { model, limits, txGasCap, headroom? })` in `@efs/sdk/actions` packs an ordered list of
-`PlannedAction`s (`{ action, body, shape?, exists?, group? }`) into publications that each fit one transaction.
+`splitPublications(actions, { model, limits, txGasCap, headroom?, blockGasLimit?, firstWrite? })` in
+`@efs/sdk/actions` packs an ordered list of `PlannedAction`s (`{ action, body, shape?, exists?, bindRow?, group? }`)
+into publications that each fit one transaction.
 - **Batch limits** come from the kernel's own checks (`LedgerCore._bounds`): actions ≤ `maxActionsPerPublication`;
   BIND, UNBIND and RELEASE ≤ `maxBindsPerPublication`; summed body bytes ≤ `maxBodyBytesPerPublication`; each
   body ≤ `maxBodyBytes`.
-- **Gas** comes from the contracts' fitted model (release.json `gasModel`; until the next snapshot lands, the
-  caller passes the constants): `fixed + Σ actions`, a new PUBLISH being
-  `publishNew[shape] + perWord × ceil(bytes/32) + perByte × bytes`. The SDK adds the 21,000 intrinsic gas and the
-  calldata (every byte priced as non-zero), which the model excludes. Plans aim at `txGasCap / (1 + headroom)`,
-  15% by default.
+- **Gas** comes from the contracts' fitted model (release.json `gasModel`, generated as `GAS_SCHEDULES`):
+  `fixed + Σ actions`, a new PUBLISH being `publishNew[shape] + perWord × ceil(bytes/32) + perByte × bytes`, with
+  shapes keyed as the release keys them (`files-child/1 form 0`, `files-content/1 carrier 2`, …). A BIND is priced
+  at its `bindRow` (`bindHeadFresh`, `bindHeadRebind`, `bindFolderFreshFile`, …), or the largest row when unknown;
+  `firstWrite` adds `firstWriteSurcharge` to the first part. The SDK adds the 21,000 intrinsic gas and the calldata
+  (every byte priced as non-zero), which the model excludes. Plans aim at `txGasCap × (1 − headroom)`, the
+  contracts' budget rule with their 15%.
+- **Which model:** `gasPlanFor(deployment)` takes the schedule `efs-deployment.chain.feeSchedule` names, else the one
+  whose hardforks include `chain.hardfork`, with `chain.txGasCap` (always enforced; 2^24 when not stated). It
+  refuses (`UNSUPPORTED_PROFILE`) rather than guess when the document has no `chain` block or names a schedule this
+  SDK was not generated with. Where the cap counts execution gas only (amsterdam), `model` is the execution-gas fit
+  and `model.total` the whole, which must also fit `blockGasLimit`.
 - **Order and grouping:** order is kept, so a record is never published after something that references it.
   Consecutive actions sharing a `group` are never split, so a file's finish appears atomically.
 - **Refusals** name the index: a body over the record limit is `LIMIT_EXCEEDED`, and a group too big for any
@@ -686,7 +694,7 @@ type EditPlanResult =
 ```
 - **What is published:** a `files-child/1` revision whose parent is `base`, and `BIND(HEAD, file, 0 → revision)`.
   `content` is bytes or `{ kind: "external", length, sha256, locator }`. Bytes that fit one record body
-  (`maxBodyBytes − 96`) go inline in the revision; larger bytes are chunked canonically (`efs2/chunking/1`) under a
+  (`maxBodyBytes − 96`) go inline in the revision; larger bytes are chunked canonically (`efs/chunking/1`) under a
   `files-content/1` descriptor (layout `chunk` for one chunk, `span` for a tree). External content is a
   `files-external/1` locator over the empty sentinel chunk.
 - **Never a silent overwrite:** first the base check (the file's HEAD under the Lens must still be `base`), then a
@@ -696,8 +704,8 @@ type EditPlanResult =
   (`review.guard: "lens"`), only the planning-time base check covers it.
 - **Splitting:** chunks and spans go through `splitPublications` under the per-transaction gas cap. The finish
   (descriptor, revision and HEAD bind) stays in one publication, so the edit appears atomically when the last part
-  commits. Until the contracts release carries `gasModel`, the default is the contracts' fitted prague constants
-  (`opts.gasModel` overrides). `opts.maxParts` (default 64) bounds the save.
+  commits. The model is `gasPlanFor(efs.deployment)` (`opts.gasModel` overrides; without either, planning is
+  UNKNOWN). `opts.maxParts` (default 64) bounds the save.
 - **`review`:** `file`, `base`, the new `revision` id, `author` (the writer's principal), `size`, `sha256`,
   `layout` (`inline` | `chunk` | `span` | `external`), `parts`, `prompts { sequential, atomicBatch: 1 }`,
   `gas { perPart, schedule }`, `records`, `expectedRevision`, `guard` and `visibleInLens`. `visibleInLens` is false

@@ -6,33 +6,64 @@
 // (a file's finish — revision, name, CREATE, HEAD and FOLDER binds — appears atomically or not at all).
 //
 // The estimate is the model's (fixed + Σ actions) plus what the model excludes: the 21,000 intrinsic gas and the
-// calldata of the encoded call, priced as if every byte were non-zero. Plans aim at the cap divided by
-// (1 + headroom), 15% by default (the model under-predicts mixed publications by up to ~6–8%). eth_estimateGas on
-// the exact call stays the authority before anything is sent (sendPlan refuses an estimate over the cap).
+// calldata of the encoded call, priced as if every byte were non-zero. Plans aim at txGasCap × (1 − headroom), the
+// contracts' budget rule with their 15% default (the fit's stated error is ~6–8%). eth_estimateGas on the exact call
+// stays the authority before anything is sent (sendPlan refuses an estimate over the cap).
 import { type Reason, reason } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
+import type { DeploymentInfo } from "../deployment/manifest.js";
 import { ACTION } from "../generated/constants.js";
+import { GAS_ENVELOPE, GAS_SCHEDULES } from "../generated/gas.js";
 import type { ActionData } from "./types.js";
 
-/** The contracts' fitted gas model for one fee schedule (release.json gasModel.schedules[name].constants). */
-export interface GasModel {
-  /** Fee schedule name, e.g. "prague". A model is never applied to a chain priced by another schedule. */
-  schedule: string;
+/** One fee schedule's fitted constants (release.json gasModel.schedules[name]; generated as GAS_SCHEDULES). */
+export interface GasConstants {
   fixed: number;
   perWord: number;
   perByte: number;
-  /** PUBLISH of a new record, by shape ("files-bytes/1", "files-root/1 form 0", …), before the per-word/byte terms. */
+  /**
+   * PUBLISH of a new record, by shape ("files-bytes/1", "files-child/1 form 0", "files-content/1 carrier 2", …),
+   * before the per-word and per-byte terms. An unknown shape is priced at the most expensive one.
+   */
   publishNew: Readonly<Record<string, number>>;
   /** PUBLISH of a record that already exists (no body storage). */
   publishExisting: number;
   reuse: number;
   create: number;
-  /** The most expensive BIND row (fresh or rebind, HEAD or FOLDER): the planner does not know which one applies. */
-  bind: number;
-  unbind: number;
-  release: number;
+  bindHeadFresh: number;
+  bindHeadRebind: number;
+  bindFolderFreshFile: number;
+  bindFolderFreshDirectory: number;
+  bindFolderRebind: number;
+  unbindFolder: number;
+  releaseFolder: number;
   withdraw: number;
+  /** Added once to a principal's first publication ever. */
+  firstWriteSurcharge: number;
 }
+
+/** The model the planner splits with: what the per-transaction cap counts, for one fee schedule. */
+export interface GasModel extends GasConstants {
+  /** Fee schedule name, e.g. "prague". A model is never applied to a chain priced by another schedule. */
+  schedule: string;
+  /** Set when the cap counts only execution gas (amsterdam): all gas, which must also fit the block. */
+  total?: GasConstants;
+}
+
+/** The gas-model row a BIND is priced at. Without one, the most expensive BIND row. */
+export type BindRow =
+  | "bindHeadFresh"
+  | "bindHeadRebind"
+  | "bindFolderFreshFile"
+  | "bindFolderFreshDirectory"
+  | "bindFolderRebind";
+const BIND_ROWS: readonly BindRow[] = [
+  "bindHeadFresh",
+  "bindHeadRebind",
+  "bindFolderFreshFile",
+  "bindFolderFreshDirectory",
+  "bindFolderRebind",
+];
 
 export interface PlannedAction {
   action: ActionData;
@@ -42,6 +73,8 @@ export interface PlannedAction {
   shape?: string;
   /** True when the record is known to exist already (priced as publishExisting). */
   exists?: boolean;
+  /** For a BIND: the row it is priced at, when the planner knows (a fresh HEAD, a rebind, …). */
+  bindRow?: BindRow;
   /** Consecutive actions with the same group id are kept in one publication. */
   group?: number;
 }
@@ -59,8 +92,12 @@ export interface SplitOptions {
   limits: BatchLimits;
   /** The per-transaction gas cap (EIP-7825; 2^24 unless the chain says otherwise). */
   txGasCap: bigint;
-  /** Plan to txGasCap / (1 + headroom). Default 0.15. */
+  /** Plan to txGasCap × (1 − headroom), the contracts' budget rule. Default 0.15. */
   headroom?: number;
+  /** With `model.total`: every publication's whole gas must also fit this block gas limit (with the headroom). */
+  blockGasLimit?: bigint;
+  /** The principal has never published: the first part pays the model's firstWriteSurcharge. */
+  firstWrite?: boolean;
 }
 
 export interface SplitPart {
@@ -86,7 +123,7 @@ const isBindLike = (k: number): boolean =>
   k === ACTION.BIND || k === ACTION.UNBIND || k === ACTION.RELEASE;
 
 /** The model's gas for one action (without the per-publication terms). */
-export function actionGas(a: PlannedAction, m: GasModel): number {
+export function actionGas(a: PlannedAction, m: GasConstants): number {
   const k = a.action.kind;
   if (k === ACTION.PUBLISH) {
     if (a.exists) return m.publishExisting;
@@ -98,21 +135,31 @@ export function actionGas(a: PlannedAction, m: GasModel): number {
   }
   if (k === ACTION.REUSE) return m.reuse;
   if (k === ACTION.CREATE) return m.create;
-  if (k === ACTION.BIND) return m.bind;
-  if (k === ACTION.UNBIND) return m.unbind;
-  if (k === ACTION.RELEASE) return m.release;
+  if (k === ACTION.BIND)
+    return a.bindRow !== undefined ? m[a.bindRow] : Math.max(...BIND_ROWS.map((r) => m[r]));
+  if (k === ACTION.UNBIND) return m.unbindFolder;
+  if (k === ACTION.RELEASE) return m.releaseFolder;
   if (k === ACTION.WITHDRAW) return m.withdraw;
-  return Math.max(m.bind, m.create, m.unbind); // an unknown kind: priced high, never zero
+  // an unknown kind: priced high, never zero
+  return Math.max(m.create, m.unbindFolder, ...BIND_ROWS.map((r) => m[r]));
 }
 
-/** The planning estimate of one publication: model + intrinsic + calldata (all bytes priced as non-zero). */
-export function publicationGas(actions: readonly PlannedAction[], m: GasModel): number {
+/**
+ * The planning estimate of one publication: model + intrinsic + calldata (all bytes priced as non-zero), plus the
+ * first-write surcharge when `firstWrite`.
+ */
+export function publicationGas(
+  actions: readonly PlannedAction[],
+  m: GasConstants,
+  firstWrite = false,
+): number {
   let gas = m.fixed + INTRINSIC + CALL_OVERHEAD_BYTES * NONZERO_BYTE;
+  if (firstWrite) gas += Math.max(0, m.firstWriteSurcharge);
   for (const a of actions) {
     const n = bodyLen(a.body);
     gas += actionGas(a, m) + (ACTION_BYTES + Math.ceil(n / 32) * 32) * NONZERO_BYTE;
   }
-  return gas;
+  return Math.ceil(gas);
 }
 
 interface Tally {
@@ -141,7 +188,12 @@ function units(actions: readonly PlannedAction[]): { start: number; list: Planne
 /** Greedy, order-keeping split: each publication takes as many whole units as fit. */
 export function splitPublications(actions: readonly PlannedAction[], o: SplitOptions): SplitResult {
   const { model: m, limits: L } = o;
-  const budget = Math.floor(Number(o.txGasCap) / (1 + (o.headroom ?? 0.15)));
+  const keep = 1 - (o.headroom ?? 0.15);
+  const budget = Math.floor(Number(o.txGasCap) * keep);
+  const blockBudget =
+    m.total && o.blockGasLimit !== undefined
+      ? Math.floor(Number(o.blockGasLimit) * keep)
+      : undefined;
   for (let i = 0; i < actions.length; i++) {
     const n = bodyLen((actions[i] as PlannedAction).body);
     if (n > L.maxBodyBytes)
@@ -155,7 +207,7 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
         ),
       };
   }
-  const fits = (list: readonly PlannedAction[]): true | Reason => {
+  const fits = (list: readonly PlannedAction[], first: boolean): true | Reason => {
     const t = tally(list);
     if (t.actions > L.maxActionsPerPublication)
       return reason(
@@ -175,26 +227,100 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
         "after-replan",
         `${t.bodyBytes} body bytes; the limit is ${L.maxBodyBytesPerPublication}`,
       );
-    const gas = publicationGas(list, m);
+    const gas = publicationGas(list, m, first && o.firstWrite === true);
     if (gas > budget)
       return reason(
         "OVER_TX_GAS_CAP",
         "after-replan",
         `~${gas} gas; the budget is ${budget} (cap ${o.txGasCap})`,
       );
+    if (m.total && blockBudget !== undefined) {
+      const all = publicationGas(list, m.total, first && o.firstWrite === true);
+      if (all > blockBudget)
+        return reason(
+          "OVER_TX_GAS_CAP",
+          "after-replan",
+          `~${all} gas in all; the block budget is ${blockBudget} (block gas limit ${o.blockGasLimit})`,
+        );
+    }
     return true;
   };
   const parts: SplitPart[] = [];
   let current: PlannedAction[] = [];
+  const gasOf = (list: readonly PlannedAction[], first: boolean): number =>
+    publicationGas(list, m, first && o.firstWrite === true);
   for (const u of units(actions)) {
-    const alone = fits(u.list);
+    const alone = fits(u.list, parts.length === 0 && current.length === 0);
     if (alone !== true) return { ok: false, reason: alone, at: u.start };
-    if (current.length && fits([...current, ...u.list]) !== true) {
-      parts.push({ actions: current, gas: publicationGas(current, m) });
+    if (current.length && fits([...current, ...u.list], parts.length === 0) !== true) {
+      parts.push({ actions: current, gas: gasOf(current, parts.length === 0) });
       current = [];
     }
     current.push(...u.list);
   }
-  if (current.length) parts.push({ actions: current, gas: publicationGas(current, m) });
+  if (current.length) parts.push({ actions: current, gas: gasOf(current, parts.length === 0) });
   return { ok: true, parts, budget };
+}
+
+/** EIP-7825's per-transaction gas cap (2^24): the default when the deployment document states none. */
+export const TX_GAS_CAP: bigint = BigInt(GAS_ENVELOPE.txGasCap);
+/** The cap of this deployment's chain (efs-deployment.chain.txGasCap). Always enforced. */
+export const txGasCapOf = (d: DeploymentInfo): bigint => d.chain?.txGasCap ?? TX_GAS_CAP;
+
+export type GasPlan =
+  | {
+      ok: true;
+      model: GasModel;
+      txGasCap: bigint;
+      /** The contracts' planning headroom (GAS_ENVELOPE.headroomPercent / 100). */
+      headroom: number;
+      blockGasLimit?: bigint;
+    }
+  | { ok: false; reason: Reason };
+
+/**
+ * The gas model and cap to split with on this deployment's chain: the schedule `chain.feeSchedule` names, else the
+ * one whose hardforks include `chain.hardfork`. Refused, never guessed, when the document has no `chain` block or
+ * names a schedule this SDK was not generated with (pass an explicit model instead).
+ */
+export function gasPlanFor(d: DeploymentInfo): GasPlan {
+  const chain = d.chain;
+  if (!chain)
+    return {
+      ok: false,
+      reason: reason(
+        "UNSUPPORTED_PROFILE",
+        "never",
+        "the deployment document has no `chain` block naming its fee schedule: pass a gas model",
+      ),
+    };
+  type Schedule = {
+    hardforks: readonly string[];
+    constants: Omit<GasConstants, never>;
+    executionGas?: Omit<GasConstants, never>;
+  };
+  const all = GAS_SCHEDULES as unknown as Readonly<Record<string, Schedule>>;
+  const name =
+    chain.feeSchedule ??
+    Object.keys(all).find((k) => (all[k] as Schedule).hardforks.includes(chain.hardfork));
+  const sch = name !== undefined ? all[name] : undefined;
+  if (!name || !sch)
+    return {
+      ok: false,
+      reason: reason(
+        "UNSUPPORTED_PROFILE",
+        "never",
+        `no gas model for ${chain.feeSchedule ? `fee schedule ${chain.feeSchedule}` : `hardfork ${chain.hardfork}`} in this SDK (it has ${Object.keys(all).join(", ")})`,
+      ),
+    };
+  const model: GasModel = sch.executionGas
+    ? { ...sch.executionGas, schedule: name, total: sch.constants }
+    : { ...sch.constants, schedule: name };
+  return {
+    ok: true,
+    model,
+    txGasCap: chain.txGasCap,
+    headroom: GAS_ENVELOPE.headroomPercent / 100,
+    ...(chain.blockGasLimit !== null ? { blockGasLimit: chain.blockGasLimit } : {}),
+  };
 }

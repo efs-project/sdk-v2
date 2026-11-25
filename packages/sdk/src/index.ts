@@ -17,7 +17,12 @@ export type { AbortSignalLike, CallOpts, FaultCode, Reason, ReasonCode } from ".
 export { EfsFault } from "./core/errors.js";
 export type { Address, Hex, PrincipalId, RecordId, SubjectId, TypeId } from "./core/hex.js";
 export { fromJson, toJson } from "./core/json.js";
-export type { DeploymentInfo, ManifestCheck, ProtocolLimits } from "./deployment/manifest.js";
+export type {
+  ChainFacts,
+  DeploymentInfo,
+  ManifestCheck,
+  ProtocolLimits,
+} from "./deployment/manifest.js";
 export { validateDeploymentManifest } from "./deployment/manifest.js";
 export type { Evidence, LiveDeployment, PinMismatch, PinResult } from "./deployment/pin.js";
 export { PROTOCOL_INPUTS } from "./generated/inputs.js";
