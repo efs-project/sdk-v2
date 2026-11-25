@@ -1,20 +1,32 @@
 // SPDX-License-Identifier: MIT
 // Shareable links to EFS objects, as one fragment-safe string an app puts in its route after the realm, as in
-// `#/r/<realm>/<link>`. Two kinds exist today:
+// `#/r/<realm>/<link>` (tag model spec §5):
 //
-//   ~efs/o/<subject>[?lens=<p>,<p>…]   an object link: a subject id (stable across renames). It opens the current
+//   ~efs/o/<id>[?lens=<p>,<p>…]        an object link: a subject id (stable across renames). It opens the current
 //                                      head under a Lens: the route's default, or the ordered principals given
 //   ~efs/v/<record>                    a revision link: one immutable revision record (exact bytes; no Lens)
+//   0x<40 hex>[/<name>/…]              a home (an address), then folder and file names, which keep their case
+//                                      (files-name/2): a lookup, which a rename or a move can break
+//   <word>[/<word>/…]                  a topic, a path of words; one word alone is that word's page. Words are
+//                                      folded before lookup: the fold is the caller's (`ParseLinkOpts.fold`), so
+//                                      the grammar works before the fold rule is chosen
+//
+// Every first segment starting with `~` is reserved for the system; only `~efs` is defined. A leading "/" and one
+// trailing "/" are ignored; an empty segment is refused. Segments are split first and decoded once each
+// (percent-decoding before folding), so an escaped `%2F` is never a separator. Topic and home segments are written
+// in the canonical wire form (RFC 3986 percent-encoding, uppercase %HH).
 //
 // A Lens principal is written as its 20-byte address when it is a key principal (an account), else as its 32-byte
 // principal id. Names (such as ENS) in a Lens are not supported in 0.1.
 //
-// Ids are 0x + 64 lowercase hex. The first segment is `~efs`, a prefix the name profile reserves, so no path can
-// ever look like these links: path links (after the tags-vs-directories ruling) can use any other first segment.
-// The strings contain only [0-9a-z~/x?=,], so they need no escaping in a URL path, query or fragment.
+// Ids are 0x + 64 lowercase hex. `~efs` is a prefix the name profile reserves, so no name can look like an object
+// link, and the word rules refuse a leading `~` and the address shape, so no topic can look like one either.
 import type { Lens } from "../client.js";
 import { misuse } from "../core/errors.js";
 import type { Address, PrincipalId, RecordId, SubjectId } from "../core/hex.js";
+import { utf8Encode } from "../core/platform.js";
+import { checkName, decodeScalars, type NameRule } from "./name.js";
+import { parseSegment, wireSegment } from "./segment.js";
 
 /** An object by subject id. Files open from it today; folders will reuse the same form. */
 export interface ObjectLink {
@@ -29,18 +41,51 @@ export interface RevisionLink {
   recordId: RecordId;
 }
 /** What `link` accepts: an object or revision link, or a FileRef / RevisionRef from `@efs/sdk/files`. */
+/**
+ * A topic: a path of words. `segments` are the decoded segments as typed. `words` are the folded words (the topic's
+ * identity), present when the link was parsed with a fold or built from folded words.
+ */
+export interface TopicLink {
+  kind: "topic";
+  segments: readonly string[];
+  words?: readonly string[];
+  /** The sharer's Lens (`?lens=`), when it differs from the route's default. */
+  lens?: Lens;
+}
+/** A home (an address, lowercase), then folder and file names below it, which keep their case. */
+export interface HomeLink {
+  kind: "home";
+  address: Address;
+  names: readonly string[];
+  /** The sharer's Lens (`?lens=`), when it differs from the route's default. */
+  lens?: Lens;
+}
+/** One fold step, supplied by the caller until the fold rule is chosen: a word, or the rule the segment breaks. */
+export type FoldStep = (
+  segment: string,
+) => { ok: true; word: string } | { ok: false; rule: string };
+export interface ParseLinkOpts {
+  /** Fold each topic segment to its word. Without it, a topic parses with `segments` only and no `words`. */
+  fold?: FoldStep;
+}
+
+/** What `link` accepts: an object, revision, topic or home link, or a FileRef / RevisionRef from `@efs/sdk/files`. */
 export type LinkTarget =
   | ObjectLink
   | RevisionLink
+  | TopicLink
+  | HomeLink
   | { kind: "file"; subject: SubjectId }
   | { kind: "revision"; recordId: RecordId; file?: SubjectId };
 
 export type LinkParse =
-  /** `canonical` is the link in canonical form; routers can redirect to it when it differs from the input. */
-  | { status: "OK"; target: ObjectLink | RevisionLink; canonical: string }
-  | { status: "INVALID"; rule: LinkRule }
-  /** A path link. Path links wait for the folder model; nothing is guessed. */
-  | { status: "UNSUPPORTED"; kind: "path" };
+  /**
+   * `canonical` is the link in canonical form; routers can redirect to it when it differs from the input. A topic
+   * parsed without a fold has no `words`, and its `canonical` keeps the typed form: redirect only once it is folded.
+   */
+  | { status: "OK"; target: ObjectLink | RevisionLink | TopicLink | HomeLink; canonical: string }
+  /** `segment` (0-based) is the segment that breaks `rule`; `detail` is the name rule or the fold's rule. */
+  | { status: "INVALID"; rule: LinkRule; segment?: number; detail?: string };
 
 export type LinkRule =
   | "empty"
@@ -51,7 +96,13 @@ export type LinkRule =
   | "bad-id"
   | "unsupported-parameter"
   | "bad-lens"
-  | "lens-name-unsupported";
+  | "lens-name-unsupported"
+  /** An empty segment (`a//b`); one trailing "/" is ignored. */
+  | "empty-segment"
+  /** A home's folder or file name breaks files-name/2 (`detail` is the name rule). */
+  | "bad-name"
+  /** A topic segment breaks a word rule, or the caller's fold refused it (`detail` says which). */
+  | "bad-word";
 
 export const LINK_PREFIX = "~efs";
 const ID = /^0x[0-9a-fA-F]{64}$/;
@@ -67,20 +118,56 @@ const lensEntry = (p: PrincipalId): string => {
 
 /** The link string for an object or revision. Throws MISUSE for an id that is not 32-byte hex, or a bad Lens. */
 export function link(target: LinkTarget): string {
+  if (target.kind === "topic") {
+    if (!target.words || target.words.length === 0)
+      throw misuse("link: a topic link is built from its folded words");
+    const path = target.words
+      .map((w, i) => {
+        const r = wordRule(w, false);
+        if (r) throw misuse(`link: topic word ${i} breaks a word rule (${r})`, { segment: i });
+        return wireSegment(utf8Encode(w));
+      })
+      .join("/");
+    return path + lensQuery(target.lens);
+  }
+  if (target.kind === "home") {
+    if (!ADDRESS.test(target.address)) throw misuse("link: a home is a 20-byte address");
+    const names = target.names.map((n, i) => {
+      const c = checkName(n);
+      if (c.status !== "VALID")
+        throw misuse(`link: home name ${i} is not a files-name/2 name`, { segment: i });
+      return wireSegment(c.bytes);
+    });
+    return [target.address.toLowerCase(), ...names].join("/") + lensQuery(target.lens);
+  }
   const id = target.kind === "revision" ? target.recordId : target.subject;
   if (typeof id !== "string" || !ID.test(id))
     throw misuse("link: the id must be 0x followed by 64 hex digits", { kind: target.kind });
   if (target.kind === "revision") return `${LINK_PREFIX}/v/${id.toLowerCase()}`;
   const base = `${LINK_PREFIX}/o/${id.toLowerCase()}`;
-  const lens = target.kind === "object" ? target.lens : undefined;
-  if (!lens) return base;
+  return base + lensQuery(target.kind === "object" ? target.lens : undefined);
+}
+
+/** `?lens=<p>,<p>…` for a Lens, or "" for none: 1 to 64 principals, each once. */
+function lensQuery(lens: Lens | undefined): string {
+  if (!lens) return "";
   const ps = lens.principals;
   if (ps.length === 0 || ps.length > MAX_LINK_LENS || ps.some((p) => !ID.test(p)))
     throw misuse(`link: a Lens holds 1 to ${MAX_LINK_LENS} principal ids (0x + 64 hex)`);
   const entries = ps.map(lensEntry);
   if (new Set(entries).size !== entries.length)
     throw misuse("link: a Lens names each principal once");
-  return `${base}?lens=${entries.join(",")}`;
+  return `?lens=${entries.join(",")}`;
+}
+
+/** The query of a link: nothing, or exactly one `lens=` parameter (the only one defined). */
+function queryLens(query: string | undefined): Lens | undefined | LinkRule {
+  if (query === undefined) return undefined;
+  const m = /^lens=([^&]*)$/.exec(query);
+  if (!m) return "unsupported-parameter";
+  const value = decodeOnce(m[1] as string);
+  if (value === null) return "bad-escape";
+  return parseLens(value);
 }
 
 /** Parse a `lens=` value into principal ids, or the rule it breaks. */
@@ -113,17 +200,23 @@ function decodeOnce(s: string): string | null {
  * Parse a link string from a route. A leading "/" is ignored. Splitting happens before decoding (one decode per
  * segment, as for paths), so an escaped `%2F` is never a separator.
  */
-export function parseLink(input: string): LinkParse {
+export function parseLink(input: string, o: ParseLinkOpts = {}): LinkParse {
   const raw = input.startsWith("/") ? input.slice(1) : input;
   if (raw === "") return { status: "INVALID", rule: "empty" };
   if (raw.includes("#")) return { status: "INVALID", rule: "fragment" };
   const q = raw.indexOf("?");
   const path = q < 0 ? raw : raw.slice(0, q);
-  const segments = path.split("/").map(decodeOnce);
+  const wire = path.split("/");
+  if (wire.length > 1 && wire[wire.length - 1] === "") wire.pop(); // one trailing "/" is ignored
+  if (wire.some((x) => x === "")) return { status: "INVALID", rule: "empty-segment" };
+  // Route on the decoded first segment, so `%7Eefs` is the system's too.
+  const head = parseSegment(wire[0] as string);
+  const headText = head.ok ? (decodeScalars(head.bytes)?.text ?? "") : "";
+  if (!headText.startsWith("~")) return parsePlace(wire, q >= 0 ? raw.slice(q + 1) : undefined, o);
+  const segments = wire.map(decodeOnce);
   if (segments.some((x) => x === null)) return { status: "INVALID", rule: "bad-escape" };
   const [first = "", kind, id, ...rest] = segments as string[];
-  if (!first.startsWith(LINK_PREFIX)) return { status: "UNSUPPORTED", kind: "path" };
-  if (first !== LINK_PREFIX) return { status: "INVALID", rule: "reserved-name" };
+  if (first !== LINK_PREFIX) return { status: "INVALID", rule: "reserved-name" }; // every `~` segment is the system's
   if (kind !== "o" && kind !== "v") return { status: "INVALID", rule: "unknown-link-kind" };
   if (id === undefined || !ID.test(id) || rest.length > 0)
     return { status: "INVALID", rule: "bad-id" };
@@ -133,16 +226,88 @@ export function parseLink(input: string): LinkParse {
     return { status: "OK", target, canonical: link(target) };
   }
   const target: ObjectLink = { kind: "object", subject: id.toLowerCase() as SubjectId };
-  if (q >= 0) {
-    const m = /^lens=([^&]*)$/.exec(raw.slice(q + 1));
-    if (!m) return { status: "INVALID", rule: "unsupported-parameter" };
-    const value = decodeOnce(m[1] as string);
-    if (value === null) return { status: "INVALID", rule: "bad-escape" };
-    const lens = parseLens(value);
-    if (typeof lens === "string") return { status: "INVALID", rule: lens };
-    target.lens = lens;
-  }
+  const lens = queryLens(q >= 0 ? raw.slice(q + 1) : undefined);
+  if (typeof lens === "string") return { status: "INVALID", rule: lens };
+  if (lens) target.lens = lens;
   return { status: "OK", target, canonical: link(target) };
+}
+
+const ADDRESS_SHAPE = /^0x[0-9a-f]{40}$/i;
+const hasControl = (w: string): boolean =>
+  [...w].some((ch) => {
+    const c = ch.codePointAt(0) as number;
+    return c < 0x20 || c === 0x7f;
+  });
+
+/**
+ * The fold-independent word rules (the chain's, on every word of a topic path): 1–255 bytes, no `/`, no ASCII
+ * control, not `.` or `..`, not starting with `~`, not address-shaped. `typed` also allows what a fold will remove.
+ */
+function wordRule(w: string, typed: boolean): string | null {
+  const n = utf8Encode(w).length;
+  if (n === 0 || n > 255) return "length";
+  if (w.includes("/")) return "slash";
+  if (hasControl(w)) return "control";
+  if (w === "." || w === "..") return "dot";
+  if (w.startsWith("~")) return "reserved-tilde";
+  if (ADDRESS_SHAPE.test(w)) return "address-shaped";
+  if (!typed && /[ A-Z]/.test(w)) return "unfolded";
+  return null;
+}
+
+/** A home path (first segment an address) or a topic path (anything else not starting with `~`). */
+function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts): LinkParse {
+  const lens = queryLens(query); // the same single `lens=` parameter as object links
+  if (typeof lens === "string") return { status: "INVALID", rule: lens };
+  const decoded: string[] = [];
+  for (const [i, w] of wire.entries()) {
+    const p = parseSegment(w);
+    if (!p.ok) return { status: "INVALID", rule: "bad-escape", segment: i };
+    decoded.push(decodeScalars(p.bytes)?.text ?? "");
+  }
+  const first = decoded[0] as string;
+  if (ADDRESS.test(first)) {
+    const names: string[] = [];
+    for (const [j, n] of decoded.slice(1).entries()) {
+      const c = checkName(n);
+      if (c.status !== "VALID")
+        return {
+          status: "INVALID",
+          rule: "bad-name",
+          segment: j + 1,
+          detail: c.status === "INVALID" ? (c.rule as NameRule) : c.status,
+        };
+      names.push(c.text);
+    }
+    const target: HomeLink = {
+      kind: "home",
+      address: first.toLowerCase() as Address,
+      names,
+      ...(lens ? { lens } : {}),
+    };
+    return { status: "OK", target, canonical: link(target) };
+  }
+  const words: string[] = [];
+  for (const [i, seg] of decoded.entries()) {
+    const typed = wordRule(seg, true);
+    if (typed) return { status: "INVALID", rule: "bad-word", segment: i, detail: typed };
+    if (!o.fold) continue;
+    const f = o.fold(seg);
+    if (!f.ok) return { status: "INVALID", rule: "bad-word", segment: i, detail: f.rule };
+    const after = wordRule(f.word, false); // what the fold produced is checked again
+    if (after) return { status: "INVALID", rule: "bad-word", segment: i, detail: after };
+    words.push(f.word);
+  }
+  const target: TopicLink = {
+    kind: "topic",
+    segments: decoded,
+    ...(o.fold ? { words } : {}),
+    ...(lens ? { lens } : {}),
+  };
+  const canonical = o.fold
+    ? link(target)
+    : decoded.map((x) => wireSegment(utf8Encode(x))).join("/") + lensQuery(lens);
+  return { status: "OK", target, canonical };
 }
 
 // ---- the realm part of a route (naming review §6)

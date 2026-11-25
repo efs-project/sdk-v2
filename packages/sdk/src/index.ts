@@ -36,14 +36,18 @@ export { validateDeploymentManifest } from "./deployment/manifest.js";
 export type { Evidence, LiveDeployment, PinMismatch, PinResult } from "./deployment/pin.js";
 export { PROTOCOL_INPUTS } from "./generated/inputs.js";
 export type {
+  FoldStep,
+  HomeLink,
   LinkParse,
   LinkRule,
   LinkTarget,
   ObjectLink,
+  ParseLinkOpts,
   RealmRef,
   RealmRule,
   RealmSplit,
   RevisionLink,
+  TopicLink,
 } from "./names/links.js";
 export {
   formatRealm,

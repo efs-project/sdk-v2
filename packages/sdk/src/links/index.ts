@@ -6,14 +6,18 @@
  */
 
 export type {
+  FoldStep,
+  HomeLink,
   LinkParse,
   LinkRule,
   LinkTarget,
   ObjectLink,
+  ParseLinkOpts,
   RealmRef,
   RealmRule,
   RealmSplit,
   RevisionLink,
+  TopicLink,
 } from "../names/links.js";
 export {
   formatRealm,

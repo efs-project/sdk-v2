@@ -245,15 +245,27 @@ string that an app places in its route, for example after `#/files/`:
 |---|---|---|---|
 | object | `~efs/o/0x<64 hex subject id>[?lens=<p>,<p>…]` | the current head of that subject (a file today; folders reuse the form) | the route default, or the given ordered principals |
 | revision | `~efs/v/0x<64 hex revision record id>` | exactly that revision's bytes | no |
+| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address, then folder and file names (files-name/2, case kept) | the route default, or the given ordered principals |
+| topic | `<word>[/<word>/…][?lens=…]` | a topic; one word alone is that word's page. Words are folded before lookup | the route default, or the given ordered principals |
 
 - The first segment is `~efs`. The name profile reserves that prefix, so no path can look like a link. This
   departs from the naming review's `o/<id>` and `v/<id>`, which collide with root folders named `o` or `v`.
 - `link()` emits lowercase ids. `parseLink()` accepts any hex case and one percent-decode per segment, and returns
   `canonical` so a router can redirect to the canonical form. `%2F` is never a separator.
-- `parseLink()` returns `{ status: "OK", target: ObjectLink | RevisionLink, canonical }`,
-  `{ status: "INVALID", rule }`, or `{ status: "UNSUPPORTED", kind: "path" }` for anything that does not start with
-  `~efs`. Path links wait for the folder model.
-- **Lens** (naming review §6): only object links carry one, as the single parameter `lens`. Its value is an ordered,
+- `parseLink(input, { fold? })` returns `{ status: "OK", target: ObjectLink | RevisionLink | HomeLink | TopicLink,
+  canonical }` or `{ status: "INVALID", rule, segment?, detail? }`. Every first segment starting with `~` is the
+  system's (only `~efs` is defined); a first segment that is an address is a home; anything else is a topic (tag
+  model spec §5). One trailing "/" is ignored, an empty segment is refused, and each segment is percent-decoded once
+  before folding. Home and topic segments are written in the canonical wire form (RFC 3986, uppercase %HH).
+- **The fold is the caller's** until the fold rule (`efs/fold/1`) is chosen: `fold(segment)` returns the word or the
+  rule it breaks. Without a fold, a topic parses with `segments` only and no `words`, and its `canonical` keeps the
+  typed form (don't redirect on it). Either way the fold-independent word rules apply: 1–255 bytes, no `/`, no
+  control, not `.` or `..`, no leading `~`, not address-shaped. The folded word is checked again, including for
+  space and `A–Z`. Vectors: `packages/sdk/test/vectors/links.json`.
+- `link()` formats home links from the address and names, and topic links from folded `words` (MISUSE for anything
+  the grammar refuses).
+- **Lens** (naming review §6): object, home and topic links carry one, as the single parameter `lens` (revision
+  links never do). Its value is an ordered,
   comma-separated list of 1 to 64 principals without duplicates. An account (key principal) is written as its
   20-byte address and any other principal as its 32-byte id. `target.lens` is a `Lens` to pass to reads. Names such
   as `alice.eth` are INVALID with rule `lens-name-unsupported` in 0.1. A revision link with a query, or any other

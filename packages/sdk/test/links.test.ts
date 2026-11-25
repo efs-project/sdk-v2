@@ -70,8 +70,15 @@ describe("links", () => {
   });
 
   it("never mistakes a path for a link, nor a link for a path", () => {
-    expect(parseLink("docs/readme.txt")).toEqual({ status: "UNSUPPORTED", kind: "path" });
-    expect(parseLink(`o/${S}`)).toEqual({ status: "UNSUPPORTED", kind: "path" }); // a root folder named "o"
+    // A bare path is a topic (here unfolded); `o/<id>` is a topic too, never an object link.
+    expect(parseLink("docs/readme.txt")).toMatchObject({
+      status: "OK",
+      target: { kind: "topic", segments: ["docs", "readme.txt"] },
+    });
+    expect(parseLink(`o/${S}`)).toMatchObject({
+      status: "OK",
+      target: { kind: "topic", segments: ["o", S] },
+    }); // a topic whose words happen to look like hex, never an object link
     expect(parseLink("~efsfoo/x")).toEqual({ status: "INVALID", rule: "reserved-name" });
     // The prefix is reserved by the name profile, so no real segment can start a path with it.
     expect(checkName("~efs").status).toBe("INVALID");
@@ -150,7 +157,7 @@ describe("the realm part of a route", () => {
 });
 
 describe("@efs/sdk/links has no runtime dependencies", () => {
-  it("its runtime import graph is three local files and nothing else", async () => {
+  it("its runtime import graph is six local files (string code only) and nothing else", async () => {
     const { readFileSync } = await import("node:fs");
     const { dirname, join, relative } = await import("node:path");
     const src = join(import.meta.dirname, "../src");
@@ -171,8 +178,11 @@ describe("@efs/sdk/links has no runtime dependencies", () => {
     expect(bare).toEqual([]);
     expect([...seen].map((f) => relative(src, f)).sort()).toEqual([
       "core/errors.ts",
+      "core/platform.ts",
       "links/index.ts",
       "names/links.ts",
+      "names/name.ts",
+      "names/segment.ts",
     ]);
   });
 });
