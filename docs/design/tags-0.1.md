@@ -97,7 +97,9 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
 - **The review** shows, in plain figures:
   - the topics the save creates (`newTopics`), and the records that registers;
   - each tag, with its topic, target, number, and the author's current stance;
-  - the parts, with the gas per part and per tag.
+  - the parts, with the gas per part and per tag. Each tag is priced by the contracts' gas model
+    (`gas/model.json`), never a constant: once contracts step 3c lands, a later author's first yes also appends to
+    the shared list at each level above the place, so its cost grows with the depth.
 - **Batches.** Many targets under one topic, or one target under many topics, split by gas like every other plan. A
   batch plans every tag or none, and lists each refusal by index, as the folder planners do.
 - **A tag on an unregistered topic is refused by the chain with a named error**, never a silent miss. The planner
@@ -116,9 +118,13 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
   the entry was filed under. A denial does not travel down to child topics, and a stranger's negative number never
   hides anything from anyone else.
 - **Raw:** nothing hidden.
-- **In Everyone and Raw, a row exists because a statement exists.** A row never needs a positive number to appear:
-  otherwise a few pre-emptive negatives would keep a thing out of the public views altogether. Each row shows the
-  stances found (who says it applies, who says it doesn't), and says when not every author was read.
+- **A stranger's "not this" can neither hide a row nor add one** (tag spec 3.2, corrected; planning 1b9a059).
+  - Raw shows every row.
+  - Everyone shows a row when someone says yes. A row where every author was read and none says yes is left out of
+    Everyone.
+  - A row is never left out because the read stopped scanning authors early. It is shown with the stances found
+    ("3 say yes, 2 say no") and marked not fully read, and the page is PARTIAL, never "nobody says yes". Otherwise
+    a few negatives posted ahead of the first real tag would hide it cheaply.
 - **Public lists are newest first, meaning most recently first stated.** An entry is placed at an author's first
   statement on (topic, thing). Changing a number, or removing a tag and adding it back, never moves it up. The SDK
   offers no "recently active" order and never synthesizes one. The client labels the order "recently added".
@@ -136,9 +142,17 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   first stated (its sequence), and, for roll-up, the topic it was filed under.
 - **Coverage** follows listFolder's rule: COMPLETE only for a list scanned from its start to its end. A page from a
   cursor is at most PARTIAL, and an empty PARTIAL page means "keep reading".
-- **Duplicates.** Roll-up lists a thing filed under `/cars/tesla` and under `/cars/ford` twice in `/cars`. The SDK
-  removes duplicates by thing, and every result says how far: `dedup: "COMPLETE" | "BOUNDED"` (with the bound), so a
-  page never claims a uniqueness it cannot guarantee.
+- **Duplicates.** Roll-up lists a thing filed under `/cars/tesla` and under `/cars/ford` twice in `/cars`. A place's
+  own list repeats a thing too (contracts step 3c, pending), so exact-topic reads remove duplicates exactly as
+  roll-ups do. The SDK removes duplicates by thing, and every result says how far: `dedup: "COMPLETE" | "BOUNDED"`
+  (with the bound), so a page never claims a uniqueness it cannot guarantee. A place's count counts filings, not
+  distinct things.
+  - **Why a place's list repeats (3c):** it takes an entry for a fresh (place, thing) pair of either sign, and one
+    for any author's first yes, so nobody can get in first and keep a later tag out of "newest first". A pair with
+    only negatives stays listed. A later author's first negative adds no entry; it is reached through the pair's
+    authors list (position-authors), from the place and, for tags, from the thing.
+  - **Stated limit:** an author whose first statement on a pair was negative and who later flips to yes gets no new
+    entry. The pair is already listed, so nothing is missing; it just doesn't show as new. Reads don't compensate.
   - An in-memory iterator, for a client scrolling one view, keeps the seen set for the session, so it is always
     COMPLETE.
   - A serializable cursor, for resuming, carries the things already returned up to the stated bound; past it the
@@ -184,6 +198,9 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
       as undecided and the listing is PARTIAL, never quietly dropped.
   - A big directory cannot be ranked in one read, so the read scans a bounded number of entries and reports PARTIAL,
     never a short list as COMPLETE.
+  - **Hiding a child hides what is filed under it** (tag spec 3.6). If a Lens author marks `/cars/tesla` below 0 as
+    a child of `/cars`, that reader's roll-up of `/cars` leaves out everything filed at or below `/cars/tesla`. The
+    SDK applies this from each entry's path; the chain's reader does not.
 - **Word pages** read the directory "topics that use a word".
   - A group is a place whose own word is the word. A place below another group is not a second group.
   - Group order: places the Lens has used first (by Lens count), then the rest by global count, largest first. Both
@@ -267,6 +284,15 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
       `maxHops`, so on an alternating history it can answer UNKNOWN for a version the SDK reached within its own
       bound: that is a per-row UNKNOWN, not an endpoint fault. Each head (and history reply) gains the recorded
       strength as its last word, so the head ABI and its decoders change.
+  - **the tag PM's read rules from the contracts 3b review** (spec planning 1b9a059):
+    - Everyone leaves out a row nobody says yes to, but never one whose author scan stopped early: that row is shown,
+      marked not fully read, and the page is PARTIAL (section 5.1). Tests: all-negative stances left out; a
+      bounded author scan that stops before a yes keeps the row;
+    - exact-topic reads remove duplicates like roll-ups, since a place's list takes each author's first yes (3c);
+      an author's negative-then-yes adds no entry, and reads don't compensate (section 5.2);
+    - a Lens author's hidden child topic hides everything filed at or below it from that reader's roll-up of the
+      parent (section 5.4);
+    - tags priced by `gas/model.json`, including the per-level terms a later author's first yes carries after 3c;
   - **word listings re-fold each word** (section 5.2): children and word pages run every listed word through the
     pluggable fold and skip, into `skipped`, any word that isn't its own fold. Built against the `FoldStep`
     plug-in, so it doesn't wait for the fold ruling; tested with both candidates (NFKC_Casefold, and NFC then
