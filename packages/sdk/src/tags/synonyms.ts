@@ -71,7 +71,10 @@ export type SynonymsResult =
       words: readonly WordSynonyms[];
       /** A hop, topic or scan bound stopped the gathering: there may be more. */
       limited: boolean;
-      /** Every list was read to its start and the index vouches for it: a missing synonym is proven absent. */
+      /**
+       * Every list was read to its start, the index vouches for it, and no bound stopped the walk (never with
+       * `limited`): a missing synonym is proven absent.
+       */
       complete: boolean;
       basis: Basis;
       evidence: Evidence;
@@ -97,7 +100,7 @@ async function sameEdges(
   principals: readonly PrincipalId[],
   topics: readonly Hex[],
   scan: number,
-): Promise<Step<{ edges: Edge[]; complete: boolean }>> {
+): Promise<Step<{ edges: Edge[]; complete: boolean; truncated: boolean }>> {
   const d = ctx.efs.deployment;
   const { address: index, scopeFamily, bitmapStore, backlinkFamily } = d.index;
   if (!index || !scopeFamily || !bitmapStore || !backlinkFamily)
@@ -123,6 +126,7 @@ async function sameEdges(
   ctx.requests += calls1.length;
   const out1 = await callsIn(s, at, calls1);
   let complete = true;
+  let truncated = false; // a list held more than `scan` entries: older ones were not read
   const scopeCounts: bigint[] = [];
   for (let i = 0; i < scopes.length; i++) {
     const h = decoded<[bigint, bigint, bigint, number, number, bigint]>(
@@ -134,7 +138,8 @@ async function sameEdges(
     const c = decoded<[number, bigint, bigint, number]>(indexAbi, "coverage", out1[2 * i + 1]);
     if (!c.ok) return c;
     const count = BigInt(h.value[0]);
-    if (Number(c.value[0]) !== 3 || count > BigInt(scan)) complete = false; // Coverage.COMPLETE
+    if (Number(c.value[0]) !== 3) complete = false; // Coverage.COMPLETE
+    if (count > BigInt(scan)) truncated = true;
     scopeCounts.push(count);
   }
   const backCounts: bigint[] = [];
@@ -146,7 +151,8 @@ async function sameEdges(
     );
     if (!h.ok) return h;
     const count = BigInt(h.value[1]);
-    if (Number(h.value[0]) !== 3 || count > BigInt(scan)) complete = false;
+    if (Number(h.value[0]) !== 3) complete = false;
+    if (count > BigInt(scan)) truncated = true;
     backCounts.push(count);
   }
   // 2. The newest `scan` entries of each.
@@ -282,7 +288,7 @@ async function sameEdges(
       }
     }
   }
-  return { ok: true, value: { edges, complete } };
+  return { ok: true, value: { edges, complete, truncated } };
 }
 
 /**
@@ -406,6 +412,7 @@ export async function topicSynonyms(
           const e = await sameEdges(ctx, s, basis, principals, frontier, scan);
           if (!e.ok) return e;
           if (!e.value.complete) complete = false;
+          if (e.value.truncated) limited = true;
           const k = await kindOf(e.value.edges.map((x) => x.to));
           if (!k.ok) return k;
           const next: Hex[] = [];
@@ -463,7 +470,8 @@ export async function topicSynonyms(
         w.synonyms = w.synonyms.map((x) => ({ ...x, word: wordOf.get(x.id) as string }));
       return {
         ok: true as const,
-        value: { places: places.value, words: perWord, limited, complete },
+        // A bound that stopped the walk (hops, topics, entries) leaves absences unproven too.
+        value: { places: places.value, words: perWord, limited, complete: complete && !limited },
       };
     },
     o,

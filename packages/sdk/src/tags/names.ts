@@ -5,7 +5,7 @@
 // stops that language (then the next language is tried). A label is used only when its target really is a text/1
 // record of an admitted text (its id is recomputed from the Type and the body read back); one that isn't is skipped,
 // counted, and the next Lens author is tried. A failed read is UNKNOWN, never "no name".
-import { callsAt } from "../chain/basis.js";
+
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
@@ -17,6 +17,7 @@ import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
 import { positionKey, recordId } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
+import { callsIn } from "./filenames.js";
 import { badReply, callOf, decoded } from "./plan.js";
 import { placeId, type TopicPlace, topicPath } from "./read.js";
 import { langTag } from "./statements.js";
@@ -135,7 +136,7 @@ export async function labelsAt(
     })),
   );
   ctx.requests += cells.length;
-  const outs = await callsAt(
+  const outs = await callsIn(
     s,
     basis.blockHash,
     cells.map((c) =>
@@ -191,7 +192,7 @@ export async function labelsAt(
     ];
     if (want.length) {
       ctx.requests += want.length;
-      const got = await callsAt(
+      const got = await callsIn(
         s,
         basis.blockHash,
         want.map((id) =>

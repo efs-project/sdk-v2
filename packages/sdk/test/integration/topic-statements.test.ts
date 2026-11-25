@@ -225,6 +225,41 @@ describe("labels: plan and read (fixture)", () => {
     expect(await labelOf(efs, ["nmtesla"], { lens: lens(C, D), langs: ["en"] })).toMatchObject({
       label: { text: "Tesla", author: C },
     });
+    // A provider that refuses batches of more than 100 calls: a 32-word topic in 8 languages is 504 label reads,
+    // which must go in batches it takes.
+    const capped = createEfs({
+      rpcs: [fixture.rpcUrl],
+      deployment,
+      fetch: (async (url: string, init: { body?: string }) => {
+        const body = JSON.parse(init.body ?? "null");
+        if (Array.isArray(body) && body.length > 100) {
+          const text = JSON.stringify(
+            body.map((b: { id: number }) => ({
+              jsonrpc: "2.0",
+              id: b.id,
+              error: { code: -32005, message: "batch too large" },
+            })),
+          );
+          return {
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            text: async () => text,
+            arrayBuffer: async () => new TextEncoder().encode(text).buffer,
+          };
+        }
+        return fetch(url, init as RequestInit);
+      }) as never,
+    });
+    const deep = Array.from({ length: 32 }, (_, i) => `nmdeep${i}`);
+    const many = await topicName(capped, deep, {
+      lens: lens(C),
+      langs: ["en", "de", "fr", "es", "it", "pt", "nl", "sv"],
+    });
+    expect(many).toMatchObject({ status: "PRESENT" });
+    expect(many.status === "PRESENT" && many.segments.map((x) => x.source)).toEqual(
+      deep.map(() => "none"),
+    );
     // Every label read failing: UNKNOWN.
     const fail: Edit = () => ({ error: { code: -32000, message: "the node is sick" } });
     const sick = createEfs({
@@ -385,6 +420,16 @@ describe("a file's name in a topic (fixture)", () => {
     });
   });
 
+  it("a thing placed nowhere has no name, proven: its list is empty (no slice is read)", async () => {
+    const nowhere = pathId(T, ["nmcars"]); // a topic: never a folder entry's target
+    expect(await fileNames(efs, [{ file: nowhere }, { file: F }], { lens: lens(D) })).toMatchObject(
+      {
+        status: "PRESENT",
+        rows: [{ name: null, creator: null, complete: true }, { name: { author: D } }],
+      },
+    );
+  });
+
   it("a failed read is UNKNOWN, never no name", async () => {
     const fail: Edit = () => ({ error: { code: -32000, message: "the node is sick" } });
     const sick = createEfs({
@@ -535,5 +580,22 @@ describe("tag saves name what they touch (fixture)", () => {
       remove: false,
     });
     expect((await wc.resume(l.sequenceId)).effect).toEqual(l.effect);
+  });
+
+  it("a list longer than `scan` is limited and not complete; so is a walk cut at its hop bound", async () => {
+    // Cleo says sycar is the same as a second word too: her list for sycar now holds two statements.
+    await run(wc, planSame(efs, wc, { topic: ["sycar"], other: ["syvehicle"] }));
+    expect(await topicSynonyms(efs, ["sycar"], { lens: lens(C), scan: 1 })).toMatchObject({
+      limited: true,
+      complete: false,
+    });
+    expect(await topicSynonyms(efs, ["sycar"], { lens: lens(C, D), maxHops: 1 })).toMatchObject({
+      limited: true,
+      complete: false,
+    });
+    expect(await topicSynonyms(efs, ["sycar"], { lens: lens(C) })).toMatchObject({
+      limited: false,
+      complete: true,
+    });
   });
 });
