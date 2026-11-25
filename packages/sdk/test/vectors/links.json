@@ -423,6 +423,157 @@
         "status": "INVALID",
         "rule": "unsupported-parameter"
       }
+    },
+    {
+      "label": "names after a folder's object link (a path from that folder, case kept)",
+      "input": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/Photos/Cat.JPG",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "path",
+          "folder": "0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd",
+          "names": ["Photos", "Cat.JPG"]
+        },
+        "canonical": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/Photos/Cat.JPG"
+      }
+    },
+    {
+      "label": "a path link in any hex case, an encoded name and one trailing slash",
+      "input": "/~efs/o/0xFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFDFD/my%20photos/",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "path",
+          "folder": "0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd",
+          "names": ["my photos"]
+        },
+        "canonical": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/my%20photos"
+      }
+    },
+    {
+      "label": "a path link, unicode name",
+      "input": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/日本",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "path",
+          "folder": "0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd",
+          "names": ["日本"]
+        },
+        "canonical": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/%E6%97%A5%E6%9C%AC"
+      }
+    },
+    {
+      "label": "a path link with a Lens",
+      "input": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/photos?lens=0x1111111111111111111111111111111111111111",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "path",
+          "folder": "0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd",
+          "names": ["photos"],
+          "lens": {
+            "principals": ["0x0000000000000000000000001111111111111111111111111111111111111111"]
+          }
+        },
+        "canonical": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/photos?lens=0x1111111111111111111111111111111111111111"
+      }
+    },
+    {
+      "label": "an object link with no names stays an object link",
+      "input": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "object",
+          "subject": "0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd"
+        },
+        "canonical": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd"
+      }
+    },
+    {
+      "label": "a path link's name .. refused",
+      "input": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/photos/..",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-name",
+        "segment": 4,
+        "detail": "dot-or-dotdot"
+      }
+    },
+    {
+      "label": "a path link's escaped slash refused",
+      "input": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/a%2Fb",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-name",
+        "segment": 3,
+        "detail": "excluded-character"
+      }
+    },
+    {
+      "label": "a path link's reserved name refused",
+      "input": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/~efs",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-name",
+        "segment": 3,
+        "detail": "reserved-prefix"
+      }
+    },
+    {
+      "label": "a path link's malformed escape",
+      "input": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd/%zz",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-escape",
+        "segment": 3
+      }
+    },
+    {
+      "label": "a path link's empty name",
+      "input": "~efs/o/0xfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfdfd//a",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "empty-segment"
+      }
+    },
+    {
+      "label": "a revision link takes no names",
+      "input": "~efs/v/0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd/extra",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-id"
+      }
+    },
+    {
+      "label": "~root is not defined (the shared root has no named link)",
+      "input": "~root/photos",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "reserved-name"
+      }
+    },
+    {
+      "label": "~home is never defined",
+      "input": "~home/photos",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "reserved-name"
+      }
     }
   ]
 }

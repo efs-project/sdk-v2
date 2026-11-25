@@ -58,5 +58,17 @@ describe("link grammar vectors", () => {
     expect(link({ kind: "home", address, names: [], lens })).toBe(
       `0xabcdef0123456789abcdef0123456789abcdef01?lens=0x${"11".repeat(20)}`,
     );
+    const folder = `0x${"FD".repeat(32)}` as `0x${string}`;
+    const f = `0x${"fd".repeat(32)}`;
+    expect(link({ kind: "path", folder, names: ["Photos", "cat 1.jpg"] })).toBe(
+      `~efs/o/${f}/Photos/cat%201.jpg`,
+    );
+    expect(link({ kind: "path", folder, names: ["photos"], lens })).toBe(
+      `~efs/o/${f}/photos?lens=0x${"11".repeat(20)}`,
+    );
+    // No names is an object link, never a second spelling of one.
+    expect(() => link({ kind: "path", folder, names: [] })).toThrow(/at least one name/);
+    expect(() => link({ kind: "path", folder, names: ["a/b"] })).toThrow(/files-name\/2/);
+    expect(() => link({ kind: "path", folder: "0x12" as never, names: ["a"] })).toThrow(/64 hex/);
   });
 });

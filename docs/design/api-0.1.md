@@ -248,6 +248,7 @@ string that an app places in its route, for example after `#/files/`:
 | Link | Form | Opens | Lens |
 |---|---|---|---|
 | object | `~efs/o/0x<64 hex subject id>[?lens=<p>,<p>…]` | the current head of that subject (a file today; folders reuse the form) | the route default, or the given ordered principals |
+| path | `~efs/o/0x<64 hex folder id>/<name>[/<name>…][?lens=…]` | a folder or file by name below a folder named by its id (files-name/2, case kept). Any folder, the shared root included | the given principals, else the reader then the folder's creator (`efs.lens.place`) |
 | revision | `~efs/v/0x<64 hex revision record id>` | exactly that revision's bytes | no |
 | home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address, then folder and file names (files-name/2, case kept) | the route default, or the given ordered principals |
 | topic | `<word>[/<word>/…][?lens=…]` | a topic; one word alone is that word's page. Words are folded before lookup | the route default, or the given ordered principals |
@@ -256,10 +257,22 @@ string that an app places in its route, for example after `#/files/`:
   departs from the naming review's `o/<id>` and `v/<id>`, which collide with root folders named `o` or `v`.
 - `link()` emits lowercase ids. `parseLink()` accepts any hex case and one percent-decode per segment, and returns
   `canonical` so a router can redirect to the canonical form. `%2F` is never a separator.
-- `parseLink(input, { fold? })` returns `{ status: "OK", target: ObjectLink | RevisionLink | HomeLink | TopicLink,
-  canonical }` or `{ status: "INVALID", rule, segment?, detail? }`. Every first segment starting with `~` is the
-  system's (only `~efs` is defined); a first segment that is an address is a home; anything else is a topic (tag
-  model spec §5). One trailing "/" is ignored, an empty segment is refused, and each segment is percent-decoded once
+- `parseLink(input, { fold? })` returns `{ status: "OK", target: ObjectLink | PathLink | RevisionLink | HomeLink |
+  TopicLink, canonical }` or `{ status: "INVALID", rule, segment?, detail? }`. Every first segment starting with `~`
+  is the system's (only `~efs` is defined); a first segment that is an address is a home; anything else is a topic
+  (tag model spec §5). The shared root has no named link (no `~root`), and `~home` is never defined: both are
+  INVALID with rule `reserved-name`, like any other `~` segment.
+- **Path links** (`PathLink`, kind `path`): names after an object id are a path from that folder. It is its own
+  kind, never an object link with names, so a router that only opens objects can't open the folder in place of the
+  entry the link names. Without names the link is an object link, and `link()` refuses a path link with none. The
+  string can't say whether the id is a folder, so the reader decides:
+  1. `openObject(efs, link.folder)`;
+  2. on FOLDER, `resolvePath(efs, { from: open.folder, segments: link.names }, { lens })`, with `lens` the link's,
+     else `efs.lens.place({ reader, owner: open.folder.owner })` (the reader, then the folder's creator);
+  3. any other answer, a file included, makes the link INVALID: a file has no names below it.
+
+  A revision link takes no names (rule `bad-id`). The app links and the web3:// gateway share this grammar
+  (planning D12). One trailing "/" is ignored, an empty segment is refused, and each segment is percent-decoded once
   before folding. Home and topic segments are written in the canonical wire form (RFC 3986, uppercase %HH).
 - **The fold is the caller's** until the fold rule (`efs/fold/1`) is chosen: `fold(segment)` returns the word or the
   rule it breaks. Without a fold, a topic parses with `segments` only and no `words`, and its `canonical` keeps the
