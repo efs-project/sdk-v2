@@ -556,6 +556,45 @@ describe("tags: the review's cases (fixture)", () => {
     expect(refusals).toBeGreaterThan(0);
   });
 
+  it("a forged reply is never retried smaller: only the node's own refusal backs off", async () => {
+    // The same forgery as above (a row's thing changed), counting the calls that reach the reader.
+    const mineSel = sel(topicMineReaderAbi, "mine");
+    const edit: Edit = (result) => {
+      const out = decodeFunctionResult({
+        abi: topicMineReaderAbi,
+        functionName: "mine",
+        data: result,
+      }) as unknown[];
+      return encodeFunctionResult({
+        abi: topicMineReaderAbi,
+        functionName: "mine",
+        result: [
+          out[0],
+          rowsOf(out).map((r) => ({ ...r, thing: `0x${"77".repeat(32)}` })),
+        ] as never,
+      }) as Hex;
+    };
+    const lie = tampered({ [mineSel]: edit });
+    let mineCalls = 0;
+    const counting: FetchLike = async (url, init) => {
+      const sent = JSON.parse(init.body ?? "null");
+      for (const r of (Array.isArray(sent) ? sent : [sent]) as {
+        method: string;
+        params: [{ data?: string }];
+      }[])
+        if (r.method === "eth_call" && String(r.params?.[0]?.data ?? "").startsWith(mineSel))
+          mineCalls++;
+      return lie(url, init);
+    };
+    const lying = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: counting });
+    const page = await topicItems(lying, ["brands", "x"], {
+      view: "mine",
+      lens: { principals: [A] },
+    });
+    expect(page).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+    expect(mineCalls).toBe(1); // one endpoint, one call: a cross-check failure fails over, it never halves
+  });
+
   it("forged rows the readers would never give: UNKNOWN", async () => {
     const zeroYes = forged(topicEveryoneReaderAbi, "everyone", (out) => [
       out[0],
