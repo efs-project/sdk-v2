@@ -3,7 +3,14 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createWriter, memoryJournal } from "../src/actions/index.ts";
+import {
+  createWriter,
+  memoryJournal,
+  type SequenceEvent,
+  type SequenceProgress,
+} from "../src/actions/index.ts";
+import type { Journal } from "../src/actions/journal.ts";
+import type { Eip1193Like } from "../src/chain/rpc.ts";
 import { createEfs } from "../src/client.ts";
 import type { RecordId, SubjectId } from "../src/core/hex.ts";
 import { openFile, readBytes, readRange } from "../src/files/bytes.ts";
@@ -214,6 +221,76 @@ describe("edit-flow transcript replay (RPC and wallet halves)", () => {
     });
     expect(await writer.pendingSequences()).toEqual([]);
     expect([fetch.replay.misses, wallet.misses]).toEqual([[], []]);
+  });
+
+  it("onProgress changes nothing: the same journal, RPC and wallet calls and outcome, even when it rejects", async () => {
+    /** One replayed edit save; every journal, RPC and wallet call is logged by method, in order. */
+    const run = async (onProgress?: (p: SequenceProgress, e: SequenceEvent) => void) => {
+      const t = load("edit-one-approval");
+      const calls: string[] = [];
+      const f = replayFetch(t);
+      const fetch = Object.assign(
+        (url: string, init?: { body?: unknown }) => {
+          const body = JSON.parse(String(init?.body)) as { method: string } | { method: string }[];
+          for (const m of Array.isArray(body) ? body : [body]) calls.push(`rpc ${m.method}`);
+          return f(url, init as never);
+        },
+        { replay: f.replay },
+      ) as unknown as typeof f;
+      const inner = replayProvider(t, { strict: true });
+      const wallet: Eip1193Like = {
+        request: (a) => {
+          calls.push(`wallet ${a.method}`);
+          return inner.request(a);
+        },
+      };
+      const j = memoryJournal();
+      const logged =
+        <A extends unknown[], R>(name: string, fn: (...a: A) => R) =>
+        (...a: A): R => {
+          calls.push(`journal ${name}`);
+          return fn(...a);
+        };
+      const journal: Journal = {
+        durable: j.durable,
+        put: logged("put", j.put),
+        get: logged("get", j.get),
+        unresolved: logged("unresolved", j.unresolved),
+        putSequence: logged("putSequence", j.putSequence),
+        getSequence: logged("getSequence", j.getSequence),
+        openSequences: logged("openSequences", j.openSequences),
+        withLock: (l, w, fn) => {
+          calls.push("journal withLock");
+          return j.withLock(l, w, fn);
+        },
+      };
+      const efs = session(fetch);
+      const writer = await createWriter(efs, {
+        authorizer: { kind: "eip1193", profile: "direct", provider: wallet },
+        journal,
+      });
+      const r = await edit(t, efs, writer);
+      const { sequenceId: _id, ...outcome } = await writer.runSequence(
+        r.parts,
+        onProgress ? { onProgress } : {},
+      );
+      expect([f.replay.misses, inner.misses]).toEqual([[], []]);
+      return { calls, outcome };
+    };
+    const plain = await run();
+    const events: SequenceEvent[] = [];
+    // An async callback that rejects every time: handled inside the SDK, never an unhandled rejection.
+    const watched = await run(async (_p, e) => {
+      events.push(e);
+      throw new Error("rejected");
+    });
+    expect(events).toEqual([
+      { kind: "wallet-request", parts: [0] },
+      { kind: "committed", index: 0 },
+    ]);
+    expect(watched.outcome).toEqual(plain.outcome);
+    expect(watched.outcome).toMatchObject({ state: "COMPLETE" });
+    expect(watched.calls).toEqual(plain.calls); // no extra journal read, RPC or wallet request from the events
   });
 
   it("a strict wallet replay refuses a request made more often than recorded (a second send is a miss)", async () => {

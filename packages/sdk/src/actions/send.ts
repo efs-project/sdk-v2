@@ -44,11 +44,16 @@ export interface SendOpts extends CallOpts {
   onWalletRequest?: () => void;
 }
 
-/** Run a caller's UI callback: never awaited, and never allowed to break a save. */
-export function notify(fn: (() => void) | undefined): void {
+/**
+ * Run a caller's UI callback: never awaited, and never allowed to break a save. A synchronous throw is caught, and
+ * an async callback's rejection is handled here (an unhandled rejection can end a Node process mid-save).
+ */
+export function notify(fn: (() => unknown) | undefined): void {
   if (!fn) return;
   try {
-    fn();
+    const r = fn();
+    if (r !== null && typeof r === "object" && typeof (r as { then?: unknown }).then === "function")
+      (r as PromiseLike<unknown>).then(undefined, () => {});
   } catch {
     // a UI callback's failure is the UI's; the save goes on
   }

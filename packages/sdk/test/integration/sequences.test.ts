@@ -105,18 +105,29 @@ function wallet(
   return w as Eip1193Like & { sends: number; batches: number; account: Hex; held: Hex[] };
 }
 
-/** An onProgress that records each event as [kind, parts|index, committed, current stage] and then throws. */
-function progressLog() {
+/**
+ * An onProgress that records each event as [kind, parts|index, committed, current stage], then throws (or, with
+ * `rejects`, is async and rejects): neither may break the save.
+ */
+function progressLog(k: { rejects?: boolean } = {}) {
   const seen: unknown[][] = [];
-  const onProgress = (p: SequenceProgress, e: SequenceEvent): void => {
+  const record = (p: SequenceProgress, e: SequenceEvent): void => {
     seen.push([
       e.kind,
       e.kind === "wallet-request" ? e.parts : e.index,
       p.committed,
       p.current?.stage ?? null,
     ]);
-    throw new Error("a UI callback that throws must not break the save");
   };
+  const onProgress = k.rejects
+    ? async (p: SequenceProgress, e: SequenceEvent): Promise<void> => {
+        record(p, e);
+        throw new Error("an async UI callback that rejects must not break the save");
+      }
+    : (p: SequenceProgress, e: SequenceEvent): void => {
+        record(p, e);
+        throw new Error("a UI callback that throws must not break the save");
+      };
   return { seen, onProgress };
 }
 
@@ -206,7 +217,7 @@ describe("runSequence (fixture)", () => {
   });
 
   it("onProgress: one wallet request for an atomic batch; none for a local account", async () => {
-    const batched = progressLog();
+    const batched = progressLog({ rejects: true });
     const w = await createWriter(efs, {
       authorizer: {
         kind: "eip1193",
