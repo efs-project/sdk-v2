@@ -5,17 +5,17 @@
 // that might broadcast. The ledger, not the wallet's status report, decides each part (reconcileAttempt).
 import type { Eip1193Like } from "../chain/rpc.js";
 import type { Efs } from "../client.js";
-import { type CallOpts, EfsFault, type Reason, reason } from "../core/errors.js";
+import { type CallOpts, EfsFault, type Reason, type RevertInfo, reason } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
 import { setTimer } from "../core/platform.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
-import { estimate, txGasCapOf } from "./send.js";
+import { estimate, txGasCapOf, walletMismatch } from "./send.js";
 import type { Plan } from "./types.js";
 
 export type BatchSendResult =
   | { kind: "efs.sendBatch"; status: "SUBMITTED"; batchId: string; atomic: boolean }
   | { kind: "efs.sendBatch"; status: "NOT_SENT" | "AMBIGUOUS"; reason: Reason }
-  | { kind: "efs.sendBatch"; status: "STALE"; reasons: readonly string[] }
+  | { kind: "efs.sendBatch"; status: "STALE"; reasons: readonly string[]; revert?: RevertInfo }
   | { kind: "efs.sendBatch"; status: "BUSY" };
 
 const stamp = (r: AttemptRecord, stage: AttemptStage, detail?: string): AttemptRecord => ({
@@ -87,7 +87,10 @@ export async function sendPlansAsBatch(
           return {
             kind: "efs.sendBatch",
             status: "STALE",
-            reasons: [`simulation reverts with ${est.revert.error}`],
+            reasons: [
+              `simulation reverts with ${est.revert.error ?? `unknown error ${est.revert.selector}`}`,
+            ],
+            revert: est.revert,
           };
         const cap = txGasCapOf(efs.deployment);
         if ("gas" in est && est.gas > cap)
@@ -118,11 +121,9 @@ export async function sendPlansAsBatch(
             ),
           };
         }
-        const stale: string[] = [];
-        if (chainId !== first.chainId)
-          stale.push(`wallet is on chain ${chainId}, plan is for ${first.chainId}`);
-        if (!accounts.includes(first.account)) stale.push(`wallet account is not ${first.account}`);
-        if (stale.length) return { kind: "efs.sendBatch", status: "STALE", reasons: stale };
+        // Checked before any write-ahead record: a wallet that moved sends nothing and leaves the journal as it was.
+        const moved = walletMismatch(first, chainId, accounts);
+        if (moved) return { kind: "efs.sendBatch", status: "NOT_SENT", reason: moved };
         const atomic = await atomicBatchSupport(provider, first.account, first.chainId);
 
         // Write-ahead, every part: from here on a crash or a lost response is AMBIGUOUS, never "safe to resend".

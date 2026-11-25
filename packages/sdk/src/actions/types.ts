@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import type { Basis } from "../chain/pool.js";
-import type { Reason } from "../core/errors.js";
+import type { Reason, RevertInfo } from "../core/errors.js";
 import type { Address, Hex, PrincipalId } from "../core/hex.js";
 
 /** One ledger action (contracts src/interfaces/Actions.sol), as plain data. */
@@ -60,8 +60,8 @@ export interface Review {
   effects: readonly EffectView[];
   prompts: number;
   gas: { estimate: bigint | null; floor: bigint | null };
-  /** The simulated call reverted: the plan would fail as it stands (e.g. a stale precondition). */
-  wouldRevert: { error: string; selector: Hex } | null;
+  /** The simulated call reverted: the plan would fail as it stands (e.g. E_CAS, a stale precondition), else null. */
+  wouldRevert: RevertInfo | null;
   stale: boolean;
   atomic: boolean;
 }
@@ -80,7 +80,18 @@ export type SendResult =
       gas?: { estimate: bigint; cap: bigint; suggestedParts: number };
     }
   | { kind: "efs.send"; status: "AMBIGUOUS"; planId: Hex; reason: Reason }
-  | { kind: "efs.send"; status: "STALE"; planId: Hex; reasons: readonly string[] }
+  /**
+   * The ledger refuses this plan as it stands (its simulation reverts; `revert` says with what, e.g. E_CAS when the
+   * file's HEAD moved): plan again from fresh state. A wallet on another chain or account is NOT_SENT
+   * WALLET_MISMATCH instead, since the same plan can go once the wallet is switched back.
+   */
+  | {
+      kind: "efs.send";
+      status: "STALE";
+      planId: Hex;
+      reasons: readonly string[];
+      revert?: RevertInfo;
+    }
   | { kind: "efs.send"; status: "BUSY"; planId: Hex };
 
 export interface ReconcileResult {

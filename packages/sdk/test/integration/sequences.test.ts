@@ -34,7 +34,11 @@ async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
   return j.result;
 }
 
-/** A wallet over anvil's unlocked account. Knobs: refuse the n-th send, lose a response, speak EIP-5792. */
+/**
+ * A wallet over anvil's unlocked account. Knobs: refuse the n-th send, lose a response, speak EIP-5792, switch to
+ * another account after the first send, or hold the first send back (signed, its hash returned, broadcast later by
+ * the test from `held`). `account` can be set to switch accounts by hand.
+ */
 function wallet(
   account: Hex,
   k: {
@@ -43,20 +47,30 @@ function wallet(
     atomic5792?: boolean;
     refuseBatch?: boolean;
     dead?: boolean;
+    switchAfterFirstSend?: Hex;
+    holdFirst?: boolean;
   } = {},
 ) {
   const w = {
     sends: 0,
     batches: 0,
+    account,
+    held: [] as Hex[],
     async request({ method, params }: { method: string; params?: unknown }): Promise<unknown> {
       if (k.dead) throw new Error("wallet must not be used");
-      if (method === "eth_accounts") return [account];
+      if (method === "eth_accounts") return [w.account];
       if (method === "eth_sendTransaction") {
         w.sends++;
         if (k.refuseSend === w.sends)
           throw Object.assign(new Error("User rejected"), { code: 4001 });
+        if (k.holdFirst && w.sends === 1) {
+          const raw = (await rpc("eth_signTransaction", params as unknown[])) as Hex;
+          w.held.push(raw);
+          return keccak256(raw);
+        }
         const hash = await rpc(method, params as unknown[]);
         if (k.loseFirst && w.sends === 1) throw new Error("connection lost");
+        if (k.switchAfterFirstSend && w.sends === 1) w.account = k.switchAfterFirstSend;
         return hash;
       }
       if (method === "wallet_getCapabilities") {
@@ -83,7 +97,7 @@ function wallet(
       return rpc(method, (params as unknown[]) ?? []);
     },
   };
-  return w as Eip1193Like & { sends: number; batches: number };
+  return w as Eip1193Like & { sends: number; batches: number; account: Hex; held: Hex[] };
 }
 
 const parts = (principal: Hex, tag: string, n = 3) =>
@@ -159,6 +173,86 @@ describe("runSequence (fixture)", () => {
     const r = await w.runSequence(parts(w.principal, "seq-lossy"), { pollMs: 50 });
     expect(r).toMatchObject({ state: "COMPLETE", committed: 3 });
     expect(lossy.sends).toBe(3);
+  });
+
+  it("a wallet that switches account mid-save sends nothing more; switching back continues it", async () => {
+    const journal = memoryJournal();
+    const switching = wallet(ERIN, { switchAfterFirstSend: FRANK });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: switching, account: ERIN },
+      journal,
+    });
+    const before = Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]));
+    const r = await w.runSequence(parts(w.principal, "seq-switch"));
+    expect(r).toMatchObject({
+      state: "PARTIAL",
+      total: 3,
+      committed: 1,
+      reason: {
+        code: "WALLET_MISMATCH",
+        retry: "transient",
+        wallet: {
+          expected: { chainId: 31337, account: ERIN },
+          actual: { chainId: 31337, account: FRANK },
+        },
+      },
+    });
+    expect(r.current).toMatchObject({ index: 1, stage: "NOT_PLANNED" });
+    // Nothing more was broadcast once the account moved: one wallet send, one transaction on chain.
+    expect(switching.sends).toBe(1);
+    expect(Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]))).toBe(before + 1);
+    // The journal is intact: a reload still offers "1 of 3 saved — Continue".
+    const again = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: switching, account: ERIN },
+      journal,
+    });
+    expect(await again.pendingSequences()).toMatchObject([
+      { sequenceId: r.sequenceId, state: "PARTIAL", committed: 1, total: 3 },
+    ]);
+    switching.account = ERIN; // the person switches back, then Continue
+    expect(await again.resume(r.sequenceId)).toMatchObject({ state: "COMPLETE", committed: 3 });
+    expect(switching.sends).toBe(3);
+    expect(Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]))).toBe(before + 3);
+  });
+
+  it("a receipt that arrives after settleMs leaves the part in flight, never failed; it commits once", async () => {
+    const journal = memoryJournal();
+    const slow = wallet(ERIN, { holdFirst: true });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: slow, account: ERIN },
+      journal,
+    });
+    const before = Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]));
+    const t0 = Date.now();
+    const r = await w.runSequence(parts(w.principal, "seq-slow", 2), { settleMs: 300, pollMs: 50 });
+    expect(Date.now() - t0).toBeLessThan(15_000); // bounded by settleMs, not a fixed 60 s receipt wait
+    expect(r).toMatchObject({
+      state: "IN_FLIGHT",
+      committed: 0,
+      reason: { code: "NOT_YET_DECIDABLE", retry: "after-reconcile" },
+    });
+    expect(r.current).toMatchObject({ index: 0, stage: "SUBMITTED" });
+    expect(slow.sends).toBe(1); // part 2 waits for part 1: nothing else was sent
+    // Unknown is not absence: settling from the ledger alone keeps it in flight, and lists it.
+    expect(await w.reconcileSequence(r.sequenceId)).toMatchObject({
+      state: "IN_FLIGHT",
+      committed: 0,
+    });
+    expect((await w.pendingSequences()).map((x) => x.state)).toEqual(["IN_FLIGHT"]);
+    // The transaction lands late; the ledger then decides the part, and resume sends only part 2.
+    const hash = await rpc("eth_sendRawTransaction", [slow.held[0]]);
+    for (let t = 0; t < 200 && !(await rpc("eth_getTransactionReceipt", [hash])); t++)
+      await new Promise((res) => setTimeout(res, 20));
+    expect(await w.reconcileSequence(r.sequenceId)).toMatchObject({
+      state: "PARTIAL",
+      committed: 1,
+    });
+    expect(await w.resume(r.sequenceId, { pollMs: 50 })).toMatchObject({
+      state: "COMPLETE",
+      committed: 2,
+    });
+    expect(slow.sends).toBe(2);
+    expect(Number(await rpc("eth_getTransactionCount", [ERIN, "pending"]))).toBe(before + 2);
   });
 
   it("settling and listing never touch the wallet", async () => {

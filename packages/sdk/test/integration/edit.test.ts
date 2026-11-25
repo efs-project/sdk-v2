@@ -137,6 +137,10 @@ describe("planEditFile (fixture)", () => {
     expect((await w.runSequence(a.parts)).state).toBe("COMPLETE");
     const lost = await w.runSequence(b.parts);
     expect(lost).toMatchObject({ state: "NOT_STARTED", committed: 0, reason: { code: "STALE" } });
+    // Structured, never parsed from text: the vendored name and the decoded E_CAS(bytes32,uint64,uint64) arguments.
+    expect(lost.reason).toMatchObject({ retry: "after-replan", revert: { error: "E_CAS" } });
+    expect(lost.reason?.revert?.selector).toMatch(/^0x[0-9a-f]{8}$/);
+    expect(lost.reason?.revert?.args).toHaveLength(3);
     expect(lost.reason?.detail).toContain("E_CAS");
     const head = await revisionOf(put.file, lens);
     expect(head.revision).toBe(a.review.revision);

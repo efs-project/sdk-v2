@@ -175,18 +175,36 @@ export interface Evidence {
 export interface Attempt { endpoint: string /* label or origin, never the URL */; outcome: "OK" | "FAILED" | "ABANDONED"; reason?: Reason; ms: number }
 export interface RawRead { call: string; to: Address; data: Hex; result: Hex; basis: Hex }
 
-/** Why something is unknown, unsupported or failed. */
+/** Why something is unknown, unsupported or failed. Branch on code, retry and the structured fields, never on detail. */
 export interface Reason {
   code: ReasonCode;
   retry: "never" | "transient" | "after-reconcile" | "after-replan";
-  detail?: string;
+  detail?: string;          // free text for logs and support: not a contract
+  revert?: RevertInfo;      // the ledger refused the call (a simulated revert)
+  wallet?: WalletMismatch;  // on WALLET_MISMATCH
+}
+export interface RevertInfo {
+  selector: Hex;                // always
+  error?: string;               // the name from the vendored errors table ("E_CAS"); absent when unknown, never guessed
+  args?: readonly unknown[];    // only when they decode cleanly as that error (uints as bigint: serialize with toJson)
+}
+export interface WalletMismatch {
+  expected: { chainId: number; account: Address };        // what the plan needs
+  actual: { chainId: number; account: Address | null };   // the wallet's chain and first account now
 }
 export type ReasonCode =
   | "RPC_UNAVAILABLE" | "RPC_ERROR" | "BASIS_STALE" | "REORGED" | "LIMIT_EXCEEDED"
   | "NOT_VERIFIED_DEPLOYMENT" | "UNSUPPORTED_PROFILE" | "GATEWAY_UNAVAILABLE" | "DIGEST_MISMATCH"
   | "POLICY_BLOCKED" | "INVALID_RESUME_TOKEN" | "TOO_LARGE" | "CHAIN_MISMATCH"
+  | "JOURNAL_UNAVAILABLE" | "OVER_TX_GAS_CAP" | "STALE" | "WALLET_MISMATCH" | "USER_REJECTED" | "BUSY"
+  | "NOT_YET_DECIDABLE"
   | (string & Record<never, never>);    // open union
 ```
+
+`retry` says what can move a stopped operation forward. **transient:** try the same thing again (for a save,
+Continue). **after-reconcile:** settle from the ledger first, then try again. **after-replan:** this plan cannot go
+as it stands; plan again from fresh state, and for a save abandon the old sequence. Continue never helps here, even
+when the save is PARTIAL. **never:** nothing will.
 
 ## 4. Names, paths, links
 
@@ -580,6 +598,8 @@ export interface Review {
   prompts: number;                        // the wallet prompts this profile needs
   gas: { estimate: bigint; floor: bigint; schedule: string };
   fee?: { maxFeePerGas: bigint; totalWei: bigint };
+  wouldRevert: RevertInfo | null;         // the simulated revert, if the plan would fail now (error? is the vendored
+                                          // name; absent for an unknown selector, where 0.0 said "unknown")
   stale: boolean;                         // a precondition no longer holds; re-plan first
   atomic: boolean;
 }
@@ -594,9 +614,11 @@ export interface EffectView {
 
 export type SendResult =
   | { kind: "efs.send"; status: "SUBMITTED"; planId: Hex; txHash: Hex }
-  | { kind: "efs.send"; status: "NOT_SENT"; planId: Hex; reason: Reason }          // a definite wallet refusal (4001)
+  | { kind: "efs.send"; status: "NOT_SENT"; planId: Hex; reason: Reason }          // nothing broadcast: a wallet refusal
+                                                                                   // (4001), WALLET_MISMATCH, OVER_TX_GAS_CAP
   | { kind: "efs.send"; status: "AMBIGUOUS"; planId: Hex; reason: Reason }         // lost response or timeout
-  | { kind: "efs.send"; status: "STALE"; planId: Hex; reasons: readonly string[] } // account/chain/precondition changed
+  | { kind: "efs.send"; status: "STALE"; planId: Hex; reasons: readonly string[]; revert?: RevertInfo }
+                                                                                   // the ledger refuses the plan (e.g. E_CAS)
   | { kind: "efs.send"; status: "BUSY"; planId: Hex; holder?: Hex };              // the lock is held (another tab)
 
 export interface ReconcileResult {
@@ -655,6 +677,15 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
 - **The states:** COMPLETE is the only success. PARTIAL means some parts committed and the save stopped. For an
   upload, the file appears only when its last part, the finish, commits. IN_FLIGHT means a part was sent and is not
   decided yet.
+- **`settleMs` (default 60 s)** bounds each wait for a sent part (its receipt, then its ledger decision). It
+  never turns "no receipt yet" into a failure: a part still undecided when it runs out stays SUBMITTED in the
+  journal, the save answers IN_FLIGHT (reason NOT_YET_DECIDABLE, "Saved · confirming"), and `reconcileSequence` or
+  `resume` settles it from the ledger later, sending nothing again. With the default, one call carries a
+  part-by-part save through every part, one prompt per part; `0` returns right after the first send.
+- **A wallet that moves:** before each send the wallet's chain and accounts are re-read. If they are not the
+  plan's, nothing is sent and the journal is untouched: NOT_SENT with reason WALLET_MISMATCH (`retry: "transient"`,
+  `reason.wallet` = expected vs actual). Remaining parts are never sent under another account. Switch the wallet
+  back, then `resume(id)`.
 - **The other calls:** `pendingSequences()` lists open saves (the "2 of 5 saved — Continue" state).
   `reconcileSequence(id)` settles from the ledger and never prompts, so it is safe on every app start.
   `resume(id)` continues, and is the only sequence call that may prompt. `abandon(id)` stops offering to continue:
@@ -699,8 +730,10 @@ type EditPlanResult =
   `files-external/1` locator over the empty sentinel chunk.
 - **Never a silent overwrite:** first the base check (the file's HEAD under the Lens must still be `base`), then a
   compare-and-swap. The bind carries the editor's own HEAD binding revision as `expectedRevision`, so if another
-  save by the same account lands first, the ledger refuses this one (`E_CAS`, which `runSequence` reports as STALE).
-  The client abandons that sequence and plans again from the new base. When `base` is another author's revision
+  save by the same account lands first, the ledger refuses this one: `runSequence` reports reason STALE,
+  `retry: "after-replan"`, `revert.error === "E_CAS"`. In a split edit whose content parts already committed, this
+  is PARTIAL, and Continue cannot succeed (the same bind would be refused again). The client abandons that sequence
+  ("This file changed since you opened it") and plans again from the new base. When `base` is another author's revision
   (`review.guard: "lens"`), only the planning-time base check covers it.
 - **Splitting:** chunks and spans go through `splitPublications` under the per-transaction gas cap. The finish
   (descriptor, revision and HEAD bind) stays in one publication, so the edit appears atomically when the last part
@@ -770,7 +803,10 @@ fixture principal) from `ids.base` to the bytes of `ids.text`, giving `ids.revis
 - `edit-confirming-final`: an edit saves with `final: false`, its block is finalized, and `reconcileSequence(id)` →
   `final: true`. `pendingSequences()` is then empty. Neither call uses the wallet.
 `recordingProvider(inner)` is the recording side. The SDK's own `test/replay.test.ts` replays all three exactly as
-above.
+above. (`settleMs: 0` there only forces IN_FLIGHT for the recording; apps use the default.) Replays answer repeated
+identical calls in recorded order, so a transcript matches only the call order it was recorded with: these are the
+SDK's contract tests. An app records its own flows with `recordingFetch` and `recordingProvider` against
+`@efs/fixture`, and re-records whenever its call order changes.
 
 **A live chain (`@efs/fixture`, Node only):** a second private tarball, packed from the same commit as `@efs/sdk`,
 for live-chain tests such as the client's required e2e job. `startFixtureChain({ anvilPath?, port?, ttlSeconds?,

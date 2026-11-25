@@ -6,7 +6,7 @@ import { decodeErrorResult, keccak256 } from "viem";
 import { onEndpoint } from "../chain/pool.js";
 import type { Eip1193Like } from "../chain/rpc.js";
 import type { Efs } from "../client.js";
-import { type CallOpts, EfsFault, type Reason, reason } from "../core/errors.js";
+import { type CallOpts, EfsFault, type Reason, type RevertInfo, reason } from "../core/errors.js";
 import { type Address, type Hex, lower } from "../core/hex.js";
 import { errorAbi } from "../generated/abis.js";
 import { ERROR_CATALOG } from "../generated/errors.js";
@@ -45,15 +45,49 @@ const stamp = (r: AttemptRecord, stage: AttemptStage, detail?: string): AttemptR
 });
 
 /** Decode a revert into the contracts' error name, if it is one of theirs. */
-export function decodeRevert(data: unknown): { error: string; selector: Hex } | null {
-  if (typeof data !== "string" || !data.startsWith("0x") || data.length < 10) return null;
+/**
+ * Decode revert data as far as the vendored contracts tables allow: the selector always, the error's name only when
+ * the vendored errors table has it, its arguments only when they decode cleanly as that error. Never guesses.
+ */
+export function decodeRevert(data: unknown): RevertInfo | null {
+  if (typeof data !== "string" || !/^0x[0-9a-fA-F]*$/.test(data) || data.length < 10) return null;
   const selector = data.slice(0, 10).toLowerCase() as Hex;
+  const error = ERROR_CATALOG[selector]?.name;
+  if (error === undefined) return { selector };
   try {
     const d = decodeErrorResult({ abi: errorAbi, data: data as Hex });
-    return { error: d.errorName, selector };
+    if (d.errorName === error) return { selector, error, args: [...(d.args ?? [])] };
   } catch {
-    return { error: ERROR_CATALOG[selector]?.name ?? "unknown", selector };
+    // the name is known but the arguments do not decode: report the name alone
   }
+  return { selector, error };
+}
+
+const revertName = (r: RevertInfo): string => r.error ?? `unknown error ${r.selector}`;
+
+/** The wallet is not on the plan's chain or account: nothing is sent, and switching back lets the same save go on. */
+export function walletMismatch(
+  plan: { chainId: number; account: Address },
+  chainId: number,
+  accounts: readonly string[],
+): Reason | null {
+  if (chainId === plan.chainId && accounts.includes(plan.account)) return null;
+  const why: string[] = [];
+  if (chainId !== plan.chainId)
+    why.push(`wallet is on chain ${chainId}, plan is for ${plan.chainId}`);
+  if (!accounts.includes(plan.account)) why.push(`wallet account is not ${plan.account}`);
+  return {
+    ...reason("WALLET_MISMATCH", "transient", why.join("; ")),
+    wallet: {
+      expected: { chainId: plan.chainId, account: plan.account },
+      actual: {
+        chainId,
+        account: accounts.includes(plan.account)
+          ? plan.account
+          : ((accounts[0] as Address | undefined) ?? null),
+      },
+    },
+  };
 }
 
 /** Find revert data inside a JSON-RPC error (nodes nest it differently). */
@@ -62,7 +96,7 @@ function revertData(e: { data?: unknown }): unknown {
   return typeof d === "string" ? d : d?.data;
 }
 
-type Estimate = { gas: bigint } | { revert: { error: string; selector: Hex } };
+type Estimate = { gas: bigint } | { revert: RevertInfo };
 
 export async function estimate(
   efs: Efs,
@@ -129,7 +163,8 @@ export async function sendPlan(
           kind: "efs.send",
           status: "STALE",
           planId: plan.id,
-          reasons: [`simulation reverts with ${est.revert.error}`],
+          reasons: [`simulation reverts with ${revertName(est.revert)}`],
+          revert: est.revert,
         };
       // 25% headroom over the estimate, but never a limit above the per-transaction cap (EIP-7825): a node refuses
       // a transaction by its gas LIMIT, not by the gas it would use.
@@ -180,12 +215,9 @@ export async function sendPlan(
             ),
           };
         }
-        const stale: string[] = [];
-        if (chainId !== plan.chainId)
-          stale.push(`wallet is on chain ${chainId}, plan is for ${plan.chainId}`);
-        if (!accounts.includes(plan.account)) stale.push(`wallet account is not ${plan.account}`);
-        if (stale.length)
-          return { kind: "efs.send", status: "STALE", planId: plan.id, reasons: stale };
+        // Checked before the write-ahead record: a wallet that moved sends nothing and leaves the journal as it was.
+        const moved = walletMismatch(plan, chainId, accounts);
+        if (moved) return { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: moved };
         record = stamp(record, "SUBMISSION_POSSIBLE");
         await journal.put(record); // write-ahead: from here on, a crash or lost response is AMBIGUOUS
         mayHaveBroadcast = true;

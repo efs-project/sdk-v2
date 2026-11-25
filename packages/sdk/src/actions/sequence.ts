@@ -10,7 +10,7 @@
 //     chain stay there whatever happens next (an abandoned upload leaves chunks that never appear as a file).
 import { keccak256 } from "viem";
 import type { Efs } from "../client.js";
-import { type CallOpts, EfsFault, type Reason, reason } from "../core/errors.js";
+import { type CallOpts, EfsFault, type Reason, type RevertInfo, reason } from "../core/errors.js";
 import type { Address, Hex } from "../core/hex.js";
 import { toJson } from "../core/json.js";
 import { setTimer, utf8Encode } from "../core/platform.js";
@@ -32,7 +32,12 @@ import type { Plan, PlanResult, PlanSequenceResult } from "./types.js";
 export interface SequenceOpts extends SendOpts {
   /** "auto" (default): one EIP-5792 request when the wallet runs calls atomically; "never": part by part. */
   batch?: "auto" | "never";
-  /** How long to wait for a sent part to be decided by the ledger before answering IN_FLIGHT (default 60 s). */
+  /**
+   * How long to wait for a sent part's receipt and ledger decision before answering IN_FLIGHT (default 60 s). It
+   * bounds the wait only: a part still undecided when it runs out stays SUBMITTED in the journal and the save
+   * IN_FLIGHT ("Saved · confirming"), never failed; reconcileSequence or resume settles it from the ledger. With
+   * the default, one call carries a part-by-part save through every part; 0 returns right after the first send.
+   */
   settleMs?: number;
   pollMs?: number;
 }
@@ -197,6 +202,12 @@ function sequenceCore(efs: Efs, journal: Journal) {
   return { derive, save, progress, reconcileParts };
 }
 
+/** STALE from a send: the ledger refuses this plan as it stands; `revert` (when known) says why, e.g. E_CAS. */
+const staleReason = (sent: { reasons: readonly string[]; revert?: RevertInfo }): Reason => {
+  const r = reason("STALE", "after-replan", sent.reasons.join("; "));
+  return sent.revert ? { ...r, revert: sent.revert } : r;
+};
+
 export function sequenceOps(d: Deps) {
   const { efs, journal } = d;
   const { save, progress, reconcileParts } = sequenceCore(efs, journal);
@@ -238,7 +249,7 @@ export function sequenceOps(d: Deps) {
         sent.status === "NOT_SENT" || sent.status === "AMBIGUOUS"
           ? sent.reason
           : sent.status === "STALE"
-            ? reason("STALE", "after-replan", sent.reasons.join("; "))
+            ? staleReason(sent)
             : sent.status === "BUSY"
               ? reason("BUSY", "transient", "another submission for this account is in progress")
               : undefined;
@@ -256,7 +267,9 @@ export function sequenceOps(d: Deps) {
       (parts[i] as SequencePart).planId = planned.plan.id;
       r = await save({ ...r, parts }, `sending part ${i + 1} of ${r.parts.length}`);
       const sent = await sendPlan(efs, journal, a, planned.plan, o);
-      if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o);
+      // Bounded by settleMs, like the batch wait: when it runs out the part stays SUBMITTED (in flight, journaled),
+      // never failed; reconcile settles it later from the ledger.
+      if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o, settleMs);
       r = await reconcileParts(
         r,
         o,
@@ -267,7 +280,7 @@ export function sequenceOps(d: Deps) {
           sent.status === "NOT_SENT" || sent.status === "AMBIGUOUS"
             ? sent.reason
             : sent.status === "STALE"
-              ? reason("STALE", "after-replan", sent.reasons.join("; "))
+              ? staleReason(sent)
               : sent.status === "BUSY"
                 ? reason("BUSY", "transient", "another submission for this account is in progress")
                 : reason(

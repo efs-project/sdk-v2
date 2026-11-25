@@ -1,10 +1,47 @@
 // SPDX-License-Identifier: MIT
-/** Why something is unknown, unsupported or failed. Plain data. */
+import type { Address, Hex } from "./hex.js";
+
+/**
+ * Why something is unknown, unsupported or failed. Plain data. Branch on `code`, `retry` and the structured fields,
+ * never on `detail` (free text for logs and support, not a contract).
+ *
+ * `retry` says what can move it forward: "transient" (try the same thing again, e.g. Continue), "after-reconcile"
+ * (settle from the ledger first, then try again), "after-replan" (this plan cannot proceed as it stands: plan
+ * again from fresh state), "never".
+ */
 export interface Reason {
   code: ReasonCode;
   retry: "never" | "transient" | "after-reconcile" | "after-replan";
   detail?: string;
+  /** Set when the ledger refused the call (a simulated revert): which error, as far as the vendored tables know it. */
+  revert?: RevertInfo;
+  /** Set on WALLET_MISMATCH: the chain and account the plan needs, and what the wallet is on now. */
+  wallet?: WalletMismatch;
 }
+
+/** A contract revert, decoded only as far as the vendored contracts tables allow. Nothing here is guessed. */
+export interface RevertInfo {
+  /** The 4-byte error selector. */
+  selector: Hex;
+  /** The error's name from the vendored errors table (e.g. "E_CAS"); absent when the selector is not in it. */
+  error?: string;
+  /**
+   * The error's arguments, present only when they decode cleanly against the vendored ABI. uints are bigint: plain
+   * JSON.stringify throws on them, so serialize reasons with `toJson`.
+   */
+  args?: readonly unknown[];
+}
+
+/** The wallet moved off the plan's chain or account. Nothing was sent; switch back and send again. */
+export interface WalletMismatch {
+  expected: { chainId: number; account: Address };
+  /**
+   * `account` is the plan's account when the wallet still offers it (only the chain is wrong), else the wallet's first
+   * connected account, or null when it offers none.
+   */
+  actual: { chainId: number; account: Address | null };
+}
+
 export type ReasonCode =
   | "RPC_UNAVAILABLE"
   | "RPC_ERROR"
@@ -21,6 +58,13 @@ export type ReasonCode =
   | "TOO_LARGE"
   | "JOURNAL_UNAVAILABLE"
   | "OVER_TX_GAS_CAP"
+  /** The ledger refuses the plan as it stands (see `revert`); plan again from fresh state. */
+  | "STALE"
+  /** The wallet is on another chain or account than the plan (see `wallet`). Nothing was sent. */
+  | "WALLET_MISMATCH"
+  | "USER_REJECTED"
+  | "BUSY"
+  | "NOT_YET_DECIDABLE"
   | (string & Record<never, never>);
 
 export function reason(code: ReasonCode, retry: Reason["retry"], detail?: string): Reason {
