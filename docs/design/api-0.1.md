@@ -670,6 +670,42 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   never prompt and create nothing. Each `SequenceProgress` names its `account`. Continue means: connect, create a
   writer for that account, and `resume(id)`. A writer for another account refuses with MISUSE.
 
+### Editing a file (`planEditFile`, 0.1)
+
+`planEditFile(efs, writer, { file, base, content, lens?, media? }, opts?)` in `@efs/sdk/files` plans a new revision
+of an existing file, opened by object link. It touches only the file and its HEAD: no name, folder or path, so it
+does not wait on the tags-vs-directories ruling. Planning reads the chain at one basis and never calls the wallet
+(only `writer.principal` is used).
+
+```ts
+type EditPlanResult =
+  | { status: "PLANNED"; parts: SequencePartInput[]; review: EditReview; basis }   // always parts: runSequence(parts)
+  | { status: "BASE_CHANGED"; head: RevisionRef | null; basis }  // HEAD under the Lens is not `base` (null: no HEAD)
+  | { status: "TOO_LARGE"; reason }                              // more than maxParts publications, or a huge locator
+  | { status: "UNKNOWN"; reason; basis? };                        // the chain could not be read: nothing decided
+```
+- **What is published:** a `files-child/1` revision whose parent is `base`, and `BIND(HEAD, file, 0 → revision)`.
+  `content` is bytes or `{ kind: "external", length, sha256, locator }`. Bytes that fit one record body
+  (`maxBodyBytes − 96`) go inline in the revision; larger bytes are chunked canonically (`efs2/chunking/1`) under a
+  `files-content/1` descriptor (layout `chunk` for one chunk, `span` for a tree). External content is a
+  `files-external/1` locator over the empty sentinel chunk.
+- **Never a silent overwrite:** first the base check (the file's HEAD under the Lens must still be `base`), then a
+  compare-and-swap. The bind carries the editor's own HEAD binding revision as `expectedRevision`, so if another
+  save by the same account lands first, the ledger refuses this one (`E_CAS`, which `runSequence` reports as STALE).
+  The client abandons that sequence and plans again from the new base. When `base` is another author's revision
+  (`review.guard: "lens"`), only the planning-time base check covers it.
+- **Splitting:** chunks and spans go through `splitPublications` under the per-transaction gas cap. The finish
+  (descriptor, revision and HEAD bind) stays in one publication, so the edit appears atomically when the last part
+  commits. Until the contracts release carries `gasModel`, the default is the contracts' fitted prague constants
+  (`opts.gasModel` overrides). `opts.maxParts` (default 64) bounds the save.
+- **`review`:** `file`, `base`, the new `revision` id, `author` (the writer's principal), `size`, `sha256`,
+  `layout` (`inline` | `chunk` | `span` | `external`), `parts`, `prompts { sequential, atomicBatch: 1 }`,
+  `gas { perPart, schedule }`, `records`, `expectedRevision`, `guard` and `visibleInLens`. `visibleInLens` is false
+  when the edited Lens leaves the author out, or puts an earlier author of this HEAD first: the save still lands,
+  but that view keeps showing the other revision (`efs.lens.mineFirst(account)` puts the author first).
+- **Effects:** every part carries one `files.edit` effect with the same facts as strings, plus `part`, `parts` and
+  `stage` (`content` stores bytes only; `finish` moves HEAD), so a resumed save can still describe itself.
+
 ## 8. Errors that do throw
 
 ```ts

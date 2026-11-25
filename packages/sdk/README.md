@@ -41,13 +41,38 @@ const efs = createEfs({ rpcs, deployment, gateways: { allowSchemes: ["https", "i
 await readBytes(efs, opened.file, { allowOrigins: ["https://files.example.org"] });
 ```
 
+Edit a file you opened (one wallet approval in the common case; never a silent overwrite):
+
+```ts
+import { createWriter } from "@efs/sdk/actions";
+import { planEditFile } from "@efs/sdk/files";
+import { indexedDbJournal } from "@efs/sdk/web/journal";
+
+const writer = await createWriter(efs, {
+  authorizer: { kind: "eip1193", profile: "direct", provider: window.ethereum },
+  journal: indexedDbJournal(),
+});
+const lens = efs.lens.mineFirst(writer.account);
+const edit = await planEditFile(efs, writer, {
+  file: { kind: "file", subject: opened.file.file },
+  base: { kind: "revision", recordId: opened.file.revision },
+  content: new TextEncoder().encode("new text\n"),
+  lens,
+});
+if (edit.status === "BASE_CHANGED") {
+  // "This file changed since you opened it": show edit.head, then plan again from it
+} else if (edit.status === "PLANNED") {
+  const saved = await writer.runSequence(edit.parts); // COMPLETE, or PARTIAL / IN_FLIGHT to resume later
+}
+```
+
 ## Entry points
 
 | Import | For |
 | --- | --- |
 | `@efs/sdk` | `createEfs`, pinning, names, links, ids, the JSON codec, memory caches |
 | `@efs/sdk/links` | the route and link grammar alone, with no runtime dependencies (for startup routers) |
-| `@efs/sdk/files` | `openFile`, `readBytes`, `readRange`, `fileChunks`, `unverifiedChunks` |
+| `@efs/sdk/files` | `openFile`, `readBytes`, `readRange`, `fileChunks`, `unverifiedChunks`, `planEditFile` |
 | `@efs/sdk/actions` | `createWriter`: plan, review, send and reconcile writes, exactly once |
 | `@efs/sdk/web` | `streamFile` / `streamUnverified` (ReadableStream) |
 | `@efs/sdk/web/journal` | `indexedDbJournal`, the durable write journal for pages and workers |
