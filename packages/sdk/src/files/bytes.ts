@@ -139,7 +139,15 @@ export interface ReadOpts extends CallOpts {
   lens?: Lens;
 }
 
-const EMPTY_BASIS = {
+/** @internal An unpinned BasisCommit: the reads are pinned by block hash instead. */
+export const EMPTY_BASIS: {
+  executionSet: Hex;
+  revision: number;
+  indexGeneration: number;
+  registryMutations: bigint;
+  admissionHighWater: bigint;
+  phase: number;
+} = {
   executionSet: ZERO_WORD,
   revision: 0,
   indexGeneration: 0,
@@ -163,7 +171,8 @@ async function readOne(ctx: Ctx, s: Session, basis: Basis, id: Hex): Promise<Ste
   return r.ok ? { ok: true, value: r.value[0] as LedgerRecord } : r;
 }
 
-const typeName = (efs: Efs, typeId: Hex): string | undefined => {
+/** @internal */
+export const typeName = (efs: Efs, typeId: Hex): string | undefined => {
   for (const [name, id] of Object.entries(efs.deployment.typeIds))
     if (lower(id) === lower(typeId)) return name;
   return undefined;
@@ -171,7 +180,7 @@ const typeName = (efs: Efs, typeId: Hex): string | undefined => {
 
 /** @internal A file's HEAD under a Lens at the basis block (LensReader.resolve). */
 export type HeadSelection =
-  | { status: "PRESENT"; target: Hex; author: PrincipalId }
+  | { status: "PRESENT"; target: Hex; author: PrincipalId; admission: bigint }
   | { status: "ABSENT_PROVEN" | "MASKED" }
   | { status: "UNKNOWN" | "INVALID"; reason?: Reason };
 
@@ -202,7 +211,7 @@ export async function headUnderLens(
     data: out.result as Hex,
   }) as unknown as [
     { status: number },
-    { status: number; target: Hex; principalId: Hex; revision: bigint },
+    { status: number; target: Hex; principalId: Hex; revision: bigint; admission: bigint },
   ];
   // LensReader.resolve: q.status equals the selection's status (PRESENT, MASKED, ABSENT_PROVEN, UNKNOWN), or is a
   // refusal (INVALID, LIMIT_EXCEEDED, BASIS_STALE, UNSUPPORTED). Anything else is not guessed at.
@@ -245,6 +254,7 @@ export async function headUnderLens(
       status: "PRESENT",
       target: lower(sel.target),
       author: lower(sel.principalId) as PrincipalId,
+      admission: BigInt(sel.admission),
     },
   };
 }

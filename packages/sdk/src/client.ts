@@ -66,6 +66,17 @@ export interface LensTools {
   readonly default: Lens;
   from(input: readonly (PrincipalId | Address)[]): Lens;
   mineFirst(me: Address | PrincipalId, base?: Lens): Lens;
+  /**
+   * The Lens for viewing a place (a folder, later an address or a topic): the reader first, then the place's owner
+   * (FolderRef.owner, or the address itself), then `base` (default: the client's default Lens), each principal once.
+   * Pass `owner: null` to leave the owner out (the reader switched it off). "Everyone" (public) arrives with the
+   * contracts' all-authors lists and is not a Lens principal.
+   */
+  place(o: {
+    reader?: Address | PrincipalId;
+    owner?: Address | PrincipalId | null;
+    base?: Lens;
+  }): Lens;
   principalOf(account: Address): PrincipalId;
 }
 
@@ -112,6 +123,12 @@ function lensTools(defaultLens: readonly PrincipalId[], max: number): LensTools 
     default: base,
     from: (input) => make(input.map(toPrincipal)),
     mineFirst: (me, b = base) => make([toPrincipal(me), ...b.principals]),
+    place: ({ reader, owner, base: b = base }) =>
+      make([
+        ...(reader !== undefined ? [toPrincipal(reader)] : []),
+        ...(owner !== undefined && owner !== null ? [toPrincipal(owner)] : []),
+        ...b.principals,
+      ]),
     principalOf: keyPrincipal,
   };
 }

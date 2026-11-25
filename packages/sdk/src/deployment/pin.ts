@@ -202,6 +202,7 @@ export async function pinDeployment(
         blockHash: block.value.hash,
         timestamp: block.value.timestamp,
         executionSet: lower(described.executionSet),
+        admissions: BigInt(described.admissions),
         endpoint: s.port.label,
       };
       const live: LiveDeployment = {

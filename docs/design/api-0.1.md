@@ -812,6 +812,70 @@ type EditPlanResult =
 - **Effects:** every part carries one `files.edit` effect with the same facts as strings (`mediaType` only when one is
   declared), plus `part`, `parts` and
   `stage` (`content` stores bytes only; `finish` moves HEAD), so a resumed save can still describe itself.
+- **BASE_CHANGED** also carries `headAuthor` and `headAdmission` (the admission that last set that HEAD). Compare
+  `headAdmission` with `basis.admissions` of the read the edit began from (`OpenResult.basis`): at or below it, the
+  head was already there (for example your own version, now first because you connected); above it, someone saved
+  after you opened the file. Every `Basis` from the pin now carries `admissions` (describe().admissions).
+
+### Folders (0.1)
+
+A folder is a `files-directory/1` record (`FolderRef { kind: "folder", directory, subject?, owner? }`). Its entries
+are FOLDER bindings, one per author: `(FOLDER, directory, keccak(name)) → target`, where the target is a file
+subject or another folder's directory record. The Lens decides which author's entry a name shows (the first author
+in Lens order with a bound entry; an earlier author's mask hides the name). Every read and planner takes the parent
+explicitly: there is no default root, and no link format names one (the Realm's shared root is a stand-in parent in
+fixtures; folder paths will live under an address once homes land). `folderOf(efs, subject)` makes a FolderRef from
+the subject that minted it (its object link), with no read. `efs.lens.place({ reader, owner, base })` builds a place's
+Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out), then `base`, each once.
+
+**Reads** (`@efs/sdk/files`, all at one block):
+- `listFolder(efs, folder, { lens?, kinds?, limit?, cursor?, withSize? })` → `PRESENT { folder, rows, skipped,
+  coverage, next? }` | `ABSENT_PROVEN` (no such folder: never "empty") | `UNKNOWN` | `INVALID`. One row per name.
+  A row has `name`, `position`, `kind` (`folder` | `file` | `other` | `invalid`), `typeId` (files-directory/1, or the
+  HEAD revision's Type), `target`, `author`, `admission`, `head?` and, with `withSize`, `size`. `kinds` is a kind
+  filter run by the SDK, counted in `skipped.filtered`; names an earlier author hid are `skipped.hidden`. In this
+  generation the chain admits only files and folders as entries, so the kind is the Type; a filter by Type id comes
+  with tag and topic views, where items of any Type appear. `coverage` is COMPLETE only for a listing scanned from its
+  start to its end on one page; a page from a cursor is at most PARTIAL (`RESUMED`), and an empty PARTIAL page means
+  "keep reading". A stale cursor is UNKNOWN with BASIS_STALE, `after-replan`: list again from the start. Cost: three
+  round trips per page (the page, its authors, the rows' Types and owners); `withSize` adds one read per file row and
+  one more round trip for files stored under a descriptor.
+- `lookupEntry(efs, { folder, name }, { lens? })` → `PRESENT { selected, candidates, conflict }` | `MASKED { by,
+  candidates }` | `ABSENT_PROVEN` | `UNKNOWN` | `INVALID`. `candidates` is every author in the Lens with an entry at
+  that name, in Lens order, each with `firstBound` (when it was first placed); `conflict` when there are several. An
+  app that shows same-named entries as a list orders them itself.
+- `resolvePath(efs, { from, segments }, { lens?, maxSegments? })` → `PRESENT { target, entry, chain }` |
+  `ABSENT_PROVEN` / `MASKED { segment, chain }` | `NOT_A_FOLDER { segment }` | `INVALID { segment?, rule? }` |
+  `UNKNOWN`. Each segment follows the Lens's choice, with its author in `chain`. No depth limit: a path costs one
+  round trip per segment, so object links are the fast (and rename-proof) way to open a file; a path is a lookup that
+  a rename or move can break.
+- Each reply is cross-checked: the folder must be a files-directory/1 record, the heads' selection must be the Lens
+  law's, the page and Lens readers must agree on every row, and COMPLETE must hold locally.
+
+**Writes** (each `PLANNED { parts, review }` for `runSequence` | `REFUSED { refused }` | `TOO_LARGE` | `UNKNOWN`):
+- `planCreateFile(efs, w, { folder, name, content, mediaType?, lens?, salt? })`: CREATE, the root revision (inline,
+  or chunks under a descriptor; a declared type means a descriptor), the name record if new, BIND(HEAD), BIND(FOLDER).
+- `planCreateFolder(efs, w, { folder, name, lens?, salt? })`: CREATE, files-directory/1, the name if new,
+  BIND(FOLDER). `review.created` is the new FolderRef with its subject.
+- `planMoveEntries(efs, w, { moves: [{ from, to: { folder?, name?, via? } }], lens? })`: rename (a new name) and move
+  (a new folder). Each move RELEASEs the old place (the Lens falls through to the next author there) and BINDs the new
+  one, atomically in one publication; links to the file or folder keep working. Moving a folder needs `via` (the
+  destination's folders, from resolvePath) and refuses (MISUSE, `details.code: "INTO_ITSELF"`) a move into itself or
+  below itself under this Lens: there are no parent pointers, so that path is the only check.
+- `planRemoveEntries(efs, w, { entries, hide?, lens? })`: RELEASE by default (you no longer put anything there: the
+  next author's entry shows). `hide: true` UNBINDs (a mask: nothing shows there for a reader who ranks you above the
+  entry's author). The chain lets anyone mask their own position; offering hide only to a place's owner is an app rule.
+  Nothing is destroyed: the file stays reachable by its link.
+- `planRestoreEntries(efs, w, { entries, lens? })`: BIND a released or hidden entry back to the target it had before,
+  read from the binding's history.
+- Every planner writes only the writer's own entries, each with a compare-and-swap on its revision. Refusal codes:
+  `NAME_TAKEN_MINE` (your own entry holds the name), `NOT_YOURS` (with `author` and `admission`), `FOLDER_ABSENT`,
+  `ENTRY_ABSENT`, `NOT_REMOVED`. A batch refuses as a whole and lists every refusal by `index`. Another author's
+  entry at the name is not a refusal: the review says what this Lens will show (`visibleInLens`, `shownInstead`,
+  `hiddenBy`, and `shownAfter` for the place an entry leaves). Invalid names (checkName) and media types throw MISUSE
+  before any read.
+- `SequenceRecord.effect` names the save: `files.create`, `files.createFolder`, `files.move` (its moves),
+  `files.remove` (`hide` and its entries) or `files.restore`, each listing the names it touches.
 
 ## 8. Errors that do throw
 

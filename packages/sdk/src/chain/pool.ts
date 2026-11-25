@@ -21,6 +21,11 @@ export interface Basis {
   timestamp?: bigint;
   /** Execution set from describe() at this basis; "0x" until the deployment pin reads it. */
   executionSet: Hex;
+  /**
+   * How many admissions the ledger had at this basis (describe().admissions). Compare it with a head's `admission`
+   * to tell whether the head was set before this basis or after it. Absent before the pin reads it.
+   */
+  admissions?: bigint;
   /** Label or origin of the endpoint that served this basis. Never a URL. */
   endpoint: string;
 }

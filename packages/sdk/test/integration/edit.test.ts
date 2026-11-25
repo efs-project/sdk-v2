@@ -59,6 +59,9 @@ describe("planEditFile (fixture)", () => {
     if (created.status !== "PLANNED") throw new Error(created.status);
     expect((await w.run(created.plan)).reconcile?.outcome).toBe("COMMITTED");
     const v1 = await revisionOf(put.file, lens);
+    const opened = await openFile(efs, { kind: "file", subject: put.file }, { lens });
+    const openedAt = opened.basis?.admissions;
+    expect(openedAt).toBeGreaterThan(0n);
 
     const r = await planEditFile(efs, w, {
       file: { kind: "file", subject: put.file },
@@ -106,7 +109,12 @@ describe("planEditFile (fixture)", () => {
     expect(again).toMatchObject({
       status: "BASE_CHANGED",
       head: { kind: "revision", recordId: r.review.revision, file: put.file },
+      headAuthor: w.principal,
     });
+    // The head was set after the edit began: someone (here, this account) saved while the person was editing.
+    expect(again.status === "BASE_CHANGED" && again.headAdmission).toBeGreaterThan(
+      openedAt as bigint,
+    );
   });
 
   it("two edits planned from one base: the first lands, the ledger refuses the second (E_CAS)", async () => {

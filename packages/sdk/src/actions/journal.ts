@@ -77,13 +77,31 @@ export interface SequencePart {
  * What a save is for, so a UI can name it and hold new saves per file. Display and blocking data only: it never
  * changes what is planned or sent. Set when runSequence starts; records written before it have none.
  */
-export interface SequenceEffect {
-  kind: "files.edit";
-  /** The file (subject) being edited. */
-  file: Hex;
-  /** The revision the edit creates. */
-  revision: Hex;
-}
+export type SequenceEffect =
+  | {
+      kind: "files.edit";
+      /** The file (subject) being edited. */
+      file: Hex;
+      /** The revision the edit creates. */
+      revision: Hex;
+    }
+  /** A new file `name` in `folder` (a files-directory/1 record id): the file's subject and first revision. */
+  | { kind: "files.create"; folder: Hex; name: string; file: Hex; revision: Hex }
+  /** A new folder `name` in `folder`: its directory record id and the subject that minted it. */
+  | { kind: "files.createFolder"; folder: Hex; name: string; directory: Hex; subject: Hex }
+  /** Entries moved or renamed: each from (folder, name) to (toFolder, toName), and what it points at. */
+  | {
+      kind: "files.move";
+      moves: readonly { folder: Hex; name: string; toFolder: Hex; toName: string; target: Hex }[];
+    }
+  /** Entries removed (hide: masked rather than released). */
+  | {
+      kind: "files.remove";
+      hide: boolean;
+      entries: readonly { folder: Hex; name: string; target: Hex }[];
+    }
+  /** Entries restored to the target each had before it was removed. */
+  | { kind: "files.restore"; entries: readonly { folder: Hex; name: string; target: Hex }[] };
 
 export interface SequenceRecord {
   schema: "efs-sdk-sequence/1";
