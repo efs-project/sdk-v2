@@ -98,10 +98,25 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
   - the topics the save creates (`newTopics`), and the records that registers;
   - each tag, with its topic, target, number, and the author's current stance;
   - the parts, with the gas per part and per tag. Each tag is priced by the contracts' gas model
-    (`gas/model.json`), never a constant: once contracts step 3c lands, a later author's first yes also appends to
-    the shared list at each level above the place, so its cost grows with the depth.
+    (`gas/model.json`), never a constant, by the model's own composition rule (`method.tagLevels`):
+    - a first statement on an n-word topic costs `bindTagFresh` (nobody has stated anything on the pair) or
+      `bindTagSecondAuthor` (the pair exists);
+    - plus, at each of the n − 1 levels above the place, the author's own term (`tagLevel.mineNew` or
+      `mineExisting`, by whether that author's list at that level is empty);
+    - plus the shared term (`tagLevel.sharedNew` or `sharedExisting`) for a fresh pair of either sign, and, since
+      contracts step 3c, for a later author's first yes on an existing pair. A later author's first "not this" files
+      nothing below, so it pays only the author's own terms;
+    - a list with exactly 1 entry, or a multiple of 5, is priced as new;
+    - so a deep tag's cost grows with its depth, and the plan reads each term from the profile it plans for.
 - **Batches.** Many targets under one topic, or one target under many topics, split by gas like every other plan. A
   batch plans every tag or none, and lists each refusal by index, as the folder planners do.
+  - The splitter packs by the model's per-tag prices, never by a fixed count. For scale, the contracts dev measured
+    the most first tags one publication holds (spec 7a, contracts step 3c):
+    - at depth 64: 8 when the topic's lists already exist (the same after Glamsterdam), and 3 when each tag is on
+      its own new path (5 after Glamsterdam);
+    - at depth 8: 35 and 18 today, 41 and 27 after Glamsterdam.
+  - These figures are a test cross-check only, never constants in code. The model prices each tag on its own, so a
+    part it packs may hold fewer tags than these, never more.
 - **A tag on an unregistered topic is refused by the chain with a named error**, never a silent miss. The planner
   registers the topic first, so a plan never meets that error.
 - **Effects.** One `tags.tag` effect per (topic, target), with the number and its stage. `SequenceRecord.effect`
@@ -143,11 +158,22 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   first stated (its sequence), and, for roll-up, the topic it was filed under.
 - **Coverage** follows listFolder's rule: COMPLETE only for a list scanned from its start to its end. A page from a
   cursor is at most PARTIAL, and an empty PARTIAL page means "keep reading".
+- **A short page is never the end** (spec 3.3). Rows nobody says yes to, repeats and hidden rows are skipped, so a
+  page can return fewer rows than asked for, or none, while more remain.
+  - Every paged result says whether its list is finished, and if not, gives the point to resume from. Finished is
+    claimed only when the list's end was read, never because a page came back short or empty.
+  - A read bounds its work by entries read, not by rows returned. Anyone can pad a list with rows that get skipped,
+    at about the price of a tag each, so a read that kept going until it filled a page could be made to run forever.
 - **Duplicates.** Roll-up lists a thing filed under `/cars/tesla` and under `/cars/ford` twice in `/cars`. A place's
-  own list repeats a thing too (contracts step 3c, pending), so exact-topic reads remove duplicates exactly as
-  roll-ups do. The SDK removes duplicates by thing, and every result says how far: `dedup: "COMPLETE" | "BOUNDED"`
-  (with the bound), so a page never claims a uniqueness it cannot guarantee. The chain's readers dedupe within a page
-  only; removing duplicates across pages is the SDK's job (spec 3.3).
+  own list repeats a thing too (contracts step 3c), so exact-topic reads remove duplicates exactly as roll-ups do.
+  The SDK removes duplicates by thing, and every result says how far: `dedup: "COMPLETE" | "BOUNDED"` (with the
+  bound), so a page never claims a uniqueness it cannot guarantee. The chain's readers dedupe within a page only;
+  removing duplicates across pages is the SDK's job (spec 3.3).
+  - **Decide a row before marking its thing as seen** (spec 3.3). Only a row that will be shown adds its thing to
+    the seen set. A thing filed under two child topics, with no yes at the newer filing and a yes at the older one,
+    still shows, through the older one. A reader that marked the thing as seen at the newer row would drop it
+    silently. The same holds for every skip: a row left out for its yes-count, a Lens denial or a hidden child never
+    marks its thing as seen.
   - **Why a place's list repeats (3c):** it takes an entry for a fresh (place, thing) pair of either sign, and one
     for any author's first yes, so nobody can get in first and keep a later tag out of "newest first". A pair with
     only negatives stays listed. A later author's first negative adds no entry; it is reached through the pair's
@@ -238,6 +264,7 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
 | Pitfall | Guard |
 | --- | --- |
 | A tag lands but a list misses it (silent absence) | planners register first; reads never treat UNKNOWN as nothing; rebuild-equals-live vectors |
+| A public page comes back short because skipped rows used up the read, and looks like the end | every paged result says finished or gives a resume point; work bounded by entries read; a thing is marked seen only once its row is shown |
 | A deep new path doesn't fit one transaction | registration split into earlier, harmless parts; never a skipped level |
 | A word that shadows a home or a system link | refused by the SDK and by the chain |
 | Two fold tables, two ids | one pinned fold rule and shared vectors |
@@ -300,6 +327,24 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
     - a Lens author's hidden child topic hides everything filed at or below it from that reader's roll-up of the
       parent (section 5.4);
     - tags priced by `gas/model.json`, including the per-level terms a later author's first yes carries after 3c;
+  - **the PM's items from the contracts 3c review** (spec planning 2810ef6):
+    - pricing by the model's composition rule (section 4): `bindTagSecondAuthor`, plus at each level above the
+      place the author's own term and, for a yes, the shared term. Test: a later author's first yes on a deep
+      existing pair is priced above the same author's first "not this" there, by the shared terms, and each part's
+      real gas fits under the cap;
+    - splitting by the model, never by fixed counts (section 4, spec 7a). Tests at depth 64 and depth 8, with the
+      lists existing and with each tag on its own new path: every part fits under the cap, and no part holds more
+      first tags than the dev measured (8 and 3 at depth 64, 35 and 18 at depth 8; on the Glamsterdam profile 8
+      and 5, 41 and 27);
+    - a short or empty page is never the end: every paged result says finished or gives a resume point, and a read
+      bounds its work by entries read (section 5.2). Tests: a list padded with all-negative pairs ahead of one shown
+      row returns short or empty pages that say "more to read", and the row arrives on a later page;
+    - a row is decided before its thing is marked as seen, and duplicates are removed by thing across pages
+      (section 5.2). Test: a thing filed under two child topics, with no yes at the newer filing and a yes at the
+      older one, shows once in the parent's roll-up, through the older one;
+  - **the posting store's ABI id is now `efs/posting-store/2`** (contracts step 3b amended: `retain` and the
+    UNCOUNTED append tag; `/1` before), so the vendored bundle and its generated ABIs bump at this re-vendor. The SDK
+    checks no store ABI id today; any check the re-vendor adds takes the id from the release;
   - **word listings re-fold each word** (section 5.2): children and word pages run every listed word through the
     pluggable fold and skip, into `skipped`, any word that isn't its own fold. Built against the `FoldStep`
     plug-in, so it doesn't wait for the fold ruling; tested with both candidates (NFKC_Casefold, and NFC then
