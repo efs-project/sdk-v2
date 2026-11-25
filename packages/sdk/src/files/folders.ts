@@ -1455,7 +1455,8 @@ export type ObjectOpen =
   /**
    * A created subject: a file, with the principal that created it, and the file opened under the Lens (`open`: its
    * HEAD may still be ABSENT_PROVEN under this Lens, which is "no author in your Lens has a HEAD", not "no file").
-   * `open` is read at this answer's basis, its HEAD in the same batch as the kind, with every openFile check.
+   * `open` is read at this answer's basis, its HEAD in the same batch as the kind, with every openFile check. When
+   * that read fails on every endpoint after the kind was read, the answer is still FILE, with `open` UNKNOWN.
    */
   | {
       kind: "efs.object";
@@ -1468,7 +1469,10 @@ export type ObjectOpen =
     }
   /** Neither a folder record nor a created subject: nothing has this id. */
   | { kind: "efs.object"; status: "ABSENT_PROVEN"; basis: Basis; evidence: Evidence }
-  /** INVALID: a record of another Type (a revision, say), or not a 32-byte id. UNKNOWN: nothing decided. */
+  /**
+   * INVALID: a record of another Type (a revision, say), or not a 32-byte id. UNKNOWN: the kind itself could not be
+   * read (or endpoints disagreed on it): nothing decided.
+   */
   | {
       kind: "efs.object";
       status: "UNKNOWN" | "INVALID";
@@ -1509,6 +1513,14 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
     | { kind: "file"; creator: PrincipalId; open: RevisionOpen }
     | { kind: "absent" }
     | { kind: "other"; typeId: Hex };
+  // The file kind as an endpoint read it, kept across failover: when every endpoint then fails the HEAD or revision
+  // read, the answer is still FILE (routing needs the kind) with its open UNKNOWN. Endpoints that disagree on the
+  // creator leave nothing kept, and the whole answer is UNKNOWN.
+  let fileKind: { creator: PrincipalId } | "conflict" | null = null;
+  const keepFile = (creator: PrincipalId) => {
+    if (fileKind === null) fileKind = { creator };
+    else if (fileKind !== "conflict" && fileKind.creator !== creator) fileKind = "conflict";
+  };
   const r = await onEndpoint<Kind>(
     efs._internal.pool,
     async (s) => {
@@ -1543,6 +1555,7 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
       const c = decodeCreator(sub);
       if (!c.ok) return c;
       if (!c.value) return { ok: true, value: { kind: "absent" } };
+      keepFile(c.value);
       // A created subject: its file, opened from the batched HEAD at this basis on this endpoint (every openFile check,
       // the HEAD law included, runs in openSelected).
       const sel = decodeHead(head);
@@ -1557,7 +1570,20 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
     attempts: [...pin.evidence.attempts, ...r.attempts],
     requests: ctx.requests,
   };
-  if (!r.ok) return { kind: "efs.object", status: "UNKNOWN", reason: r.reason, basis, evidence };
+  if (!r.ok) {
+    const kept = fileKind as { creator: PrincipalId } | "conflict" | null;
+    if (kept !== null && kept !== "conflict")
+      return {
+        kind: "efs.object",
+        status: "FILE",
+        file: { kind: "file", subject: target as SubjectId },
+        creator: kept.creator,
+        open: { kind: "efs.open", status: "UNKNOWN", reason: r.reason, basis, evidence },
+        basis,
+        evidence,
+      };
+    return { kind: "efs.object", status: "UNKNOWN", reason: r.reason, basis, evidence };
+  }
   const v = r.value;
   if (v.kind === "folder")
     return {

@@ -7,11 +7,23 @@ import { decodeFunctionResult, encodeFunctionResult } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import type { FetchLike } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Hex, RecordId } from "../../src/core/hex.ts";
 import { planRemoveEntries } from "../../src/files/entries.ts";
-import { type FolderRef, listFolder, lookupEntry, resolvePath } from "../../src/files/folders.ts";
-import { filesPageReaderAbi, ledgerViewsAbi, lensReaderAbi } from "../../src/generated/abis.ts";
+import {
+  type FolderRef,
+  listFolder,
+  lookupEntry,
+  openObject,
+  resolvePath,
+} from "../../src/files/folders.ts";
+import {
+  filesPageReaderAbi,
+  ledgerReadsAbi,
+  ledgerViewsAbi,
+  lensReaderAbi,
+} from "../../src/generated/abis.ts";
 import { type Edit, sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -19,7 +31,7 @@ const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
   root: { directoryRecordId: RecordId };
   seed: {
     folder: { directoryRecordId: RecordId };
-    files: { name: string; headRecordId: RecordId }[];
+    files: { name: string; headRecordId: RecordId; subjectId: Hex }[];
   };
 };
 const root: FolderRef = { kind: "folder", directory: deployment.root.directoryRecordId };
@@ -193,5 +205,66 @@ describe("folder reads against tampered or failing replies (fixture)", () => {
       status: "INVALID",
       segment: 0,
     });
+  });
+});
+
+// openObject reads the kind and, in the same batch, the file's HEAD. The kind decides routing, so once an endpoint has
+// read it, a HEAD or revision read that then fails on every endpoint still answers FILE, with its open UNKNOWN.
+describe("openObject when the file's open fails on every endpoint (fixture)", () => {
+  const readme = deployment.seed.files.find((f) => f.name === "readme.txt")?.subjectId as Hex;
+  const RESOLVE = sel(lensReaderAbi, "resolve");
+  const RECORDS = sel(ledgerViewsAbi, "records");
+  const SUBJECT_INFO = sel(ledgerReadsAbi, "subjectInfo");
+  const B = "http://endpoint-b.invalid/";
+  /** Two endpoints, both the fixture chain, each with its own edits; counts each endpoint's HEAD calls. */
+  const twoEndpoints = (a: Record<Hex, Edit>, b: Record<Hex, Edit>) => {
+    const heads = { a: 0, b: 0 };
+    const fetch: FetchLike = (url, init) => {
+      const which = url === B ? "b" : "a";
+      if (String(init.body ?? "").includes(RESOLVE.slice(2))) heads[which] += 1;
+      return tampered(which === "b" ? b : a)(fixture.rpcUrl, init);
+    };
+    return { efs: createEfs({ rpcs: [fixture.rpcUrl, B], deployment, fetch }), heads };
+  };
+  const headDown: Record<Hex, Edit> = { [RESOLVE]: failWith };
+
+  it("the kind is read, the HEAD fails everywhere: FILE with its creator, open UNKNOWN", async () => {
+    const { efs, heads } = twoEndpoints(headDown, headDown);
+    const o = await openObject(efs, readme);
+    if (o.status !== "FILE") throw new Error(o.status);
+    expect(o.file).toEqual({ kind: "file", subject: readme.toLowerCase() });
+    expect(o.creator).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(o.open).toMatchObject({ kind: "efs.open", status: "UNKNOWN" });
+    expect(heads.a).toBeGreaterThan(0);
+    expect(heads.b).toBeGreaterThan(0); // failover reached the second endpoint before giving up
+    // The same file on an honest client opens, with the same creator.
+    const honest = await openObject(createEfs({ rpcs: [fixture.rpcUrl], deployment }), readme);
+    expect(honest.status === "FILE" && [honest.creator, honest.open.status]).toEqual([
+      o.creator,
+      "PRESENT",
+    ]);
+  });
+
+  it("the kind itself can't be read anywhere: the whole answer is UNKNOWN", async () => {
+    const down: Record<Hex, Edit> = { [RECORDS]: failWith, [RESOLVE]: failWith };
+    const { efs } = twoEndpoints(down, down);
+    expect((await openObject(efs, readme)).status).toBe("UNKNOWN");
+  });
+
+  it("endpoints that disagree on the creator keep no kind: the whole answer is UNKNOWN", async () => {
+    const otherCreator: Edit = (result) => {
+      const [st, x] = decodeFunctionResult({
+        abi: ledgerReadsAbi,
+        functionName: "subjectInfo",
+        data: result,
+      }) as unknown as [number, bigint, Hex];
+      return encodeFunctionResult({
+        abi: ledgerReadsAbi,
+        functionName: "subjectInfo",
+        result: [st, x, `0x${"77".repeat(32)}`] as never,
+      }) as Hex;
+    };
+    const { efs } = twoEndpoints({ ...headDown, [SUBJECT_INFO]: otherCreator }, headDown);
+    expect((await openObject(efs, readme)).status).toBe("UNKNOWN");
   });
 });
