@@ -197,6 +197,16 @@ export async function planEditFile(
   const base = lower(input.base.recordId) as RecordId;
   if (input.base.file && lower(input.base.file) !== file)
     throw new EfsFault("MISUSE", "base is a revision of another file");
+  // A media type the chain would refuse is the caller's mistake: refuse it before anything else is looked up.
+  let asked: string | undefined;
+  if (input.mediaType !== undefined) {
+    const m = normalizeMediaType(input.mediaType);
+    if (!m.ok)
+      throw new EfsFault("MISUSE", `invalid media type: ${m.reason}`, {
+        details: { mediaType: input.mediaType, code: m.code },
+      });
+    asked = m.mediaType;
+  }
   const me = lower(writer.principal) as PrincipalId;
   const lens = input.lens ?? efs.lens.default;
   let gas: { model: GasModel; txGasCap: bigint; headroom: number; blockGasLimit?: bigint };
@@ -225,15 +235,6 @@ export async function planEditFile(
       throw new EfsFault("MISUSE", "sha256 must be 32 bytes of hex");
     if (content.length < 0n || content.length >= 1n << 256n)
       throw new EfsFault("MISUSE", "length must be a uint256");
-  }
-  let asked: string | undefined;
-  if (input.mediaType !== undefined) {
-    const m = normalizeMediaType(input.mediaType);
-    if (!m.ok)
-      throw new EfsFault("MISUSE", `invalid media type: ${m.reason}`, {
-        details: { mediaType: input.mediaType, code: m.code },
-      });
-    asked = m.mediaType;
   }
 
   const maxParts = o.maxParts ?? 64;
