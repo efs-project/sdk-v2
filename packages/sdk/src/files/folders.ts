@@ -364,6 +364,9 @@ export const checkParent = (p: ParentRef): ParentRef => {
     throw misuse(
       "a folder is { kind: 'folder', directory: <files-directory/1 record id> }, a home { kind: 'home', address }",
     );
+  // A record id is a keccak-256 output: one with 12 leading zero bytes is an address (a home), never a folder.
+  if (/^0x0{24}/.test(p.directory))
+    throw misuse("that id is an address-shaped word: a home is { kind: 'home', address }");
   return { kind: "folder", directory: lower(p.directory) as RecordId };
 };
 const lensOf = (efs: Efs, lens: Lens | undefined): PrincipalId[] => {
@@ -1852,6 +1855,16 @@ export async function openPath(
         : "openPath: a path link has at least one name (with none, open it with openObject)",
     );
   const { reader, base, ...read } = o;
+  if (link.kind === "home" && link.lens) {
+    // The link's own Lens: no owner to read. resolvePath checks the home itself at its first name.
+    const lens = link.lens;
+    const r = await resolvePath(
+      efs,
+      { from: { kind: "home", address: link.address }, segments: link.names },
+      { ...read, lens },
+    );
+    return { ...r, lens };
+  }
   if (link.kind === "home") {
     const h = await openHome(efs, link.address, o);
     if (h.status !== "PRESENT")

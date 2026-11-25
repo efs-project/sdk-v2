@@ -11,7 +11,7 @@ import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
-import type { Address, Hex, PrincipalId } from "../../src/core/hex.ts";
+import type { Address, Hex, PrincipalId, RecordId } from "../../src/core/hex.ts";
 import {
   planCreateFile,
   planCreateFolder,
@@ -33,6 +33,7 @@ import {
 import { listRemoved } from "../../src/files/removed.ts";
 import { link, parseLink } from "../../src/names/links.ts";
 import { contractPrincipal, keyPrincipal } from "../../src/protocol/keys.ts";
+import { recordingFetch } from "../../src/testing/index.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -166,6 +167,14 @@ describe("homes: reads (fixture)", () => {
     await expect(listFolder(efs, home("0x1234" as Address))).rejects.toMatchObject({
       code: "MISUSE",
     });
+    // An address-shaped word (12 leading zero bytes) given as a folder id names a home, never a record: refused, not
+    // read as "no such folder" while the home's entries sit at that same word.
+    await expect(
+      listFolder(efs, {
+        kind: "folder",
+        directory: keyPrincipal(alice.address) as unknown as RecordId,
+      }),
+    ).rejects.toMatchObject({ code: "MISUSE" });
   });
 });
 
@@ -231,6 +240,32 @@ describe("homes: attaching to someone's address (fixture)", () => {
     const mine = await openHome(efs, bob.address, { reader: bob.address });
     expect(mine).toMatchObject({ status: "PRESENT", home: { address: bobAddress, owner: B } });
     expect(mine.status === "PRESENT" && mine.lens.principals[0]).toBe(B);
+
+    // A home link carrying its own Lens needs no separate owner read: it walks the names directly. Counted on the
+    // wire: one code probe, the one resolvePath batches with the first name to check the home itself; the default
+    // Lens adds openHome's own.
+    const rec = recordingFetch(globalThis.fetch as never);
+    const counting = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: rec.fetch });
+    const probes = () =>
+      rec.calls
+        .flatMap((c) => (Array.isArray(c.request) ? c.request : [c.request]))
+        .filter(
+          (q: { method?: string; params?: [{ to?: string; data?: string }] }) =>
+            q.method === "eth_call" &&
+            q.params?.[0]?.to === undefined &&
+            String(q.params?.[0]?.data).includes("3b602052"),
+        ).length;
+    const withLens = parseLink(
+      link({ kind: "home", address: bobAddress, names: ["photos", "cat.jpg"], lens: bobView }),
+    );
+    if (withLens.status !== "OK" || withLens.target.kind !== "home")
+      throw new Error("no lens link");
+    const given = await openPath(counting, withLens.target);
+    expect(given).toMatchObject({ status: "PRESENT" });
+    expect("lens" in given && given.lens).toEqual(bobView);
+    expect(probes()).toBe(1);
+    await openPath(counting, parsed.target);
+    expect(probes()).toBe(3);
   });
 
   it("pages in a home are PARTIAL until the end, and a cursor a later write overtook is refused", async () => {
@@ -294,6 +329,43 @@ describe("homes: moves, removes, hides (fixture)", () => {
     );
     const back = await lookupEntry(efs, { folder: bobHome, name: "back.txt" }, { lens: aliceView });
     expect(back.status === "PRESENT" && back.selected.author).toBe(A);
+
+    // A folder moves too (a folder move needs `via`): into the inbox by a path from Alice's home, then back to the
+    // home itself by an empty path from it.
+    await run(wa, planCreateFolder(efs, wa, { folder: aliceHome, name: "box" }));
+    await run(
+      wa,
+      planMoveEntries(efs, wa, {
+        moves: [
+          {
+            from: { folder: aliceHome, name: "box" },
+            to: { folder: inbox, via: { from: aliceHome, segments: ["inbox"] } },
+          },
+        ],
+        lens: aliceView,
+      }),
+    );
+    expect(
+      await resolvePath(efs, { from: aliceHome, segments: ["inbox", "box"] }, { lens: aliceView }),
+    ).toMatchObject({ status: "PRESENT", target: { kind: "folder" } });
+    await run(
+      wa,
+      planMoveEntries(efs, wa, {
+        moves: [
+          {
+            from: { folder: inbox, name: "box" },
+            to: { folder: aliceHome, via: { from: aliceHome, segments: [] } },
+          },
+        ],
+        lens: aliceView,
+      }),
+    );
+    expect(
+      await lookupEntry(efs, { folder: aliceHome, name: "box" }, { lens: aliceView }),
+    ).toMatchObject({
+      status: "PRESENT",
+      selected: { kind: "folder", author: A },
+    });
   });
 
   it("remove, restore, hide and unhide in a home, with Show removed listing it", async () => {

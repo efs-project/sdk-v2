@@ -930,7 +930,8 @@ It is true only as of that basis and can change (a counterfactual Safe's address
 7702 delegation set or cleared): never cache it across bases. The SDK reads it with one deployless probe in the same
 batch. `openHome(efs, address, { reader?, base? })` → `PRESENT { home (with owner), lens }` | `UNKNOWN`: the Lens to
 show a home under is the reader, then its owner, then `base`. `openPath` takes a `HomeLink` with names
-(`/0x<address>/photos/cat.jpg`) the same way, under the link's own `?lens=` or that default. Every write planner
+(`/0x<address>/photos/cat.jpg`) the same way, under the link's own `?lens=` (then it reads no owner first) or that
+default. An address-shaped word (12 leading zero bytes) given as a folder's `directory` is MISUSE: it names a home. Every write planner
 takes a home as a parent (create, move to or from it, `via` from it, remove, restore, hide, unhide), and
 `listRemoved` lists a home's removed entries. In effects and reviews' `folder` words a home is its padded address.
 
