@@ -17,7 +17,12 @@
 // The result is always a list of parts for writer.runSequence, one part in the common case.
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import type { SequencePartInput } from "../actions/sequence.js";
-import { type GasModel, type PlannedAction, splitPublications } from "../actions/split.js";
+import {
+  type GasModel,
+  type PlannedAction,
+  packBatches,
+  splitPublications,
+} from "../actions/split.js";
 import type { EffectView } from "../actions/types.js";
 import { callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint } from "../chain/pool.js";
@@ -109,8 +114,12 @@ export interface EditReview {
   /** The media type the new revision declares ("" = none: always for inline layout). */
   mediaType: string;
   parts: number;
-  /** One approval per part, or one in all with an atomic EIP-5792 wallet. */
-  prompts: { sequential: number; atomicBatch: 1 };
+  /**
+   * Wallet approvals: one per part, or `atomicBatch` with an atomic EIP-5792 wallet, which takes consecutive parts
+   * in one request only while their summed gas fits one transaction (so content parts that each fill a
+   * transaction still need one approval each).
+   */
+  prompts: { sequential: number; atomicBatch: number };
   /** The model's estimate per part (planning only; eth_estimateGas decides before each send). */
   gas: { perPart: readonly number[]; schedule: string };
   /** New records the save publishes (chunks, spans, descriptor, revision). */
@@ -420,7 +429,16 @@ export async function planEditFile(
     layout,
     mediaType, // "" whenever the layout is inline
     parts: split.parts.length,
-    prompts: { sequential: split.parts.length, atomicBatch: 1 },
+    prompts: {
+      sequential: split.parts.length,
+      atomicBatch: packBatches(
+        split.parts.map((p) => ({
+          actions: p.actions.map((a) => a.action),
+          bodies: p.actions.map((a) => a.body),
+        })),
+        gas,
+      ).length,
+    },
     gas: { perPart: split.parts.map((p) => p.gas), schedule: model.schedule },
     records: records.length + finish.length - 1,
     expectedRevision: seen.myRevision,

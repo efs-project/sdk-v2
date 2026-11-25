@@ -114,7 +114,7 @@ export function classifyWalletError(
           "WALLET_UNSUPPORTED",
           "never",
           method === "wallet_sendCalls"
-            ? 'the wallet does not support wallet_sendCalls (4200): send part by part (batch: "never")'
+            ? "the wallet does not support wallet_sendCalls (4200): the save goes on part by part"
             : `the wallet does not support ${method} (4200)`,
         ),
       };
@@ -124,6 +124,33 @@ export function classifyWalletError(
           "WALLET_INVALID_PARAMS",
           "never",
           `the wallet rejected the ${method} parameters (-32602)`,
+        ),
+      };
+    // EIP-5792's own refusals of a wallet_sendCalls request: nothing was sent.
+    case 5740:
+      return {
+        notSent: reason(
+          "LIMIT_EXCEEDED",
+          "after-replan",
+          "the wallet refused a batch this large (5740): the save goes on in smaller batches",
+        ),
+      };
+    case 5700:
+    case 5710:
+    case 5760:
+      return {
+        notSent: reason(
+          "WALLET_UNSUPPORTED",
+          "transient",
+          `the wallet can't run this batch (${code}): the save goes on part by part`,
+        ),
+      };
+    case 5750:
+      return {
+        notSent: reason(
+          "USER_REJECTED",
+          "transient",
+          "the account upgrade for batching was declined (5750): the save goes on part by part",
         ),
       };
     case 4900:

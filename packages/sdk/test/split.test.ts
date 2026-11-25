@@ -6,6 +6,8 @@ import {
   type GasModel,
   gasPlanFor,
   type PlannedAction,
+  packBatches,
+  partGas,
   publicationGas,
   splitPublications,
 } from "../src/actions/split.ts";
@@ -211,5 +213,96 @@ describe("gasPlanFor", () => {
     expect(roomy.ok && roomy.parts.length).toBe(1);
     const tight = splitPublications(two, { ...base, blockGasLimit: 40_000_000n });
     expect(tight.ok && tight.parts.length).toBe(2);
+  });
+});
+
+describe("packBatches", () => {
+  // A part as a sequence keeps it: actions and bodies, no shapes or bind rows.
+  const part = (...sizes: number[]) => ({
+    actions: sizes.map(() => action(ACTION.PUBLISH)),
+    bodies: sizes.map((n) => body(n)),
+  });
+  const plan = { model: MODEL, txGasCap: CAP, headroom: 0.15 };
+  const budget = Math.floor(Number(CAP) * 0.85);
+  const sizes = (groups: number[][]) => groups.map((g) => g.length);
+
+  it("packs consecutive parts while their summed estimate fits one transaction's budget", () => {
+    const small = part(100);
+    const k = Math.floor(budget / partGas(small, MODEL));
+    expect(k).toBeGreaterThan(2);
+    const groups = packBatches(
+      Array.from({ length: 2 * k + 1 }, () => small),
+      plan,
+    );
+    expect(sizes(groups)).toEqual([k, k, 1]);
+    expect(groups.flat()).toEqual(Array.from({ length: 2 * k + 1 }, (_, i) => i));
+  });
+
+  it("a part with no neighbour that fits goes alone: two-chunk parts never share a batch", () => {
+    const full = part(8192, 8192);
+    expect(partGas(full, MODEL)).toBeLessThan(budget);
+    expect(packBatches([full, full, full], plan)).toEqual([[0], [1], [2]]);
+  });
+
+  it("greedy and in order: every batch fits, and no batch could have taken the next part", () => {
+    const mix = [100, 8192, 100, 100, 4000, 8192, 8192, 100, 2000, 100].map((n) =>
+      n === 8192 ? part(8192, 8192) : part(n),
+    );
+    const groups = packBatches(mix, plan);
+    expect(groups.flat()).toEqual(mix.map((_, i) => i));
+    const sum = (g: number[]) => g.reduce((t, i) => t + partGas(mix[i] as never, MODEL), 0);
+    groups.forEach((g, k) => {
+      if (g.length > 1) expect(sum(g)).toBeLessThanOrEqual(budget);
+      const next = groups[k + 1]?.[0];
+      if (next !== undefined) expect(sum([...g, next])).toBeGreaterThan(budget);
+    });
+  });
+
+  it("maxParts caps a batch (a wallet that refused a bigger one)", () => {
+    expect(
+      packBatches(
+        Array.from({ length: 5 }, () => part(100)),
+        plan,
+        2,
+      ),
+    ).toEqual([[0, 1], [2, 3], [4]]);
+    expect(sizes(packBatches([part(100), part(100)], plan, 1))).toEqual([1, 1]);
+  });
+
+  it("amsterdam: each batch's whole gas must also fit the block; with no block limit, nothing is batched", () => {
+    const dep = {
+      chain: {
+        hardfork: "amsterdam",
+        feeSchedule: "amsterdam",
+        txGasCap: CAP,
+        blockGasLimit: 60_000_000n,
+      },
+    } as unknown as DeploymentInfo;
+    const p = gasPlanFor(dep);
+    if (!p.ok) throw new Error(p.reason.detail);
+    const m = p.model;
+    const total = m.total as GasModel;
+    const small = part(100);
+    const byExec = Math.floor(budget / partGas(small, m));
+    const byBlock = Math.floor((60_000_000 * 0.85) / partGas(small, total));
+    const groups = packBatches(
+      Array.from({ length: 12 }, () => small),
+      p,
+    );
+    expect(sizes(groups)[0]).toBe(Math.min(12, byExec, byBlock));
+    const { blockGasLimit: _, ...noBlock } = p;
+    expect(sizes(packBatches([small, small, small], noBlock))).toEqual([1, 1, 1]);
+  });
+
+  it("never estimates a part below its shaped estimate", () => {
+    const shaped: PlannedAction[] = [
+      plain(ACTION.CREATE),
+      publish(96, "files-root/1 form 0"),
+      publish(12, "files-name/2"),
+      { ...plain(ACTION.BIND), bindRow: "bindHeadFresh" },
+      { ...plain(ACTION.BIND), bindRow: "bindFolderFreshFile" },
+    ];
+    const kept = { actions: shaped.map((a) => a.action), bodies: shaped.map((a) => a.body) };
+    expect(partGas(kept, MODEL)).toBeGreaterThanOrEqual(publicationGas(shaped, MODEL, true));
   });
 });

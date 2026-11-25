@@ -3,9 +3,11 @@
 // part's inputs and, once planned, its plan id, so a reload after part 2 of 5 continues with parts 3–5.
 //
 //   - Settling a sequence never needs the wallet: every in-flight part is decided from the ledger (reconcile).
-//   - Atomic EIP-5792 wallets get the remaining parts in one wallet_sendCalls request (one approval): only there
-//     are parts planned ahead with consecutive native nonces. Everything else is just in time: a part is planned
-//     right before it is sent, and sent only after the previous part committed, so a nonce gap cannot happen.
+//   - Atomic EIP-5792 wallets get consecutive remaining parts in one wallet_sendCalls request (one approval) while
+//     their summed gas fits one transaction, since an atomic batch may run as a single transaction: only a batch's
+//     parts are planned ahead with consecutive native nonces. A failed batch lowers the save's batchMax, so the
+//     same batch is never sent again. Everything else is just in time: a part is planned right before it is sent,
+//     and sent only after the previous part committed, so a nonce gap cannot happen.
 //   - The only success is COMPLETE. PARTIAL means some parts committed and the save stopped; the parts already on
 //     chain stay there whatever happens next (an abandoned upload leaves chunks that never appear as a file).
 import { keccak256 } from "viem";
@@ -21,7 +23,12 @@ import {
 import type { Address, Hex } from "../core/hex.js";
 import { toJson } from "../core/json.js";
 import { setTimer, utf8Encode } from "../core/platform.js";
-import { atomicBatchSupport, sendPlansAsBatch, waitForBatch } from "./batch.js";
+import {
+  atomicBatchSupport,
+  type BatchSendResult,
+  sendPlansAsBatch,
+  waitForBatch,
+} from "./batch.js";
 import {
   type AttemptStage,
   type Journal,
@@ -35,10 +42,14 @@ import type { PlanInput } from "./plan.js";
 import { waitForReceipt } from "./receipt.js";
 import { reconcileAttempt } from "./reconcile.js";
 import { type Authorizer, notify, type SendOpts, sendPlan } from "./send.js";
+import { gasPlanFor, packBatches } from "./split.js";
 import type { EffectView, Plan, PlanResult, PlanSequenceResult } from "./types.js";
 
 export interface SequenceOpts extends SendOpts {
-  /** "auto" (default): one EIP-5792 request when the wallet runs calls atomically; "never": part by part. */
+  /**
+   * "auto" (default): with a wallet that runs calls atomically (EIP-5792), consecutive parts share one request while
+   * their summed gas fits one transaction; "never": part by part.
+   */
   batch?: "auto" | "never";
   /**
    * How long to wait for a sent part's receipt and ledger decision before answering IN_FLIGHT (default 60 s). It
@@ -93,7 +104,7 @@ export interface SequenceProgress {
      */
     pastDeadline?: boolean;
   };
-  /** How the last step went out: one wallet request for all remaining parts, or part by part. */
+  /** How the last step went out: one wallet request for several parts, or one part by itself. */
   mode?: "batch" | "sequential";
   /** Why the save stopped (when it did not reach COMPLETE). */
   reason?: Reason;
@@ -510,7 +521,36 @@ export function sequenceOps(d: Deps) {
     });
   };
 
-  /** Send what is left: as one EIP-5792 request when the wallet runs it atomically, else part by part. */
+  /**
+   * The remaining parts in send order, grouped: a group of two or more goes out as one atomic EIP-5792 request, a
+   * group of one by itself. Batches only for an atomic wallet, and only parts whose summed gas fits one
+   * transaction (packBatches), at most the save's batchMax.
+   */
+  const groupsFor = async (
+    r: SequenceRecord,
+    remaining: readonly number[],
+    o: SequenceOpts,
+  ): Promise<number[][]> => {
+    const one = remaining.map((i) => [i]);
+    const a = d.authorizer;
+    if (
+      a.kind !== "eip1193" ||
+      (o.batch ?? "auto") !== "auto" ||
+      remaining.length < 2 ||
+      r.batchMax === 1
+    )
+      return one;
+    const g = gasPlanFor(efs.deployment);
+    if (!g.ok) return one; // no gas model for this chain: nothing to judge a batch's size by
+    if (!(await atomicBatchSupport(a.provider, d.account, efs.deployment.chainId))) return one;
+    return packBatches(
+      remaining.map((i) => r.parts[i] as SequencePart),
+      g,
+      r.batchMax,
+    ).map((b) => b.map((k) => remaining[k] as number));
+  };
+
+  /** Send what is left: gas-packed atomic EIP-5792 batches when the wallet runs calls atomically, else part by part. */
   const advance = async (
     r0: SequenceRecord,
     o: SequenceOpts,
@@ -524,39 +564,44 @@ export function sequenceOps(d: Deps) {
     committedSince(o, r0, r);
     if (r.state === "IN_FLIGHT" || r.state === "COMPLETE" || r.state === "ABANDONED")
       return progress(r);
-    const remaining = r.parts.map((p, i) => ({ p, i })).filter(({ p }) => !p.committed);
     const a = d.authorizer;
-    if (
-      a.kind === "eip1193" &&
-      (o.batch ?? "auto") === "auto" &&
-      remaining.length >= 2 &&
-      (await atomicBatchSupport(a.provider, d.account, efs.deployment.chainId))
-    ) {
+    let mode: "batch" | "sequential" | undefined;
+
+    /** One atomic request for `g`. `again`: nothing went out and a smaller batch (or part by part) can go now. */
+    const sendBatch = async (
+      g: readonly number[],
+    ): Promise<{ done: boolean; reason?: Reason; again?: boolean }> => {
+      if (a.kind !== "eip1193") throw new EfsFault("INVARIANT", "a batch needs an EIP-1193 wallet");
       const planned = await d.planSequence(
-        remaining.map(({ p }) => partInput(p)),
+        g.map((i) => partInput(r.parts[i] as SequencePart)),
         o,
       );
-      if (planned.status !== "PLANNED")
-        return progress(r, { mode: "batch", reason: planned.reason });
+      if (planned.status !== "PLANNED") return { done: false, reason: planned.reason };
       const parts = r.parts.map((p) => ({ ...p }));
-      remaining.forEach(({ i }, k) => {
+      g.forEach((i, k) => {
         (parts[i] as SequencePart).planId = (planned.plans[k] as Plan).id;
         (parts[i] as SequencePart).deadline = (planned.plans[k] as Plan).deadline;
         delete (parts[i] as SequencePart).checkedAt;
         delete (parts[i] as SequencePart).reorged; // sent again: a new attempt, not the reorged one
         delete (parts[i] as SequencePart).expired;
       });
-      r = await save({ ...r, parts }, "sending the remaining parts as one wallet request");
-      const asked = remaining.map(({ i }) => i);
+      r = await save(
+        { ...r, parts },
+        g.length === r.parts.length
+          ? "sending the remaining parts as one wallet request"
+          : `sending parts ${(g[0] as number) + 1}–${(g[g.length - 1] as number) + 1} of ${r.parts.length} as one wallet request`,
+      );
       const sent = await sendPlansAsBatch(
         efs,
         sendJournal,
         a.provider,
         planned.plans,
-        asking(o, r, asked, "batch"),
+        asking(o, r, g, "batch"),
       );
-      if (sent.status === "SUBMITTED")
-        await waitForBatch(a.provider, sent.batchId, { timeoutMs: settleMs });
+      const status =
+        sent.status === "SUBMITTED"
+          ? await waitForBatch(a.provider, sent.batchId, { timeoutMs: settleMs })
+          : undefined;
       const sentAt = r;
       r = await reconcileParts(
         r,
@@ -564,6 +609,16 @@ export function sequenceOps(d: Deps) {
         sent.status === "SUBMITTED" || sent.status === "AMBIGUOUS" ? settleMs : 0,
       );
       committedSince(o, sentAt, r, "batch");
+      const done = g.every((i) => (r.parts[i] as SequencePart).committed);
+      const limit = done ? undefined : smallerBatch(g.length, sent, status);
+      if (limit !== undefined && limit < (r.batchMax ?? Number.POSITIVE_INFINITY))
+        r = await save(
+          { ...r, batchMax: limit },
+          limit === 1
+            ? "the wallet's batch failed: part by part from here on"
+            : `the wallet's batch failed: at most ${limit} parts per request from here on`,
+        );
+      if (done) return { done };
       const why =
         sent.status === "NOT_SENT" || sent.status === "AMBIGUOUS"
           ? sent.reason
@@ -572,16 +627,18 @@ export function sequenceOps(d: Deps) {
             : sent.status === "BUSY"
               ? reason("BUSY", "transient", "another submission for this account is in progress")
               : undefined;
-      return progress(r, {
-        mode: "batch",
-        ...(r.state !== "COMPLETE" && why ? { reason: why } : {}),
-      });
-    }
-    for (const { i } of remaining) {
+      // Refused before anything went out for a reason its size or the wallet explains (not the person): go on.
+      const again = sent.status === "NOT_SENT" && limit !== undefined && sent.walletCode !== 5750;
+      return { done, ...(why ? { reason: why } : {}), ...(again ? { again } : {}) };
+    };
+
+    /** Part `i` by itself: planned just in time, sent, and waited for. */
+    const sendOne = async (
+      i: number,
+    ): Promise<{ done: boolean; reason?: Reason; again?: boolean }> => {
       const part = r.parts[i] as SequencePart;
       const planned = await d.plan(partInput(part), o);
-      if (planned.status !== "PLANNED")
-        return progress(r, { mode: "sequential", reason: planned.reason });
+      if (planned.status !== "PLANNED") return { done: false, reason: planned.reason };
       const parts = r.parts.map((p) => ({ ...p }));
       (parts[i] as SequencePart).planId = planned.plan.id;
       (parts[i] as SequencePart).deadline = planned.plan.deadline;
@@ -606,23 +663,35 @@ export function sequenceOps(d: Deps) {
         sent.status === "SUBMITTED" || sent.status === "AMBIGUOUS" ? settleMs : 0,
       );
       committedSince(o, sentAt, r, "sequential");
-      if (!(r.parts[i] as SequencePart).committed) {
-        const why =
-          sent.status === "NOT_SENT" || sent.status === "AMBIGUOUS"
-            ? sent.reason
-            : sent.status === "STALE"
-              ? staleReason(sent)
-              : sent.status === "BUSY"
-                ? reason("BUSY", "transient", "another submission for this account is in progress")
-                : reason(
-                    "NOT_YET_DECIDABLE",
-                    "after-reconcile",
-                    `part ${i + 1} is not decided yet`,
-                  );
-        return progress(r, { mode: "sequential", reason: why });
+      if ((r.parts[i] as SequencePart).committed) return { done: true };
+      const why =
+        sent.status === "NOT_SENT" || sent.status === "AMBIGUOUS"
+          ? sent.reason
+          : sent.status === "STALE"
+            ? staleReason(sent)
+            : sent.status === "BUSY"
+              ? reason("BUSY", "transient", "another submission for this account is in progress")
+              : reason("NOT_YET_DECIDABLE", "after-reconcile", `part ${i + 1} is not decided yet`);
+      return { done: false, reason: why };
+    };
+
+    for (let replans = 0; ; replans++) {
+      const remaining = r.parts.flatMap((p, i) => (p.committed ? [] : [i]));
+      let again = false;
+      for (const g of await groupsFor(r, remaining, o)) {
+        mode = g.length > 1 ? "batch" : "sequential";
+        const out = g.length > 1 ? await sendBatch(g) : await sendOne(g[0] as number);
+        if (out.done) continue;
+        // batchMax only falls, and at 1 nothing is batched: this re-groups a few times at most.
+        if (out.again && replans < 32) {
+          again = true;
+          break;
+        }
+        return progress(r, { mode, ...(out.reason ? { reason: out.reason } : {}) });
       }
+      if (!again) break;
     }
-    return progress(r, { mode: "sequential" });
+    return progress(r, mode ? { mode } : {});
   };
 
   const load = async (id: Hex): Promise<SequenceRecord> => {
@@ -732,6 +801,28 @@ export function sequenceOps(d: Deps) {
       return progress(await save({ ...r, state: "ABANDONED" }, "abandoned by the caller"));
     },
   };
+}
+
+/**
+ * The batch size a failed atomic request of `k` parts leaves for the rest of the save, or undefined to keep it: a
+ * wallet that refused the batch as too large (5740) or answered an error it gave no reason for, or reported the
+ * batch failed (status 400 or above), halves it; a wallet that can't batch (or whose person declined the account
+ * upgrade, 5750) goes part by part. The person's refusal (4001), a locked wallet and a lost connection keep it.
+ */
+function smallerBatch(
+  k: number,
+  sent: BatchSendResult,
+  status: number | undefined,
+): number | undefined {
+  const half = Math.max(1, Math.floor(k / 2));
+  if (sent.status === "NOT_SENT") {
+    if (sent.walletCode === 5740) return half;
+    if ([4200, 5700, 5710, 5750, 5760, -32602].includes(sent.walletCode ?? 0)) return 1;
+    return undefined;
+  }
+  if (sent.status === "AMBIGUOUS") return sent.reason.code === "RESPONSE_LOST" ? half : undefined;
+  if (sent.status === "SUBMITTED" && status !== undefined && status >= 400) return half;
+  return undefined;
 }
 
 const partInput = (p: SequencePart): SequencePartInput => ({

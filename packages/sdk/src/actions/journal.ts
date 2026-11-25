@@ -118,6 +118,11 @@ export interface SequenceRecord {
   state: SequenceState;
   /** COMPLETE and every part's admission at a finalized block ("Saved" rather than "Saved · confirming"). */
   final?: boolean;
+  /**
+   * The most parts one wallet request may carry for this save, lowered when an atomic EIP-5792 batch failed in a
+   * way its size may explain (1: part by part). Absent: only the gas budget limits a batch.
+   */
+  batchMax?: number;
   history: readonly { state: SequenceState; at: number; detail?: string }[];
   /** Unknown fields from newer SDKs are preserved here on rewrite. */
   extensions?: Record<string, unknown>;

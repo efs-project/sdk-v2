@@ -60,6 +60,7 @@ interface SequenceRecord {
   chainId: number; realmId: Hex; ledger: Address; account: Address;
   parts: { actions, bodies, effects, planId?: Hex, committed?: boolean, publication?: bigint }[];
   state: "NOT_STARTED" | "IN_FLIGHT" | "PARTIAL" | "COMPLETE" | "ABANDONED";
+  batchMax?: number;          // most parts per wallet request, lowered after a failed batch (1: part by part)
   history: { state, at, detail? }[];
   extensions?: Record<string, unknown>;
 }
