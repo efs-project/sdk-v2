@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Folders (files-directory/1): list a folder's entries, look up one name, and resolve a path of names, all under a
-// Lens and always from a parent the caller names. There is no default root: where a folder's path starts (the
-// Realm's shared root today, an address once homes land) is the caller's, so no link format bakes one in.
+// Lens and always from a parent the caller names. There is no default root: where a path starts (a folder, the
+// Realm's shared root among them, or a home: an address) is the caller's, so no link format bakes one in.
 //
 // A folder is a files-directory/1 record; its entries are FOLDER bindings `(FOLDER, directory, keccak(name)) →
-// target`, one per author, where the target is a file subject or another directory record. The Lens decides which
+// target`, one per author, where the target is a file subject or another directory record. A home is an address in
+// the same place: `(FOLDER, left-padded address, keccak(name))` (FilesFinalValidator admits an address-shaped parent),
+// so anyone can attach files and folders to any address, and every read and write here takes either. The Lens decides which
 // author's entry a name shows: the first author in Lens order with a bound entry, unless an earlier author's
 // removal-with-hide (a mask) stops the search (contracts FilesPageReader/1, LensReader/1; ledger headsAt).
 //
@@ -35,9 +37,9 @@ import {
   lensReaderAbi,
 } from "../generated/abis.js";
 import { FILES, PURPOSES } from "../generated/constants.js";
-import type { PathLink } from "../names/links.js";
+import type { HomeLink, PathLink } from "../names/links.js";
 import { checkName, decodeScalars, type NameRule } from "../names/name.js";
-import { positionKey } from "../protocol/keys.js";
+import { contractPrincipal, keyPrincipal, positionKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import {
   type Ctx,
@@ -64,9 +66,31 @@ export interface FolderRef {
   /** The principal that created it (the record's word 0), where a read saw it: the `owner` efs.lens.place takes. */
   owner?: PrincipalId;
 }
-/** One name in one folder. */
+/**
+ * A home: an address as a folder parent (design §12.5). Its entries are FOLDER bindings at the left-padded address,
+ * the word the gateway's `/0x<address>/…` serves. A home always exists (any address but zero), so it has no record and
+ * no creator: anyone may attach entries to anyone's address, and the Lens decides whose show.
+ */
+export interface HomeRef {
+  kind: "home";
+  /** The address, lowercase. */
+  address: Address;
+  /**
+   * The address's own author identity at the read's block (the gateway's `Keys.principalFor`): the key principal of
+   * a key account (an EIP-7702 account included), the Realm's contract principal of a contract (so a Safe's home
+   * shows the Safe's own entries). Set where a read saw it: the `owner` efs.lens.place takes.
+   *
+   * It is true only as of that read's basis, and it can change: a counterfactual Safe's address is a key-principal
+   * home until code is deployed there, then the contract's; an EOA that sets or clears an EIP-7702 delegation to
+   * anything but the exact designator changes too. Never cache it across bases: read it again with the home.
+   */
+  owner?: PrincipalId;
+}
+/** Where entries live: a folder (a files-directory/1 record) or a home (an address). */
+export type ParentRef = FolderRef | HomeRef;
+/** One name in one folder or home. */
 export interface EntryRef {
-  folder: FolderRef;
+  folder: ParentRef;
   name: string;
 }
 /** What a folder entry points at: a file (subject) or a folder (directory record). */
@@ -155,8 +179,8 @@ export type FolderPage =
   | {
       kind: "efs.folderPage";
       status: "PRESENT";
-      /** The listed folder, with its owner (the record's creator). */
-      folder: FolderRef;
+      /** The listed folder, with its owner (the record's creator), or home, with its owner (the address's identity). */
+      folder: ParentRef;
       rows: readonly FolderRow[];
       /**
        * hidden: names an earlier author in the Lens removed with hide (a mask), so nothing shows there. filtered: rows
@@ -183,7 +207,7 @@ export type FolderPage =
        * after-replan: list from the start).
        */
       status: "ABSENT_PROVEN" | "UNKNOWN" | "INVALID";
-      folder: FolderRef;
+      folder: ParentRef;
       reason: Reason;
       /**
        * How many times this page was read again because its readers disagreed about the chain's state at one block
@@ -241,7 +265,7 @@ export type EntryLookup =
     };
 
 export interface PathStep {
-  folder: FolderRef;
+  folder: ParentRef;
   name: string;
   author: PrincipalId;
   target: EntryTarget;
@@ -310,9 +334,13 @@ const TARGET_RECORD = FILES.targetKind.RECORD;
 const TARGET_SUBJECT = FILES.targetKind.SUBJECT;
 const ZERO = `0x${"0".repeat(64)}` as Hex;
 
+/** @internal The word a parent's entries are keyed by: a folder's record id, a home's left-padded address. */
+export const parentSubject = (p: ParentRef): Hex =>
+  p.kind === "home" ? (keyPrincipal(p.address) as Hex) : lower(p.directory);
+
 /** @internal The FOLDER position of `name` in `folder`. */
-export const entryPosition = (folder: FolderRef, nameBytes: Uint8Array): Hex =>
-  positionKey(PURPOSES.folder, lower(folder.directory), keccak256(nameBytes));
+export const entryPosition = (folder: ParentRef, nameBytes: Uint8Array): Hex =>
+  positionKey(PURPOSES.folder, parentSubject(folder), keccak256(nameBytes));
 
 /** @internal A binding target as a typed ref. */
 export const targetRef = (targetKind: number, target: Hex): EntryTarget | null =>
@@ -322,9 +350,24 @@ export const targetRef = (targetKind: number, target: Hex): EntryTarget | null =
       ? { kind: "file", subject: lower(target) as SubjectId }
       : null;
 
-const checkFolder = (folder: FolderRef): void => {
-  if (folder?.kind !== "folder" || !/^0x[0-9a-fA-F]{64}$/.test(folder.directory ?? ""))
-    throw misuse("a folder is { kind: 'folder', directory: <files-directory/1 record id> }");
+/**
+ * @internal A parent as the reads key it (lowercase, no owner), or MISUSE: a folder is `{ kind: "folder", directory }`
+ * and a home `{ kind: "home", address }` with a nonzero 20-byte address (the kernel never admits a zero subject).
+ */
+export const checkParent = (p: ParentRef): ParentRef => {
+  if (p?.kind === "home") {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(p.address ?? "") || /^0x0{40}$/.test(p.address))
+      throw misuse("a home is { kind: 'home', address: <a nonzero 20-byte address> }");
+    return { kind: "home", address: lower(p.address) as Address };
+  }
+  if (p?.kind !== "folder" || !/^0x[0-9a-fA-F]{64}$/.test(p.directory ?? ""))
+    throw misuse(
+      "a folder is { kind: 'folder', directory: <files-directory/1 record id> }, a home { kind: 'home', address }",
+    );
+  // A record id is a keccak-256 output: one with 12 leading zero bytes is an address (a home), never a folder.
+  if (/^0x0{24}/.test(p.directory))
+    throw misuse("that id is an address-shaped word: a home is { kind: 'home', address }");
+  return { kind: "folder", directory: lower(p.directory) as RecordId };
 };
 const lensOf = (efs: Efs, lens: Lens | undefined): PrincipalId[] => {
   const ps = (lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
@@ -395,6 +438,56 @@ const decodeRecords = (
   return { ok: true, value: res };
 };
 
+/**
+ * @internal A deployless eth_call that answers `Keys.principalFor`'s inputs for `address` at the call's block: a zero
+ * word first (EIP-3541 refuses returned code that starts with 0xEF), the code size, then the code's first 3 bytes.
+ * `PUSH20 a; EXTCODESIZE; PUSH1 0x20; MSTORE; PUSH1 3; PUSH1 0; PUSH1 0x40; PUSH20 a; EXTCODECOPY; PUSH1 0x60;
+ * PUSH1 0; RETURN`.
+ */
+export const principalProbe = (address: Address): CallRequest => {
+  const a = address.slice(2).toLowerCase();
+  return { data: `0x73${a}3b602052600360006040${`73${a}3c`}60606000f3` as Hex };
+};
+/** @internal The author identity `principalProbe` describes (the gateway's Keys.principalFor). */
+export const decodePrincipal = (efs: Efs, address: Address, out: Outcome): Step<PrincipalId> => {
+  if (!out?.ok) return failed(out);
+  const r = String(out.result);
+  if (!/^0x[0-9a-fA-F]{192}$/.test(r) || !/^0x0{64}/.test(r)) return badReply("the code probe");
+  const size = BigInt(`0x${r.slice(66, 130)}`);
+  const prefix = r.slice(130, 136).toLowerCase();
+  // No code, or exactly the 23-byte EIP-7702 designator `ef0100 ‖ address`: the signing key's own namespace.
+  if (size === 0n || (size === 23n && prefix === "ef0100"))
+    return { ok: true, value: keyPrincipal(address) };
+  return { ok: true, value: contractPrincipal(efs.deployment.realmOrigin, address) };
+};
+/** @internal The call that proves a parent and names its owner: a folder's record, a home's code probe. */
+export const parentCall = (efs: Efs, p: ParentRef): CallRequest =>
+  p.kind === "home" ? principalProbe(p.address) : recordsCall(efs, [lower(p.directory)]);
+/**
+ * @internal `parentCall`'s answer: PRESENT with the owner (a folder's creator, a home's author identity),
+ * ABSENT_PROVEN (no record has a folder's id) or NOT_A_FOLDER (a record of another Type). A home is always PRESENT.
+ */
+export const decodeParent = (
+  efs: Efs,
+  p: ParentRef,
+  out: Outcome,
+): Step<
+  | { status: "PRESENT"; owner: PrincipalId }
+  | { status: "ABSENT_PROVEN" }
+  | { status: "NOT_A_FOLDER" }
+> => {
+  if (p.kind === "home") {
+    const o = decodePrincipal(efs, p.address, out);
+    return o.ok ? { ok: true, value: { status: "PRESENT", owner: o.value } } : o;
+  }
+  const r = decodeRecords(efs, out, 1);
+  if (!r.ok) return r;
+  const x = r.value[0] as FolderRecord;
+  if (x.status === "ABSENT_PROVEN") return { ok: true, value: { status: "ABSENT_PROVEN" } };
+  if (!x.directory) return { ok: true, value: { status: "NOT_A_FOLDER" } };
+  return { ok: true, value: { status: "PRESENT", owner: x.owner } };
+};
+
 /** A reader's refusal status as a Reason (null when the status is a served one). */
 function refusal(
   code: number,
@@ -458,12 +551,12 @@ const toRow = (r: RawRow, author: PrincipalId): FolderRow | null => {
   };
 };
 
-const queryOf = (folder: FolderRef, principals: readonly Hex[], kinds: readonly string[]): Hex =>
+const queryOf = (folder: ParentRef, principals: readonly Hex[], kinds: readonly string[]): Hex =>
   keccak256(
     utf8Encode(
       JSON.stringify([
         "efs-sdk/folder-cursor/1",
-        lower(folder.directory),
+        parentSubject(folder),
         principals,
         [...kinds].sort(),
       ]),
@@ -615,7 +708,7 @@ async function pageDetails(
  */
 export async function listFolder(
   efs: Efs,
-  folder: FolderRef,
+  folder: ParentRef,
   o: ListFolderOpts = {},
 ): Promise<FolderPage> {
   // BASIS_STALE means the readers saw the chain move between calls: read the page again at a fresh basis, a bounded
@@ -638,17 +731,17 @@ export async function listFolder(
 /** BASIS_STALE reasons raised after a page was served (the page can simply be read again). */
 const rereadable = new WeakSet<Reason>();
 
-async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): Promise<FolderPage> {
-  checkFolder(folder);
+async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): Promise<FolderPage> {
+  const dir = checkParent(folder);
+  const subject = parentSubject(dir);
   const principals = lensOf(efs, o.lens);
   const kinds = o.kinds ?? [];
   const limit = o.limit ?? 50;
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIST_LIMIT)
     throw misuse(`limit is a whole number from 1 to ${MAX_LIST_LIMIT}`);
-  const query = queryOf(folder, principals, kinds);
+  const query = queryOf(dir, principals, kinds);
   if (o.cursor && (o.cursor.v !== 1 || o.cursor.query !== query))
     throw misuse("this cursor continues another listing (another folder, Lens or kinds)");
-  const dir: FolderRef = { kind: "folder", directory: lower(folder.directory) as RecordId };
   const pin = await efs.at("latest", o);
   const ctx: Ctx = { efs, requests: pin.evidence.requests };
   if (pin.status !== "VERIFIED")
@@ -664,7 +757,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
   type Out =
     | {
         kind: "page";
-        folder: FolderRef;
+        folder: ParentRef;
         rows: FolderRow[];
         hidden: number;
         filtered: number;
@@ -677,14 +770,14 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
     async (s) => {
       ctx.requests += 2;
       const [rec, out] = await callsAt(s, basis.blockHash, [
-        recordsCall(efs, [dir.directory]),
+        parentCall(efs, dir),
         {
           to: d.readers.filesPage,
           data: encodeFunctionData({
             abi: filesPageReaderAbi,
             functionName: "listDirectory",
             args: [
-              dir.directory,
+              subject,
               principals,
               { fields: F_NAME | F_HEADER | F_KIND, tagConcept: ZERO, kinds: 0 },
               EMPTY_BASIS,
@@ -696,10 +789,11 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
         },
       ]);
       if (!out?.ok) return failed(out);
-      // The folder itself: a listing of something that is not a folder is never "an empty folder".
-      const self = decodeRecords(efs, rec, 1);
+      // The folder itself: a listing of something that is not a folder is never "an empty folder". A home always
+      // exists; its probe names its owner.
+      const self = decodeParent(efs, dir, rec);
       if (!self.ok) return self;
-      const me = self.value[0] as FolderRecord;
+      const me = self.value;
       if (me.status === "ABSENT_PROVEN")
         return {
           ok: true,
@@ -709,7 +803,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
             reason: reason("NOT_YET_DECIDABLE", "never", "no folder has this record id"),
           },
         };
-      if (!me.directory)
+      if (me.status === "NOT_A_FOLDER")
         return {
           ok: true,
           value: {
@@ -722,6 +816,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
             ),
           },
         };
+      const owner = me.owner;
       let page: {
         q: { status: number; observed: { admissionHighWater: bigint } };
         rows: readonly RawRow[];
@@ -769,7 +864,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
                     principals,
                     named.map((x) => ({
                       purpose: PURPOSES.folder,
-                      subject: dir.directory,
+                      subject,
                       role: keccak256(x.name), // checked below: the position must be the row's
                     })),
                     page.q.observed.admissionHighWater,
@@ -828,8 +923,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
               !x ||
               chainStatus(x.status) !== "PRESENT" ||
               lower(x.target) !== lower(row.target) ||
-              positionKey(PURPOSES.folder, dir.directory, keccak256(row.name)) !==
-                lower(row.position)
+              positionKey(PURPOSES.folder, subject, keccak256(row.name)) !== lower(row.position)
             )
               return {
                 ok: false,
@@ -950,7 +1044,7 @@ async function listFolderOnce(efs: Efs, folder: FolderRef, o: ListFolderOpts): P
         ok: true,
         value: {
           kind: "page",
-          folder: { ...dir, owner: me.owner },
+          folder: { ...dir, owner },
           rows,
           hidden,
           filtered,
@@ -1044,7 +1138,7 @@ export async function lookupAt(
   s: Session,
   basis: Basis,
   principals: readonly PrincipalId[],
-  folder: FolderRef,
+  folder: ParentRef,
   nameBytes: Uint8Array,
   full: boolean,
   verifyFolder = false,
@@ -1071,22 +1165,21 @@ export async function lookupAt(
         data: encodeFunctionData({
           abi: filesPageReaderAbi,
           functionName: "lookupName",
-          args: [lower(folder.directory), role, principals as Hex[], EMPTY_BASIS],
+          args: [parentSubject(folder), role, principals as Hex[], EMPTY_BASIS],
         }),
       }) - 1
     : -1;
-  const fi = verifyFolder ? calls.push(recordsCall(ctx.efs, [lower(folder.directory)])) - 1 : -1;
+  const fi = verifyFolder ? calls.push(parentCall(ctx.efs, folder)) - 1 : -1;
   const outs = await callsAt(s, basis.blockHash, calls);
   const h = outs[0];
   const l = li >= 0 ? outs[li] : undefined;
   if (!h?.ok) return failed(h);
   if (verifyFolder) {
-    // The folder a path descends into must be a files-directory/1 record, checked in the same batch.
-    const fr = decodeRecords(ctx.efs, outs[fi], 1);
+    // The folder a path descends into must be a files-directory/1 record (or a home), checked in the same batch.
+    const fr = decodeParent(ctx.efs, folder, outs[fi]);
     if (!fr.ok) return fr;
-    const x = fr.value[0] as FolderRecord;
-    if (x.status !== "PRESENT" || !x.directory)
-      return { ok: true, value: { status: "NOT_A_FOLDER" } };
+    const x = fr.value;
+    if (x.status !== "PRESENT") return { ok: true, value: { status: "NOT_A_FOLDER" } };
     if (folderSeen) folderSeen.owner = x.owner;
   }
   let status: number;
@@ -1233,13 +1326,10 @@ export async function lookupEntry(
   entry: EntryRef,
   o: ReadOpts = {},
 ): Promise<EntryLookup> {
-  checkFolder(entry.folder);
+  const parent = checkParent(entry.folder);
   const bytes = validName(entry.name);
   const principals = lensOf(efs, o.lens);
-  const e: EntryRef = {
-    folder: { kind: "folder", directory: lower(entry.folder.directory) as RecordId },
-    name: entry.name,
-  };
+  const e: EntryRef = { folder: parent, name: entry.name };
   const pin = await efs.at("latest", o);
   const ctx: Ctx = { efs, requests: pin.evidence.requests };
   if (pin.status !== "VERIFIED")
@@ -1294,10 +1384,10 @@ export interface ResolvePathOpts extends ReadOpts {
  */
 export async function resolvePath(
   efs: Efs,
-  path: { from: FolderRef; segments: readonly string[] },
+  path: { from: ParentRef; segments: readonly string[] },
   o: ResolvePathOpts = {},
 ): Promise<PathResolution> {
-  checkFolder(path.from);
+  const from = checkParent(path.from);
   const principals = lensOf(efs, o.lens);
   const segments = path.segments;
   const none: Evidence = { attempts: [], requests: 0 };
@@ -1341,7 +1431,7 @@ export async function resolvePath(
     efs._internal.pool,
     async (s) => {
       const chain: PathStep[] = [];
-      let folder: FolderRef = { kind: "folder", directory: lower(path.from.directory) as RecordId };
+      let folder: ParentRef = from;
       for (let i = 0; i < names.length; i++) {
         const last = i === names.length - 1;
         const seen: { owner?: PrincipalId } = {};
@@ -1680,20 +1770,119 @@ export type PathOpen =
   /** Nothing has the link's id, neither a folder nor a file: openObject's own answer, at its basis. */
   | Extract<ObjectOpen, { status: "ABSENT_PROVEN" }>;
 
+// ---- a home: an address as a folder parent
+
+export type HomeOpen =
+  | {
+      kind: "efs.home";
+      /** A home always exists (any address but zero): PRESENT with its owner, read at `basis`. */
+      status: "PRESENT";
+      home: HomeRef & { owner: PrincipalId };
+      /** The default Lens to show it under: the reader, then the home's owner, then `base` (efs.lens.place). */
+      lens: Lens;
+      basis: Basis;
+      evidence: Evidence;
+    }
+  | { kind: "efs.home"; status: "UNKNOWN"; reason: Reason; basis?: Basis; evidence: Evidence };
+
 /**
- * Open a path link (`~efs/o/<folder>/<name>/…`, a `PathLink` from parseLink): the id's kind first (openObject), then,
- * for a folder, its names (resolvePath). The Lens is the link's own when it carries one, used as it is; else the
- * reader, then the folder's creator, then `base` (efs.lens.place). Any id that is not a folder, a file included, is
- * INVALID: a file has no names below it, so the file itself is never what the link opens. An id nothing has is
- * openObject's ABSENT_PROVEN (`kind: "efs.object"`), never a missing name. `evidence` covers both reads. Every
- * answer for the names carries `lens`, the Lens they were resolved under, so the entry opens the same way.
+ * Open a home (`/0x<address>`, a HomeLink with no names): the address's author identity at one block (the gateway's
+ * Keys.principalFor: a key account's key principal, a contract's Realm contract principal), and the Lens to list it
+ * under, the reader first, then that owner, then `base`. List it with listFolder(efs, home, { lens }).
  */
-export async function openPath(efs: Efs, link: PathLink, o: OpenPathOpts = {}): Promise<PathOpen> {
+export async function openHome(
+  efs: Efs,
+  address: Address,
+  o: CallOpts & { reader?: Address | PrincipalId; base?: Lens } = {},
+): Promise<HomeOpen> {
+  const home = checkParent({ kind: "home", address }) as HomeRef;
+  const { reader, base, ...read } = o;
+  const pin = await efs.at("latest", read);
+  if (pin.status !== "VERIFIED")
+    return {
+      kind: "efs.home",
+      status: "UNKNOWN",
+      reason: pin.status === "UNKNOWN" ? pin.reason : reason("NOT_VERIFIED_DEPLOYMENT", "never"),
+      evidence: pin.evidence,
+    };
+  const basis = pin.basis;
+  let requests = pin.evidence.requests;
+  const r = await onEndpoint<PrincipalId>(
+    efs._internal.pool,
+    async (s) => {
+      requests += 1;
+      const [out] = await callsAt(s, basis.blockHash, [principalProbe(home.address)]);
+      return decodePrincipal(efs, home.address, out);
+    },
+    read,
+  );
+  const evidence: Evidence = { attempts: [...pin.evidence.attempts, ...r.attempts], requests };
+  if (!r.ok) return { kind: "efs.home", status: "UNKNOWN", reason: r.reason, basis, evidence };
+  const lens = efs.lens.place({
+    ...(reader !== undefined ? { reader } : {}),
+    owner: r.value,
+    ...(base ? { base } : {}),
+  });
+  return {
+    kind: "efs.home",
+    status: "PRESENT",
+    home: { ...home, owner: r.value },
+    lens,
+    basis,
+    evidence,
+  };
+}
+
+/**
+ * Open a path link: names below a folder named by its id (`~efs/o/<folder>/<name>/…`, a PathLink) or below a home
+ * (`/0x<address>/<name>/…`, a HomeLink with names). For a folder, the id's kind first (openObject), then its names
+ * (resolvePath); for a home, its owner (openHome), then its names. The Lens is the link's own when it carries one,
+ * used as it is; else the reader, then the folder's creator or the home's owner, then `base` (efs.lens.place). Any id
+ * that is not a folder, a file included, is INVALID: a file has no names below it, so the file itself is never what
+ * the link opens. An id nothing has is openObject's ABSENT_PROVEN (`kind: "efs.object"`), never a missing name.
+ * `evidence` covers both reads. Every answer for the names carries `lens`, the Lens they were resolved under, so the
+ * entry opens the same way.
+ */
+export async function openPath(
+  efs: Efs,
+  link: PathLink | HomeLink,
+  o: OpenPathOpts = {},
+): Promise<PathOpen> {
   if (link.names.length === 0)
     throw misuse(
-      "openPath: a path link has at least one name (with none, open it with openObject)",
+      link.kind === "home"
+        ? "openPath: a home link with no names is the home itself: open it with openHome"
+        : "openPath: a path link has at least one name (with none, open it with openObject)",
     );
   const { reader, base, ...read } = o;
+  if (link.kind === "home" && link.lens) {
+    // The link's own Lens: no owner to read. resolvePath checks the home itself at its first name.
+    const lens = link.lens;
+    const r = await resolvePath(
+      efs,
+      { from: { kind: "home", address: link.address }, segments: link.names },
+      { ...read, lens },
+    );
+    return { ...r, lens };
+  }
+  if (link.kind === "home") {
+    const h = await openHome(efs, link.address, o);
+    if (h.status !== "PRESENT")
+      return {
+        kind: "efs.path",
+        status: "UNKNOWN",
+        reason: h.reason,
+        ...(h.basis ? { basis: h.basis } : {}),
+        evidence: h.evidence,
+      };
+    const lens = link.lens ?? h.lens;
+    const r = await resolvePath(efs, { from: h.home, segments: link.names }, { ...read, lens });
+    const evidence: Evidence = {
+      attempts: [...h.evidence.attempts, ...r.evidence.attempts],
+      requests: h.evidence.requests + r.evidence.requests,
+    };
+    return { ...r, lens, evidence };
+  }
   const obj = await openObject(efs, link.folder, read);
   if (obj.status === "ABSENT_PROVEN") return obj;
   const at = obj.basis ? { basis: obj.basis } : {};

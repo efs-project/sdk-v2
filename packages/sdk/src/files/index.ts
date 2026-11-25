@@ -3,7 +3,8 @@
  * `@efs/sdk/files`: verified byte reads (open a file, read ranges or the whole file, or stream verified chunks), and
  * the edit planner (planEditFile: a new revision of an existing file, for writer.runSequence), and normalizeMediaType
  * (the check planning applies to a declared media type, for validating one as it is typed).
- * Folders: listFolder, lookupEntry and resolvePath read a folder under a Lens, always from a parent the caller names;
+ * Folders and homes (an address as a folder parent, HomeRef): listFolder, lookupEntry and resolvePath read one under
+ * a Lens, always from a parent the caller names, and openHome / openPath open a home link;
  * planCreateFile, planCreateFolder, planMoveEntries, planRemoveEntries, planRestoreEntries and planUnhideEntries plan
  * the writer's own entries, and planHideEntries hides other authors' entries for views that put the writer first, for
  * writer.runSequence.
@@ -78,15 +79,25 @@ export type {
   FolderPage,
   FolderRef,
   FolderRow,
+  HomeOpen,
+  HomeRef,
   ListFolderOpts,
   ObjectOpen,
   OpenPathOpts,
+  ParentRef,
   PathOpen,
   PathResolution,
   PathStep,
   ResolvePathOpts,
 } from "./folders.js";
-export { listFolder, lookupEntry, openObject, openPath, resolvePath } from "./folders.js";
+export {
+  listFolder,
+  lookupEntry,
+  openHome,
+  openObject,
+  openPath,
+  resolvePath,
+} from "./folders.js";
 export type { MediaTypeCheck } from "./media.js";
 export { MAX_MEDIA_TYPE_BYTES, normalizeMediaType } from "./media.js";
 export type {

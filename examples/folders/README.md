@@ -8,8 +8,9 @@ removes and restores it. CI runs it against a local fixture chain, and every ste
 node tools/pack.mjs --only sdk,fixture && node tools/consumers.mjs --only fixture
 ```
 
-- **The parent is always named.** There is no default root. The Realm's shared root is only a stand-in parent here;
-  real folders will live under an address once homes land.
+- **The parent is always named.** There is no default root. The parent here is the Realm's shared root; a home
+  (`{ kind: "home", address }`: anyone's address, where anyone may attach entries) works the same way everywhere a
+  folder does, and opens under the reader, then the address's own identity (`openHome`).
 - **Entries are per author.** You rename, move and remove your own entries. The Lens decides which author's entry a
   name shows, and every planner's review says what this Lens will show afterwards.
 - **Remove releases** your entry, so the next author's entry at that name shows. `hide: true` masks the name instead.

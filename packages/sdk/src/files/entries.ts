@@ -44,11 +44,14 @@ import { bindingKey, positionKey, recordFromHash, recordId, subjectId } from "..
 import { chainStatus, headState } from "../protocol/status.js";
 import type { Ctx, FileRef } from "./bytes.js";
 import {
+  checkParent,
   decodeCreator,
   type EntryRef,
   type EntryTarget,
   type FolderRef,
   lookupAt,
+  type ParentRef,
+  parentSubject,
   subjectInfoCall,
 } from "./folders.js";
 import {
@@ -164,8 +167,11 @@ type RawHead = {
 };
 type RecordInfo = { present: false } | { present: true; typeId: Hex; length: number; word0: Hex };
 
-/** One place a planner touches: a name in a folder. */
+/** One place a planner touches: a name in a folder or home. */
 interface Place {
+  /** The folder or home, as the reads key it (lowercase, no owner). */
+  parent: ParentRef;
+  /** Its subject word: the folder's record id, the home's left-padded address. */
   folder: Hex;
   name: string;
   nameBytes: Uint8Array;
@@ -406,13 +412,8 @@ function typesOf(efs: Efs): Types {
     name: pick("files-name/2"),
   };
 }
-const folderOf = (f: FolderRef): Hex => {
-  if (f?.kind !== "folder" || !/^0x[0-9a-fA-F]{64}$/.test(f.directory ?? ""))
-    throw misuse("a folder is { kind: 'folder', directory: <files-directory/1 record id> }");
-  return lower(f.directory);
-};
-/** A place from a folder and a name, or MISUSE with checkName's rule. */
-function placeOf(folder: FolderRef, name: string, index: number): Place {
+/** A place from a folder or home and a name, or MISUSE with checkName's rule. */
+function placeOf(folder: ParentRef, name: string, index: number): Place {
   const c = checkName(name);
   if (c.status !== "VALID")
     throw misuse(`not a files-name/2 name: ${c.status === "INVALID" ? c.rule : c.status}`, {
@@ -422,9 +423,11 @@ function placeOf(folder: FolderRef, name: string, index: number): Place {
         ? { rule: c.rule, ...(c.at !== undefined ? { at: c.at } : {}) }
         : {}),
     });
-  const dir = folderOf(folder);
+  const parent = checkParent(folder);
+  const dir = parentSubject(parent);
   const role = keccak256(c.bytes);
   return {
+    parent,
     folder: dir,
     name,
     nameBytes: c.bytes,
@@ -432,10 +435,13 @@ function placeOf(folder: FolderRef, name: string, index: number): Place {
     position: positionKey(PURPOSES.folder, dir, role),
   };
 }
-const entryOf = (p: Place): EntryRef => ({
-  folder: { kind: "folder", directory: p.folder as RecordId },
-  name: p.name,
-});
+const entryOf = (p: Place): EntryRef => ({ folder: p.parent, name: p.name });
+/** The record ids that prove places' parents: a folder's record (a home always exists and has none). */
+const parentIds = (ps: readonly Place[]): Hex[] =>
+  ps.filter((p) => p.parent.kind === "folder").map((p) => p.folder);
+/** A home always exists; a folder must be a files-directory/1 record at the basis. */
+const parentExists = (types: Types, p: Place, records: ReadonlyMap<Hex, RecordInfo>): boolean =>
+  p.parent.kind === "home" || isFolder(types, records.get(p.folder));
 const nameRecord = (types: Types, p: Place): Hex => lower(recordFromHash(types.name, p.role));
 const isFolder = (types: Types, r: RecordInfo | undefined): boolean =>
   !!r && r.present && r.typeId === types.directory && r.length === 64;
@@ -600,8 +606,8 @@ const effectArgs = (p: Place, extra: Record<string, string>): Record<string, str
 // ---- create a file
 
 export interface CreateFileInput {
-  /** The parent folder. There is no default: where a path starts is the caller's. */
-  folder: FolderRef;
+  /** The parent: a folder, or a home (anyone's address). There is no default: where a path starts is the caller's. */
+  folder: ParentRef;
   name: string;
   content: Uint8Array | ExternalContent;
   /** As in planEditFile; omitted or "" declares none (a new file has no base to keep one from). */
@@ -614,7 +620,7 @@ export interface CreateFileInput {
 
 export interface CreateFileReview extends FolderReviewBase, LensView {
   kind: "efs.createFileReview";
-  folder: FolderRef;
+  folder: ParentRef;
   name: string;
   /** The new file, and its first revision (files-root/1). */
   file: FileRef;
@@ -678,7 +684,7 @@ export async function planCreateFile(
       me,
       principals,
       [place],
-      [place.folder, nameId],
+      [...parentIds([place]), nameId],
       [file],
     );
     if (!r.ok) return r;
@@ -688,7 +694,7 @@ export async function planCreateFile(
       throw misuse("this salt was already used by this writer: pass a new one", { salt });
     const st = seen.places.get(place.position) as PlaceState;
     const refused: EntryRefusal[] = [];
-    if (!isFolder(types, seen.records.get(place.folder)))
+    if (!parentExists(types, place, seen.records))
       refused.push({ index: 0, code: "FOLDER_ABSENT", entry: entryOf(place) });
     if (headState(st.mine.state) === "BOUND")
       refused.push({ index: 0, code: "NAME_TAKEN_MINE", entry: entryOf(place) });
@@ -786,8 +792,8 @@ export async function planCreateFile(
 // ---- create a folder
 
 export interface CreateFolderInput {
-  /** The parent folder. */
-  folder: FolderRef;
+  /** The parent: a folder, or a home (anyone's address). */
+  folder: ParentRef;
   name: string;
   lens?: Lens;
   /** The folder record's salt (default: 32 random bytes, never zero); its id is recordId(files-directory/1, (writer, salt)). */
@@ -796,7 +802,7 @@ export interface CreateFolderInput {
 export interface CreateFolderReview extends FolderReviewBase, LensView {
   kind: "efs.createFolderReview";
   /** The parent. */
-  folder: FolderRef;
+  folder: ParentRef;
   name: string;
   /** The new folder: its directory record id is its permanent link, and the writer is its owner. */
   created: FolderRef & { owner: PrincipalId };
@@ -826,7 +832,7 @@ export async function planCreateFolder(
       me,
       principals,
       [place],
-      [place.folder, nameId, directory],
+      [...parentIds([place]), nameId, directory],
     );
     if (!r.ok) return r;
     const seen = r.value;
@@ -834,7 +840,7 @@ export async function planCreateFolder(
       throw misuse("this salt was already used by this writer: pass a new one", { salt });
     const st = seen.places.get(place.position) as PlaceState;
     const refused: EntryRefusal[] = [];
-    if (!isFolder(types, seen.records.get(place.folder)))
+    if (!parentExists(types, place, seen.records))
       refused.push({ index: 0, code: "FOLDER_ABSENT", entry: entryOf(place) });
     if (headState(st.mine.state) === "BOUND")
       refused.push({ index: 0, code: "NAME_TAKEN_MINE", entry: entryOf(place) });
@@ -899,13 +905,14 @@ export async function planCreateFolder(
  * stale or made-up path cannot get past it; the path must end at the destination folder.
  */
 export interface DestinationPath {
-  from: FolderRef;
+  /** A folder or a home: where the path starts. */
+  from: ParentRef;
   segments: readonly string[];
 }
-type Via = { from: Hex; names: Uint8Array[] };
+type Via = { from: ParentRef; names: Uint8Array[] };
 const viaOf = (v: DestinationPath | undefined, index: number): Via | undefined => {
   if (v === undefined) return undefined;
-  const from = folderOf(v.from);
+  const from = checkParent(v.from);
   if (!Array.isArray(v.segments)) throw misuse("`via.segments` is a list of names", { index });
   const names = v.segments.map((n, j) => {
     const c = checkName(n);
@@ -931,8 +938,8 @@ async function pathFolders(
   via: Via,
   to: Hex,
 ): Promise<Step<Hex[] | null>> {
-  const folders: Hex[] = [via.from];
-  let at: FolderRef = { kind: "folder", directory: via.from as RecordId };
+  const folders: Hex[] = [parentSubject(via.from)];
+  let at: ParentRef = via.from;
   for (const name of via.names) {
     const r = await lookupAt(ctx, s, basis, principals, at, name, false, true);
     if (!r.ok) return r;
@@ -986,7 +993,7 @@ export interface MoveInput {
   from: EntryRef;
   /** Omit `folder` to rename in place, `name` to move under the same name. */
   to: {
-    folder?: FolderRef;
+    folder?: ParentRef;
     name?: string;
     /**
      * Required when the entry is a folder (MISUSE without it): the destination's path from a folder you name, which
@@ -1044,7 +1051,7 @@ export async function planMoveEntries(
     dests.add(m.to.position);
   }
   const places = moves.flatMap((m) => [m.from, m.to]);
-  const ids = [...new Set(moves.flatMap((m) => [m.to.folder, nameRecord(types, m.to)]))];
+  const ids = [...new Set(moves.flatMap((m) => [...parentIds([m.to]), nameRecord(types, m.to)]))];
   return atOneBasis(efs, o, async (ctx, s, basis) => {
     const r = await readSeen(ctx, s, basis, me, principals, places, ids);
     if (!r.ok) return r;
@@ -1061,7 +1068,7 @@ export async function planMoveEntries(
       // Every refusal for this move is listed, the source's and the destination's.
       const mine = headState(from.mine.state) === "BOUND";
       if (!mine) refused.push(notMine(principals, from, me, i, m.from));
-      if (!isFolder(types, seen.records.get(m.to.folder)))
+      if (!parentExists(types, m.to, seen.records))
         refused.push({ index: i, code: "FOLDER_ABSENT", entry: entryOf(m.to) });
       if (headState(to.mine.state) === "BOUND")
         refused.push({ index: i, code: "NAME_TAKEN_MINE", entry: entryOf(m.to) });
@@ -1549,7 +1556,7 @@ export async function planHideEntries(
 // ---- a lone hide (test-only: exported from @efs/sdk/testing)
 
 export interface LoneHideInput {
-  folder: FolderRef;
+  folder: ParentRef;
   name: string;
   lens?: Lens;
 }

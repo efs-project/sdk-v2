@@ -61,8 +61,8 @@ export interface HomeLink {
   address: Address;
   names: readonly string[];
   /**
-   * The sharer's Lens (`?lens=`). Without one, a home opens under `efs.lens.place({ reader, owner: address })`: the
-   * reader, then the address.
+   * The sharer's Lens (`?lens=`). Without one, a home opens under the reader, then the address's author identity
+   * (openHome / openPath in `@efs/sdk/files`, the gateway's Keys.principalFor: the address itself for a key account).
    */
   lens?: Lens;
 }
