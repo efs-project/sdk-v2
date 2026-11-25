@@ -33,70 +33,18 @@ export interface ChainFacts {
 }
 
 /**
- * The kernel's index floor, as the deployment records it (index.workModel and the floor limits): before a
+ * The kernel's index floor as the deployment records it (index.workModel and the floor limits): before a
  * publication's callbacks the kernel reserves a prefix floor and a final reserve priced from these, and refuses
- * (E_INDEX_GAS) a call that leaves less. Planners add the gas this needs to each publication's estimate.
+ * (E_INDEX_GAS) a call that leaves less. Planning uses the gas model's floor, which must equal this field by field
+ * (`floorMismatch` refuses to plan otherwise).
  */
 export interface KernelFloor {
-  workModel: {
-    /** The quote's formula; the SDK prices formula 1 only, and plans nothing under another. */
-    formulaVersion: number;
-    freshPerPublication: number;
-    rwPerPublication: number;
-    freshPerPublishFresh: number;
-    rwPerPublish: number;
-    freshPerBindFresh: number;
-    rwPerBind: number;
-    freshPerRef: number;
-    freshPerDigestSpec: number;
-    computeBase: number;
-    computePerAction: number;
-    computePerHookEffect: number;
-    finalComputeBase: number;
-    finalComputePerBind: number;
-  };
+  /** Every field of index.workModel, by name (formula 2 has 17, `formulaVersion` among them). */
+  workModel: Readonly<Record<string, number>>;
   floorFreshGas: number;
   floorRewriteGas: number;
   kernelTail: number;
-  /** A record's references, at most (a Type the SDK has no count for is priced at this). */
-  maxRefs: number;
-  /** References and digest specs per Type id (lowercase): what the kernel's quote charges per record. */
-  types: Readonly<Record<string, { refs: number; specs: number }>>;
 }
-
-/**
- * Each Type's reference count, by name: fixed by the Type's described shape, as the contracts' gas model lists it
- * (gas/model.json floor.types). The tag-release bundle carries the table itself; until then it is this one.
- */
-const TYPE_REFS: Readonly<Record<string, number>> = {
-  "directory-alias/1": 0,
-  "files-bytes/1": 0,
-  "files-child/1": 1,
-  "files-content/1": 1,
-  "files-directory/1": 0,
-  "files-external/1": 1,
-  "files-name/2": 0,
-  "files-root/1": 0,
-  "files-span/1": 2,
-  "realm-notice/1": 0,
-  "text/1": 0,
-};
-const WORK_MODEL_KEYS = [
-  "formulaVersion",
-  "freshPerPublication",
-  "rwPerPublication",
-  "freshPerPublishFresh",
-  "rwPerPublish",
-  "freshPerBindFresh",
-  "rwPerBind",
-  "freshPerRef",
-  "freshPerDigestSpec",
-  "computeBase",
-  "computePerAction",
-  "computePerHookEffect",
-  "finalComputeBase",
-  "finalComputePerBind",
-] as const;
 
 export interface DeploymentInfo {
   chainId: number;
@@ -116,6 +64,10 @@ export interface DeploymentInfo {
     lens: Address;
     filesPage: Address;
     keysView: Address | null;
+    /** The topic readers (the tag release); null in a document that names none. */
+    topicMine: Address | null;
+    topicEveryone: Address | null;
+    topicLookup: Address | null;
   };
   /** Expected runtime code hashes, by unit, as recorded when the deployment was made. */
   codehashes: {
@@ -124,6 +76,15 @@ export interface DeploymentInfo {
     ledgerViews: Hex;
     lens: Hex;
     filesPage: Hex;
+    /**
+     * The contracts named only by newer documents (null when absent): the index generation and its reads contract,
+     * which answer every list read, and the topic readers. The pin checks each one the document names.
+     */
+    index: Hex | null;
+    indexReads: Hex | null;
+    topicMine: Hex | null;
+    topicEveryone: Hex | null;
+    topicLookup: Hex | null;
   };
   /** The Realm's shared root folder: its files-directory/1 record and the principal that created it. */
   root: { directoryRecordId: RecordId; principalId: PrincipalId };
@@ -133,6 +94,8 @@ export interface DeploymentInfo {
    */
   index: {
     address: Address | null;
+    /** The generation's reads contract (IndexReads), whose code answers every list read at the index's address. */
+    reads: Address | null;
     backlinkFamily: Hex | null;
     /** The kind-10 scope lists (universe SCOPE): a principal's positions under one subject, in first-bind order. */
     scopeFamily: Hex | null;
@@ -166,13 +129,12 @@ const ROOT_HEADER_BYTES = 64;
 
 /** Validate an efs-deployment/1 document. Pure; no network. */
 /**
- * The kernel floor from index.workModel, the floor limits and index.digestSpecs; null when the document has no work
- * model. A work model that is present but malformed is a problem, never a silent null.
+ * The kernel floor from index.workModel and the floor limits; null when the document has no work model. A work model
+ * that is present but malformed is a problem, never a silent null.
  */
 function kernelFloorOf(
   index: Record<string, unknown>,
   limits: Record<string, unknown>,
-  typeIds: Readonly<Record<string, Hex>>,
   problems: string[],
 ): KernelFloor | null {
   const wm = index["workModel"];
@@ -182,30 +144,18 @@ function kernelFloorOf(
     problems.push(`${path} must be a non-negative integer`);
     return 0;
   };
-  const w = (wm ?? {}) as Record<string, unknown>;
-  const workModel = Object.fromEntries(
-    WORK_MODEL_KEYS.map((k) => [k, nat(`index.workModel.${k}`, w[k])]),
-  ) as KernelFloor["workModel"];
-  const specs = new Map<string, number>();
-  const list = Array.isArray(index["digestSpecs"]) ? (index["digestSpecs"] as unknown[]) : [];
-  for (const sp of list) {
-    const t = (sp as Record<string, unknown> | null)?.["typeId"];
-    if (typeof t === "string") specs.set(t.toLowerCase(), (specs.get(t.toLowerCase()) ?? 0) + 1);
+  const w = obj(wm);
+  if (!w || Object.keys(w).length === 0) {
+    problems.push("index.workModel must be an object of numbers");
+    return null;
   }
-  const maxRefs = nat("limits.maxRefs", limits["maxRefs"]);
-  const types: Record<string, { refs: number; specs: number }> = {};
-  for (const [name, id] of Object.entries(typeIds))
-    types[id.toLowerCase()] = {
-      refs: TYPE_REFS[name] ?? maxRefs,
-      specs: specs.get(id.toLowerCase()) ?? 0,
-    };
   return {
-    workModel,
+    workModel: Object.fromEntries(
+      Object.entries(w).map(([k, v]) => [k, nat(`index.workModel.${k}`, v)]),
+    ),
     floorFreshGas: nat("limits.floorFreshGas", limits["floorFreshGas"]),
     floorRewriteGas: nat("limits.floorRewriteGas", limits["floorRewriteGas"]),
     kernelTail: nat("limits.kernelTail", limits["kernelTail"]),
-    maxRefs,
-    types,
   };
 }
 
@@ -247,6 +197,18 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
     return typeof v === "number" ? v : 0;
   };
   const readers = obj(d["readers"]) ?? {};
+  // A field only newer documents carry: absent is null; present but malformed is a problem, never a silent null.
+  const optAddr = (v: unknown): Address | null => {
+    const a = obj(v)?.["address"] ?? v;
+    if (a === undefined || a === null) return null;
+    if (!isAddress(a)) {
+      problems.push(`an optional address is malformed: ${String(a).slice(0, 44)}`);
+      return null;
+    }
+    return lower(a as Address) as Address;
+  };
+  const optWord = (path: string, v: unknown): Hex | null =>
+    v === undefined ? null : word(path, v);
   const lens = obj(readers["lensReader"]) ?? {};
   const files = obj(readers["filesPageReader"]) ?? {};
   const contracts = obj(d["contracts"]) ?? {};
@@ -305,6 +267,9 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       lens: addr("readers.lensReader.address", lens["address"]),
       filesPage: addr("readers.filesPageReader.address", files["address"]),
       keysView: isAddress(readers["keysView"]) ? lower(readers["keysView"] as Address) : null,
+      topicMine: optAddr(readers["topicMineReader"]),
+      topicEveryone: optAddr(readers["topicEveryoneReader"]),
+      topicLookup: optAddr(readers["topicLookupReader"]),
     },
     codehashes: {
       ledgerImplementation: word(
@@ -321,6 +286,23 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       ),
       lens: word("readers.lensReader.runtimeCodehash", lens["runtimeCodehash"]),
       filesPage: word("readers.filesPageReader.runtimeCodehash", files["runtimeCodehash"]),
+      index: optWord("index.runtimeCodehash", indexDoc["runtimeCodehash"]),
+      indexReads: optWord(
+        "index.reads.runtimeCodehash",
+        obj(indexDoc["reads"])?.["runtimeCodehash"],
+      ),
+      topicMine: optWord(
+        "readers.topicMineReader",
+        obj(readers["topicMineReader"])?.["runtimeCodehash"],
+      ),
+      topicEveryone: optWord(
+        "readers.topicEveryoneReader",
+        obj(readers["topicEveryoneReader"])?.["runtimeCodehash"],
+      ),
+      topicLookup: optWord(
+        "readers.topicLookupReader",
+        obj(readers["topicLookupReader"])?.["runtimeCodehash"],
+      ),
     },
     root: {
       directoryRecordId: word("root.directoryRecordId", root["directoryRecordId"]) as RecordId,
@@ -330,6 +312,7 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       address: isAddress(indexDoc["address"])
         ? (lower(indexDoc["address"] as Address) as Address)
         : null,
+      reads: optAddr(obj(indexDoc["reads"])?.["address"]),
       backlinkFamily: familyOf(indexDoc, 5, 4),
       scopeFamily: familyOf(indexDoc, 10, 3),
       bitmapStore: isAddress(indexStores["bitmap"])
@@ -353,10 +336,29 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       spanChunkBytes: SPAN_CHUNK_BYTES,
       maxLensPrincipals: 64,
     },
-    kernelFloor: kernelFloorOf(indexDoc, limits, typeIdOut, problems),
+    kernelFloor: kernelFloorOf(indexDoc, limits, problems),
     executionSet: word("activation.executionSet", activation["executionSet"]),
     revision: num("activation.revision", activation["revision"]),
   };
+  // Every contract the SDK reads through is pinned by its code hash: an address the document names without one is
+  // refused, never read through unchecked.
+  const pinnedPairs: [string, Address | null, Hex | null][] = [
+    ["index", deployment.index.address, deployment.codehashes.index],
+    ["index.reads", deployment.index.reads, deployment.codehashes.indexReads],
+    ["readers.topicMineReader", deployment.readers.topicMine, deployment.codehashes.topicMine],
+    [
+      "readers.topicEveryoneReader",
+      deployment.readers.topicEveryone,
+      deployment.codehashes.topicEveryone,
+    ],
+    [
+      "readers.topicLookupReader",
+      deployment.readers.topicLookup,
+      deployment.codehashes.topicLookup,
+    ],
+  ];
+  for (const [what, address, codehash] of pinnedPairs)
+    if (address && !codehash) problems.push(`${what} names an address without its runtimeCodehash`);
   if (
     deployment.ledgerImplementation !== "0x" &&
     proxy["address"] !== undefined &&

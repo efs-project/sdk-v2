@@ -52,7 +52,8 @@ describe("Keys twin", () => {
     const r = o.recordId as Hex;
     expect(lc(keys.lists.byType(t))).toBe(lc(o.byTypeList));
     expect(lc(keys.lists.byAuthor(o.eoaPrincipal as PrincipalId))).toBe(lc(o.byAuthorList));
-    expect(lc(keys.lists.backlink(r))).toBe(lc(o.backlinkList));
+    // One backlink list per (purpose, target) since the tag release.
+    expect(lc(keys.lists.backlink(i.purpose as Hex, r))).toBe(lc(o.backlinkList));
     expect(lc(keys.lists.history(o.bindingKey as Hex))).toBe(lc(o.historyList));
     expect(lc(keys.lists.scope(o.scopeKey as Hex))).toBe(lc(o.scopeList));
     expect(lc(keys.lists.reference(t, i.ordinal, r))).toBe(lc(o.referenceList));
@@ -60,5 +61,16 @@ describe("Keys twin", () => {
     expect(lc(keys.lists.uniqueByType(t))).toBe(lc(o.uniqueByTypeList));
     expect(lc(keys.lists.scalar(t, i.spec, i.scalarKind, i.value as Hex))).toBe(lc(o.scalarList));
     expect(lc(keys.lists.digest(i.algorithm as Hex, i.value as Hex))).toBe(lc(o.digestList));
+  });
+  it("the tag release's first-statement lists", () => {
+    const tag = i.tagPurpose as Hex;
+    const anc = i.ancestor as Hex;
+    const me = o.eoaPrincipal as PrincipalId;
+    expect(lc(keys.scopeBelowKey(me, tag, anc))).toBe(lc(o.scopeBelowKey));
+    expect(lc(keys.lists.place(tag, o.subjectId as Hex))).toBe(lc(o.placeList));
+    expect(lc(keys.lists.placeBelow(tag, anc))).toBe(lc(o.placeBelowList));
+    expect(lc(keys.lists.scopeBelow(me, tag, anc))).toBe(lc(o.scopeBelowList));
+    expect(lc(keys.lists.positionAuthors(o.positionKey as Hex))).toBe(lc(o.positionAuthorsList));
+    expect(lc(keys.lists.rolePlaces(tag, i.role as Hex))).toBe(lc(o.rolePlacesList));
   });
 });

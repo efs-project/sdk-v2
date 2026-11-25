@@ -50,6 +50,9 @@ export interface SequencePart {
   effects: readonly EffectView[];
   /** The part's own deadline window (PlanInput.deadlineSeconds), applied each time it is planned. */
   deadlineSeconds?: number;
+  /** The planner's estimate of the part in an atomic batch (batchGasOf), and its whole gas on amsterdam. */
+  gas?: number;
+  total?: number;
   /** The plan sent (or about to be sent) for this part; a part is planned just before it is sent. */
   planId?: Hex;
   /** That plan's deadline (unix seconds): the ledger refuses it in any block later than this. */

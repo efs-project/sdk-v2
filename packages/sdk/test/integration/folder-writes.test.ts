@@ -575,7 +575,7 @@ describe("folder writes (fixture)", () => {
           role: keccak256(toHex("deep.txt")),
           target: ZERO_WORD,
           expectedRevision: head.revision,
-          salt: ZERO_WORD,
+          saltOrStrength: ZERO_WORD,
         },
       ],
       bodies: ["0x"],

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // The genesis deploy plan of design §8.2, computed offline from the Foundry artifacts in out/ (the identity build)
 // and nothing else: every CREATE2 address from its initcode hash, the three RealmGenesis creations from its nonces,
-// every runtime code hash (immutables filled from their recorded offsets), the ten Files descriptors and Type ids
-// (an independent JS twin of src/profiles/FilesTypes.sol), the index manifest hash and the genesis execution set.
+// every runtime code hash (immutables filled from their recorded offsets), the thirteen descriptors and Type ids (the
+// ten Files Types and the three Topics Types; an independent JS twin of src/profiles/FilesTypes.sol and TopicTypes.sol), the index manifest hash and the genesis execution set.
 // Imported by tools/efs-fixture.mjs and tools/release.mjs; as a CLI it writes deploy/plan.json:
 //
 //   node tools/deploy-plan.mjs [--chain-id 31337] [--realm-salt 0x…] [--out deploy/plan.json] [--artifacts DIR]
@@ -102,12 +102,14 @@ export const FACTORY = {
 /** anvil's first default key: a public throwaway, the fixture's owner, declaration key and seed principal. */
 export const FIXTURE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 export const DEFAULTS = { chainId: 31337, realmSalt: h("efs/fixture/realm/1"), executionProfileId: 1 };
-/** The release hot-ABI id: keccak256("efs/ledger-hot/1") (the suites keep "efs/ledger-hot/1:test"). It is
- *  LedgerCore's HOT_ABI_ID immutable, RealmIndex's HOT_ABI_ID and the FilesFinalValidator unit's hotAbiId. */
-export const HOT_ABI_ID_STRING = "efs/ledger-hot/1";
-export const HOT_ABI_ID = h(HOT_ABI_ID_STRING);
+/** The release hot-ABI id's name (the suites use the same rule under "efs/ledger-hot/2:test"). The id is LedgerCore's
+ *  HOT_ABI_ID immutable, IndexReads' HOT_ABI_ID and the FilesFinalValidator unit's hotAbiId. */
+export const HOT_ABI_ID_STRING = "efs/ledger-hot/2";
+/** keccak(name ‖ for each ILedgerHot function by selector: selector ‖ keccak(output tuple)) (tools/abi-id.mjs), from the
+ *  committed test/snapshots/abi/ILedgerHot.json; `pnpm abi:check` fails when this pin differs from the snapshot. */
+export const HOT_ABI_ID = "0xf37d24d0ced96ce84fa2a8dd011fc0594eec8f33e3212c27762b76fc9e469856";
 /** ReaderDirectory kind labels (the directory does not interpret them; the strings of test/periphery/ReaderDirectory.t.sol). */
-export const READER_KINDS = { lens: h("efs/reader/lens/1"), filesPage: h("efs/reader/files-page/1") };
+export const READER_KINDS = { lens: h("efs/reader/lens/1"), filesPage: h("efs/reader/files-page/1"), topicMine: h("efs/reader/topic-mine/1"), topicEveryone: h("efs/reader/topic-everyone/1"), topicLookup: h("efs/reader/topic-lookup/1") };
 /** test/harness/KernelDeploy.sol s1Limits() — the design's §4.2 values. */
 export const LIMITS = {
   maxActions: 64, maxBody: 8192, maxRefs: 8, maxReadSetPrincipals: 64, maxReadSetPositions: 4, maxWitness: 4096,
@@ -115,22 +117,57 @@ export const LIMITS = {
   maxBodyBytesPerPublication: 16384, maxFreshSlotsPerPublication: 600, maxReadIds: 64, maxReadCount: 256,
   floorFreshGas: 22100, floorRewriteGas: 5000, kernelTail: 20000,
 };
-/** test/harness/doubles/IndexDoubles.sol IndexDoubleDefaults.workModel() — no release work model exists in src/. */
+/** test/harness/doubles/IndexDoubles.sol IndexDoubleDefaults.workModel(): slot counts (×10) and compute
+ *  terms measured with the step-3b lists on both schedules plus a margin (docs/TAG-NUMBERS.md "The floor"); no release
+ *  work model exists in src/. */
 export const WORK_MODEL = {
-  formulaVersion: 1, freshPerPublication: 2, rwPerPublication: 10, freshPerPublishFresh: 10, rwPerPublish: 50,
-  freshPerBindFresh: 30, rwPerBind: 40, freshPerRef: 10, freshPerDigestSpec: 10, computeBase: 60000,
-  computePerAction: 25000, computePerHookEffect: 60000, finalComputeBase: 60000, finalComputePerBind: 120000,
+  formulaVersion: 2, freshPerPublication: 30, rwPerPublication: 10, freshPerPublishFresh: 6, freshPerPublishExisting: 29,
+  rwPerPublish: 46, freshPerBindFresh: 55, rwPerBind: 40, rwPerBindLater: 120, freshPerRef: 30, freshPerDigestSpec: 10,
+  computeBase: 54000, computePerAction: 8000, computePerHookEffect: 34000, finalComputeBase: 20000,
+  finalComputePerBind: 7400, finalComputePerPublish: 2800,
 };
+/** The floor prices a Realm on a Glamsterdam (EIP-8037/8038) chain activates: execution-gas prices only, because the GAS
+ *  opcode never sees the state-gas reservoir (design §10.4): the regular 12,100 of a fresh slot, never the all-in
+ *  ≈ 110,020. `KernelDeploy.s1Limits()` uses them under FOUNDRY_PROFILE=amsterdam. The fixture's chains (osaka,
+ *  prague) use LIMITS. */
+export const GLAMSTERDAM_FLOOR = { floorFreshGas: 12100, floorRewriteGas: 5000, kernelTail: 20000 };
+/** The floor fields of `Limits` the quote reads (the Realm's prices; `floor.limits` in the gas model). */
+export const FLOOR_LIMIT_FIELDS = ["floorFreshGas", "floorRewriteGas", "kernelTail"];
+
+/** One message per field where a release source prices differently from what the chain answers: `fields` the struct's
+ *  field names (from the ABI, so a field added on chain is never skipped), `chain` the decoded struct, `sources`
+ *  `{name: object}` (the deploy plan's work model, each gas-model floor). A source missing a field, carrying one the
+ *  chain does not have, or holding another value fails with the struct and field named. */
+export function priceMismatches(struct, fields, chain, sources) {
+  const out = [];
+  for (const f of fields) if (chain[f] === undefined) out.push(`${struct}.${f}: the chain's reply has no such field`);
+  for (const [src, obj] of Object.entries(sources)) {
+    if (!obj || typeof obj !== "object") {
+      out.push(`${struct}: ${src} has none`);
+      continue;
+    }
+    for (const k of Object.keys(obj)) if (!fields.includes(k)) out.push(`${struct}.${k}: in ${src}, not a field on chain`);
+    for (const f of fields) {
+      if (chain[f] === undefined) continue;
+      if (obj[f] === undefined) out.push(`${struct}.${f}: chain ${chain[f]}, missing from ${src}`);
+      else if (BigInt(obj[f]) !== BigInt(chain[f])) out.push(`${struct}.${f}: chain ${chain[f]} != ${src} ${obj[f]}`);
+    }
+  }
+  return out;
+}
 export const DOM = {
   type: h("efs/type/1"), describedShape: h("efs/described-shape/1"), executionSet: h("efs/execution-set/1"),
   realmOrigin: h("efs/realm-origin/1"), realm: h("efs/realm/1"), record: h("efs/record/1"),
   subject: h("efs/subject/1"), position: h("efs/position/1"), binding: h("efs/binding/1"),
   scope: h("efs/vk/binding-scope/1"),
 };
-export const PURPOSE = { HEAD: h("efs/purpose/head/1"), FOLDER: h("efs/purpose/folder/1"), TAG: h("efs/purpose/tag/1") };
+export const PURPOSE = {
+  HEAD: h("efs/purpose/head/1"), FOLDER: h("efs/purpose/folder/1"), TAG: h("efs/purpose/tag/1"),
+  PROPERTY: h("efs/purpose/property/1"), SAME: h("efs/purpose/same/1"), BROADER: h("efs/purpose/broader/1"),
+};
 export const ACTION = { PUBLISH: 1, REUSE: 2, BIND: 3, UNBIND: 4, CREATE: 5, WITHDRAW: 6, RELEASE: 7 };
 export const familyId = (name) => h(`efs/family/${name}/1`);
-export const POSTING_FAMILIES = ["by-type", "by-author", "backlink", "history", "reference-position", "by-record", "unique-by-type", "scalar", "digest", "role-scope"];
+export const POSTING_FAMILIES = ["by-type", "by-author", "backlink", "history", "reference-position", "by-record", "unique-by-type", "scalar", "digest", "role-scope", "place", "place-below", "scope-below", "position-authors", "role-places"];
 export const BITMAP_FAMILIES = ["scope", "roster", "live-scope"];
 export const IMPLEMENTATION_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 export const ADMIN_SLOT = "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103";
@@ -198,12 +235,13 @@ export const UNITS = {
   LedgerIngress: "LedgerIngress", LedgerApply: "LedgerApply", LedgerControl: "LedgerControl", LedgerCore: "LedgerCore",
   LedgerReads: "LedgerReads", LedgerViews: "LedgerViews", DescriptorStore: "DescriptorStore", IndexReplayDecoder: "IndexReplayDecoder",
   ReaderDirectory: "ReaderDirectory", TypeRegistry: "TypeRegistry", RealmGenesis: "RealmGenesis", RealmController: "RealmController",
-  PostingStore: "PostingStore", BitmapStore: "BitmapStore", RealmIndex: "RealmIndex", FilesFinalValidator: "FilesFinalValidator",
+  PostingStore: "PostingStore", BitmapStore: "BitmapStore", IndexReads: "IndexReads", RealmIndex: "RealmIndex", FilesFinalValidator: "FilesFinalValidator",
   FilesRootRule: "FilesRootRule", FilesChildRule: "FilesChildRule", FilesDirectoryRule: "FilesDirectoryRule", FilesNameRule: "FilesNameRule",
   FilesBytesRule: "FilesBytesRule", FilesContentRule: "FilesContentRule", FilesExternalContentRule: "FilesExternalContentRule",
   DirectoryAliasRule: "DirectoryAliasRule", RealmNoticeRule: "RealmNoticeRule", RefuseAllPolicy: "RefuseAllPolicy",
-  TransparentUpgradeableProxy: "TransparentUpgradeableProxy", ProxyAdmin: "ProxyAdmin", LensReader: "LensReader", FilesPageReader: "FilesPageReader",
-  FilesSpanRule: "FilesSpanRule", KeysView: "KeysView", EfsWeb3Gateway: "EfsWeb3Gateway",
+  TransparentUpgradeableProxy: "TransparentUpgradeableProxy", ProxyAdmin: "ProxyAdmin", LensReader: "LensReader", FilesPageReader: "FilesPageReader", TopicMineReader: "TopicMineReader", TopicEveryoneReader: "TopicEveryoneReader", TopicLookupReader: "TopicLookupReader",
+  FilesSpanRule: "FilesSpanRule", KeysView: "KeysView", EfsWeb3Content: "EfsWeb3Content", EfsWeb3Gateway: "EfsWeb3Gateway",
+  TopicWordRule: "TopicWordRule", TopicRule: "TopicRule", TextRule: "TextRule",
 };
 
 // ---- immutables: names → offsets ------------------------------------------------------------------------------------
@@ -281,12 +319,17 @@ export function runtimeOf(name, values = {}) {
   return `0x${bytes.toString("hex")}`;
 }
 
-// ---- the Files profile: a JS twin of src/profiles/FilesTypes.sol ----------------------------------------------------
+// ---- the Files and Topics profiles: a JS twin of src/profiles/FilesTypes.sol and TopicTypes.sol ----------------------
 
-export const T = { ROOT: 0, CHILD: 1, DIRECTORY: 2, NAME: 3, BYTES: 4, CONTENT: 5, EXTERNAL: 6, ALIAS: 7, NOTICE: 8, SPAN: 9 };
-export const TYPE_NAMES = ["files-root/1", "files-child/1", "files-directory/1", "files-name/2", "files-bytes/1", "files-content/1", "files-external/1", "directory-alias/1", "realm-notice/1", "files-span/1"];
-export const RULES = ["FilesRootRule", "FilesChildRule", "FilesDirectoryRule", "FilesNameRule", "FilesBytesRule", "FilesContentRule", "FilesExternalContentRule", "DirectoryAliasRule", "RealmNoticeRule", "FilesSpanRule"];
+export const T = { ROOT: 0, CHILD: 1, DIRECTORY: 2, NAME: 3, BYTES: 4, CONTENT: 5, EXTERNAL: 6, ALIAS: 7, NOTICE: 8, SPAN: 9, TOPIC_WORD: 10, TOPIC: 11, TEXT: 12 };
+export const TYPE_NAMES = ["files-root/1", "files-child/1", "files-directory/1", "files-name/2", "files-bytes/1", "files-content/1", "files-external/1", "directory-alias/1", "realm-notice/1", "files-span/1", "topic-word/1", "topic/1", "text/1"];
+export const RULES = ["FilesRootRule", "FilesChildRule", "FilesDirectoryRule", "FilesNameRule", "FilesBytesRule", "FilesContentRule", "FilesExternalContentRule", "DirectoryAliasRule", "RealmNoticeRule", "FilesSpanRule", "TopicWordRule", "TopicRule", "TextRule"];
 const NAMESPACE = h("efs/files/1");
+const TOPICS_NAMESPACE = h("efs/topics/1");
+const FIELD_TOPIC_PARENT = h("efs/topics/field/parent/1");
+const FIELD_TOPIC_WORD = h("efs/topics/field/word/1");
+const SEMANTIC_PARENT_TOPIC = h("efs/topics/semantic/parent-topic/1");
+const SEMANTIC_WORD_PAGE = h("efs/topics/semantic/word-page/1");
 const FIELD_PARENT = h("efs/files/field/parent/1");
 const FIELD_BYTES = h("efs/files/field/bytes/1");
 const FIELD_LEFT = h("efs/files/field/left/1");
@@ -297,28 +340,42 @@ const SEMANTIC_SPAN_CHILD = h("efs/files/semantic/span-child/1");
 /** `refTypes` sentinel: any Type. */
 const REF_ANY = ZERO;
 const refField = (id, semantic, ref) => encodePacked(["bytes32", "bytes32", "uint8", "uint8", "uint16", "uint256", "uint256", "bytes32"], [id, semantic, 1, 0, 32, 0n, 0n, ref]);
-/** FilesTypes.*Spec(), byte for byte: description, dependencyClass, refHeaderWords and the REF32 field rows as
- *  [id, semantic, ref(ids)] (fieldCount = rows; refTypes = each row's ref, in order). */
+/** FilesTypes.*Spec() and TopicTypes.*Spec(), byte for byte: description, dependencyClass, refHeaderWords, the REF32
+ *  field rows as [id, semantic, ref(ids)] (fieldCount = rows; refTypes = each row's ref, in order), the namespace
+ *  (efs/files/1 unless named) and header byte 133, the `flags` byte (0 unless named; bit 0 is TYPE_FLAG_EMITS_BODY:
+ *  the kernel logs a fresh body of at most 256 bytes in `Body`). */
 const SPECS = [
   { description: "abi.encode(fileSubject, form) || rest; the first revision of a created file subject; form 0 rest is the file bytes, form 1 rest is one word naming a files-content/1 or files-external/1 record", dependencyClass: 2, refHeaderWords: 1, fields: [] },
   { description: "abi.encode(parentRecord, fileSubject, form) || rest; parent is files-root/1 or files-child/1 of the same file; form 0 rest is the file bytes, form 1 rest is one word naming a files-content/1 or files-external/1 record", dependencyClass: 2, refHeaderWords: 2, fields: [[FIELD_PARENT, SEMANTIC_REVISION, () => REF_ANY]] },
   { description: "abi.encode(bytes32 creatorPrincipal, bytes32 salt); a folder is this record, admitted only when the publishing principal is the creator word and the salt is nonzero", dependencyClass: 1, refHeaderWords: 1, fields: [] },
-  { description: "raw UTF-8 name, 1-255 bytes, well-formed, byte-exact, case-sensitive, not . or .., ~efs reserved", dependencyClass: 1, refHeaderWords: 1, fields: [] },
+  { description: "raw UTF-8 name, 1-255 bytes, well-formed, byte-exact, case-sensitive, not . or .., ~efs reserved", dependencyClass: 1, refHeaderWords: 1, fields: [], flags: 1 },
   { description: "sha256(payload) || payload; one chunk, bounded only by the Realm maxBody; the empty payload is the remote sentinel", dependencyClass: 1, refHeaderWords: 1, fields: [] },
   { description: "[bytesRef, version, carrier, hashAlg, length, sha256, cipher, nonce12, plaintextLength, plaintextSHA256OrZero] || media, the media type being the rest of the body after 320 bytes; carrier 0 one files-bytes/1 record, 1 the remote sentinel, 2 a files-span/1 root; lengths below 2^64; media empty (unknown) or a lowercase RFC 6838 type/subtype with optional ;parameters, at most 255 bytes", dependencyClass: 1, refHeaderWords: 3, fields: [[FIELD_BYTES, SEMANTIC_CARRIER, () => REF_ANY]] },
   { description: "[bytesRef (the empty sentinel), version 2, carrier 2, hashAlg 1, length, sha256, locatorLength] || locator || media; a URI of 1-2048 printable ASCII bytes with an RFC 3986 scheme, no scheme allowlist; media as files-content/1, the rest of the body", dependencyClass: 1, refHeaderWords: 1, fields: [[FIELD_BYTES, SEMANTIC_CARRIER, (ids) => ids[T.BYTES]]] },
   { description: "abi.encode(targetObjectId, kind); kind 1 a files-directory/1 record, 2 a created file subject", dependencyClass: 2, refHeaderWords: 1, fields: [] },
   { description: "abi.encode(bytes32 kind, uint256 revision, bytes note); kind frozen | successor | migration", dependencyClass: 2, refHeaderWords: 1, fields: [] },
   { description: "abi.encode(left, right, length); each child a files-bytes/1 record with a nonempty payload or a files-span/1 record; length is the sum of the children payload lengths, below 2^64", dependencyClass: 1, refHeaderWords: 3, fields: [[FIELD_LEFT, SEMANTIC_SPAN_CHILD, () => REF_ANY], [FIELD_RIGHT, SEMANTIC_SPAN_CHILD, () => REF_ANY]] },
+  { description: "a word's page and the root-level topic /<word>: 1-255 bytes of well-formed UTF-8, no /, no ASCII control, space or A-Z, no C1, bidi, invisible, joiner or variation selector code point, not . or .., not starting with ~, not 0x and 40 lowercase hex", dependencyClass: 1, refHeaderWords: 1, fields: [], namespace: TOPICS_NAMESPACE,
+    flags: 1 }, // TYPE_FLAG_EMITS_BODY
+  { description: "abi.encode(parent, wordPage); a path of two or more words; parent is a topic/1 or topic-word/1 record, wordPage a topic-word/1 record", dependencyClass: 1, refHeaderWords: 1, fields: [[FIELD_TOPIC_PARENT, SEMANTIC_PARENT_TOPIC, () => REF_ANY], [FIELD_TOPIC_WORD, SEMANTIC_WORD_PAGE, (ids) => ids[T.TOPIC_WORD]]], namespace: TOPICS_NAMESPACE,
+    flags: 1 }, // TYPE_FLAG_EMITS_BODY
+  { description: "a short display string: 1-255 bytes of well-formed UTF-8, no control character (C0, DEL, C1), no bidi control or invisible code point; /, spaces and uppercase allowed", dependencyClass: 1, refHeaderWords: 1, fields: [], namespace: TOPICS_NAMESPACE,
+    flags: 1 }, // TYPE_FLAG_EMITS_BODY
 ];
 /** The rules' constructor arguments (sibling Type ids) and the dependency order they force (FilesTypes). */
 const RULE_ARGS = {
   [T.SPAN]: (ids) => [ids[T.BYTES]], [T.CONTENT]: (ids) => [ids[T.BYTES], ids[T.SPAN]], [T.ROOT]: (ids) => [ids[T.CONTENT], ids[T.EXTERNAL]],
   [T.CHILD]: (ids) => [ids[T.ROOT], ids[T.CONTENT], ids[T.EXTERNAL]], [T.ALIAS]: (ids) => [ids[T.DIRECTORY]],
+  [T.TOPIC]: (ids) => [ids[T.TOPIC_WORD]],
 };
-export const RULE_ORDER = [T.BYTES, T.SPAN, T.CONTENT, T.EXTERNAL, T.ROOT, T.CHILD, T.DIRECTORY, T.NAME, T.NOTICE, T.ALIAS];
+export const RULE_ORDER = [T.BYTES, T.SPAN, T.CONTENT, T.EXTERNAL, T.ROOT, T.CHILD, T.DIRECTORY, T.NAME, T.NOTICE, T.ALIAS, T.TOPIC_WORD, T.TOPIC, T.TEXT];
+/** FilesFinalValidator's constructor arguments, in order (also the order of its identity). */
+export const validatorArgs = (ids) => [ids[T.NAME], ids[T.DIRECTORY], ids[T.ROOT], ids[T.CHILD], ids[T.TOPIC], ids[T.TOPIC_WORD]];
+/** FilesFinalValidator.identity(): keccak(abi.encode(keccak("efs/unit/files-final/1"), ...validatorArgs)). */
+export const validatorIdentityOf = (ids) => keccak256(enc(["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"], [h("efs/unit/files-final/1"), ...validatorArgs(ids)]));
 
-/** FilesTypes.encode: the codec-1 bytes of a NATIVE descriptor (design §9.2 offsets). */
+/** FilesTypes.encode (TopicTypes.encode for the Topics namespace): the codec-1 bytes of a NATIVE descriptor (design
+ *  §9.2 offsets). */
 export function descriptor(t, key, ruleCodehash, initcodeHash, ids) {
   const s = SPECS[t];
   const name = stringToHex(TYPE_NAMES[t]);
@@ -326,7 +383,7 @@ export function descriptor(t, key, ruleCodehash, initcodeHash, ids) {
   const fields = s.fields.length ? concat(s.fields.map(([id, sem, ref]) => refField(id, sem, ref(ids)))) : "0x";
   const header = encodePacked(
     ["uint8", "uint8", "uint8", "uint8", "uint8", "uint8", "uint8", "uint8", "uint24", "uint8", "uint8", "uint8", "address", "bytes32", "bytes32", "bytes32", "uint16", "uint8", "uint8"],
-    [1, 0, 3, s.fields.length, 1, s.dependencyClass, 1, 1, 0, 0, 0, size(name), key, NAMESPACE, ruleCodehash, initcodeHash, size(description), s.refHeaderWords, 0],
+    [1, 0, 3, s.fields.length, 1, s.dependencyClass, 1, 1, 0, 0, 0, size(name), key, s.namespace ?? NAMESPACE, ruleCodehash, initcodeHash, size(description), s.refHeaderWords, s.flags ?? 0],
   );
   assert.equal(size(header), 134);
   return concat([header, name, description, fields]);
@@ -365,27 +422,31 @@ export function executionSet(set, ledger) {
     [DOM.executionSet, set.layoutId, domainSeparator(set.acceptedChainId, ledger), set.components, BigInt(set.revision), set.executionProfileId, set.capabilities, BigInt(set.acceptedChainId), limitsProfileId(set.limits)],
   ));
 }
-/** RealmIndex's MANIFEST_HASH: keccak(abi.encode(MANIFEST_HEADER, families, units, specs, work, PHYSICAL, CALLBACK)). */
-export function manifestHash(families, units, specs, work) {
-  const ri = artifact("RealmIndex").abi;
-  const readiness = ri.find((i) => i.name === "replayReadiness").outputs[0];
-  const ctor = ctorInputs(ri);
+/** RealmIndex's MANIFEST_HASH: keccak(abi.encode(MANIFEST_HEADER, families, units, specs, work, PHYSICAL, CALLBACK, reads,
+ *  readsCodehash)), the first seven being IndexReads.manifest() and the last two RealmIndex.readsContract(). */
+export function manifestHash(families, units, specs, work, reads, readsCodehash) {
+  const ir = artifact("IndexReads").abi;
+  const out = ir.find((i) => i.name === "manifest").outputs;
   return keccak256(encodeAbiParameters(
-    [{ type: "bytes32" }, component(readiness.components, "families"), component(ctor, "units"), component(ctor, "specs"), component(ctor, "work"), { type: "bytes32" }, { type: "bytes32" }],
-    [h("efs/index-manifest/1"), families, units, specs, work, MANIFEST_PROFILES.physical, MANIFEST_PROFILES.callback],
+    [{ type: "bytes32" }, component(out, "families"), component(out, "units"), component(out, "specs"), component(out, "work"), { type: "bytes32" }, { type: "bytes32" }, { type: "address" }, { type: "bytes32" }],
+    [MANIFEST_HEADER, families, units, specs, work, MANIFEST_PROFILES.physical, MANIFEST_PROFILES.callback, reads, readsCodehash],
   ));
 }
+export const MANIFEST_HEADER = h("efs/index-manifest/2");
 export const MANIFEST_PROFILES = {
   physical: h("efs/index-layout/1:stores:inline-singleton:five-u48:live-bits-in-head"),
-  callback: h("efs/index-callback/3:ordered-prefix:static-final:effect-24:refs"),
+  callback: h("efs/index-callback/4:ordered-prefix:static-final:effect-24:refs"),
 };
-/** RealmIndex's constructor `_declare` table: (name, kind, universe, shape, liveSemantics, store, fromAdmission). */
+/** IndexReads' constructor `_declare` table: (name, kind, universe, shape, liveSemantics, store, fromAdmission). */
 const FAMILY_TABLE = [
   ["by-type", 1, 1, 1, 2, "posting", 1n], ["by-author", 4, 2, 1, 2, "posting", 1n], ["backlink", 5, 4, 1, 3, "posting", 1n],
   ["history", 8, 3, 1, 1, "posting", 1n], ["scope", 10, 3, 1, 1, "bitmap", 1n], ["reference-position", 11, 1, 1, 1, "posting", 1n],
   ["by-record", 12, 5, 1, 2, "posting", 1n], ["unique-by-type", 13, 1, 1, 1, "posting", 1n], ["scalar", 14, 1, 1, 1, "posting", 1n],
   ["digest", 15, 5, 1, 1, "posting", 1n], ["role-scope", 16, 3, 1, 1, "posting", 1n], ["roster", 17, 3, 2, 2, "bitmap", 2n ** 64n - 1n],
   ["live-scope", 18, 3, 2, 2, "bitmap", 1n],
+  // the first-statement lists (design §10.2); the two topic roll-ups are maintained because the Topics Types are in the release
+  ["place", 6, 3, 1, 4, "posting", 1n], ["place-below", 7, 3, 1, 4, "posting", 1n], ["scope-below", 19, 3, 1, 1, "posting", 1n],
+  ["position-authors", 20, 3, 1, 3, "posting", 1n], ["role-places", 21, 4, 1, 1, "posting", 1n],
 ];
 
 // ---- the plan ------------------------------------------------------------------------------------------------------
@@ -442,8 +503,8 @@ async function computePlan({ chainId = DEFAULTS.chainId, realmSalt = DEFAULTS.re
   const decoder = add("G7", "IndexReplayDecoder", [], { LAYOUT_ID: layoutId });
   const directory = add("G8", "ReaderDirectory", [], {});
 
-  // G10: the ten NATIVE rule instances in FilesTypes' dependency order (a rule naming a sibling Type id in its
-  // initcode follows that Type)
+  // G10: the thirteen NATIVE rule instances in FilesTypes' then TopicTypes' dependency order (a rule naming a sibling
+  // Type id in its initcode follows that Type)
   const ids = new Array(TYPE_NAMES.length);
   const descriptors = new Array(TYPE_NAMES.length);
   const instances = new Array(TYPE_NAMES.length);
@@ -460,7 +521,7 @@ async function computePlan({ chainId = DEFAULTS.chainId, realmSalt = DEFAULTS.re
   for (const t of RULE_ORDER) rule(t, RULE_ARGS[t] ? RULE_ARGS[t](ids) : []);
   const refuseAll = add("G10.policy", "RefuseAllPolicy", [], {});
 
-  // G11: the ten descriptor blobs (CREATE2 by the DescriptorStore at salt 0; runtime 0x00 ‖ descriptor ‖ sig)
+  // G11: the thirteen descriptor blobs (CREATE2 by the DescriptorStore at salt 0; runtime 0x00 ‖ descriptor ‖ sig)
   for (let t = 0; t < TYPE_NAMES.length; t++) {
     const sig = await declare(ids[t], key);
     const blobRuntime = concat(["0x00", descriptors[t], sig]);
@@ -472,9 +533,9 @@ async function computePlan({ chainId = DEFAULTS.chainId, realmSalt = DEFAULTS.re
     steps.push({ id: `G11.${t}`, kind: "CALL", contract: "DescriptorStore", to: store.address, function: "put(bytes,bytes)", type: TYPE_NAMES[t], address: blob, args: [descriptors[t], sig], runtimeCodehash: profile[t].blobCodehash, postCheck: "extcodehash(blob) == keccak256(0x00 ‖ descriptor ‖ sig)", data: encodeFunctionData({ abi: artifact("DescriptorStore").abi, functionName: "put", args: [descriptors[t], sig] }) });
   }
 
-  // G12: FilesFinalValidator, no caller pin
-  const validator = add("G12", "FilesFinalValidator", [ids[T.NAME], ids[T.DIRECTORY]], {});
-  const validatorIdentity = keccak256(enc(["bytes32", "bytes32", "bytes32"], [h("efs/unit/files-final/1"), ids[T.NAME], ids[T.DIRECTORY]]));
+  // G12: FilesFinalValidator (name, directory, root, child, topic, topic-word), no caller pin
+  const validator = add("G12", "FilesFinalValidator", validatorArgs(ids), {});
+  const validatorIdentity = validatorIdentityOf(ids);
 
   // G13–G14: the two implementations
   const core = add("G13", "LedgerCore", [ingress.address, apply.address, control.address, HOT_ABI_ID], { INGRESS: ingress.address, INGRESS_CODEHASH: ingress.runtimeCodehash, APPLY: apply.address, APPLY_CODEHASH: apply.runtimeCodehash, CONTROL: control.address, CONTROL_CODEHASH: control.runtimeCodehash, HOT_ABI_ID });
@@ -500,8 +561,10 @@ async function computePlan({ chainId = DEFAULTS.chainId, realmSalt = DEFAULTS.re
   }, { nonces: { controller: 1, registryProxy: 2, ledgerProxy: 3 } });
 
   // G16–G17: the stores name the predicted ledger proxy, INITIAL_WRITER = 0
-  const posting = add("G16", "PostingStore", [ledgerProxy, zeroAddress, POSTING_FAMILIES.map(familyId)], { LEDGER: ledgerProxy, INITIAL_WRITER: zeroAddress });
-  const bitmap = add("G17", "BitmapStore", [ledgerProxy, zeroAddress, BITMAP_FAMILIES.map(familyId)], { LEDGER: ledgerProxy, INITIAL_WRITER: zeroAddress, FAMILY_LIVE_SCOPE: familyId("live-scope") });
+  // each store also holds its family set as immutables F0.. (zero padding beyond the set; PostingStore 16, BitmapStore 4)
+  const familySlots = (names, capacity) => Object.fromEntries(Array.from({ length: capacity }, (_, i) => [`F${i}`, i < names.length ? familyId(names[i]) : ZERO]));
+  const posting = add("G16", "PostingStore", [ledgerProxy, zeroAddress, POSTING_FAMILIES.map(familyId)], { LEDGER: ledgerProxy, INITIAL_WRITER: zeroAddress, ...familySlots(POSTING_FAMILIES, 16) });
+  const bitmap = add("G17", "BitmapStore", [ledgerProxy, zeroAddress, BITMAP_FAMILIES.map(familyId)], { LEDGER: ledgerProxy, INITIAL_WRITER: zeroAddress, FAMILY_LIVE_SCOPE: familyId("live-scope"), ...familySlots(BITMAP_FAMILIES, 4) });
 
   // G18: RealmGenesis.run — the controller, the registry proxy, the ledger proxy (each initialized in its creation)
   const controllerRuntime = runtimeOf("RealmController", { LEDGER: ledgerProxy, REGISTRY: registryProxy, LEDGER_ADMIN: ledgerAdmin, REGISTRY_ADMIN: registryAdmin, NOTICE_TYPE: ids[T.NOTICE] });
@@ -527,11 +590,15 @@ async function computePlan({ chainId = DEFAULTS.chainId, realmSalt = DEFAULTS.re
     familyId: familyId(n), kind, universe, shape, mandatory: from === 1n, liveSemantics: live, recipe: keccak256(encodePacked(["string", "uint8"], ["efs/family-recipe/", kind])),
     fromAdmission: from, store: s === "posting" ? posting.address : bitmap.address, storeCodehash: s === "posting" ? posting.runtimeCodehash : bitmap.runtimeCodehash,
   }));
-  const mHash = manifestHash(families, unitsList, specs, WORK_MODEL);
   const F = Object.fromEntries(FAMILY_TABLE.map(([n]) => [`F_${n.toUpperCase().replace(/-/g, "_")}`, familyId(n)]));
-  const indexImm = { LEDGER: ledgerProxy, LAYOUT_ID: layoutId, HOT_ABI_ID, DECODER: decoder.address, POSTING: posting.address, BITMAP: bitmap.address, MANIFEST_HASH: mHash, ...F };
+  // G19a: the generation's IndexReads (its manifest and read side), built over the stores before the generation
+  // the topic lists walk the release's Topics Types; the validator unit is built for the same two ids (IndexProfiles.requireTopicUnit)
+  const topicTypes = { TOPIC_TYPE: ids[T.TOPIC], TOPIC_WORD_TYPE: ids[T.TOPIC_WORD] };
+  const indexReads = add("G19a", "IndexReads", [ledgerProxy, HOT_ABI_ID, posting.address, bitmap.address, unitsList, specs, WORK_MODEL, topicTypes.TOPIC_TYPE, topicTypes.TOPIC_WORD_TYPE], { LEDGER: ledgerProxy, HOT_ABI_ID, POSTING: posting.address, BITMAP: bitmap.address, F_BY_RECORD: F.F_BY_RECORD, F_DIGEST: F.F_DIGEST, ...topicTypes });
+  const mHash = manifestHash(families, unitsList, specs, WORK_MODEL, indexReads.address, indexReads.runtimeCodehash);
+  const indexImm = { LEDGER: ledgerProxy, DECODER: decoder.address, POSTING: posting.address, BITMAP: bitmap.address, READS: indexReads.address, READS_CODEHASH: indexReads.runtimeCodehash, MANIFEST_HASH: mHash, TOPIC_T: topicTypes.TOPIC_TYPE, WORD_T: topicTypes.TOPIC_WORD_TYPE, ...F };
   const referenced = new Set(immutableLayout("RealmIndex").map((l) => l.name));
-  const index = add("G19", "RealmIndex", [ledgerProxy, HOT_ABI_ID, decoder.address, posting.address, bitmap.address, unitsList, specs, WORK_MODEL], Object.fromEntries(Object.entries(indexImm).filter(([k]) => referenced.has(k))), { manifestHash: mHash });
+  const index = add("G19", "RealmIndex", [ledgerProxy, decoder.address, indexReads.address], Object.fromEntries(Object.entries(indexImm).filter(([k]) => referenced.has(k))), { manifestHash: mHash });
 
   // G20: the genesis activation through the controller
   const components = {
@@ -554,7 +621,7 @@ async function computePlan({ chainId = DEFAULTS.chainId, realmSalt = DEFAULTS.re
   listing("R3", READER_KINDS.lens, lens.address, "list LensReader under efs/reader/lens/1");
   listing("R4", READER_KINDS.filesPage, page.address, "list FilesPageReader under efs/reader/files-page/1");
 
-  // G21: permissionless registration of the ten Types
+  // G21: permissionless registration of the thirteen Types
   for (let t = 0; t < TYPE_NAMES.length; t++) {
     steps.push({ id: `G21.${t}`, kind: "CALL", contract: "TypeRegistry", to: registryProxy, function: "registerDescribed(bytes,bytes,address,bytes)", type: TYPE_NAMES[t], typeId: ids[t], postCheck: "returns typeId; typeInfo(typeId).mandatory == instance", data: encodeFunctionData({ abi: artifact("TypeRegistry").abi, functionName: "registerDescribed", args: [descriptors[t], profile[t].declarationSig, instances[t], "0x"] }) });
   }
@@ -562,14 +629,29 @@ async function computePlan({ chainId = DEFAULTS.chainId, realmSalt = DEFAULTS.re
   const realmOrigin = keys.realmOrigin(chainId, ledgerProxy, realmSalt);
   const realm = { chainId, realmSalt, realmOrigin, realmId: keys.realmId(realmOrigin, executionProfileId), executionProfileId, domainSeparator: domainSeparator(chainId, ledgerProxy), limitsProfileId: limitsHash, indexObligations: keccak256(enc(["address", "bytes32", "bytes32"], [index.address, index.runtimeCodehash, mHash])) };
   const seed = seedPlan({ ids, principalId: keys.principal(owner) });
-  // R5: the web3:// gateway (ERC-5219 with ERC-7617 chunks; docs/LARGE-FILES.md), bound to the seed's root directory
-  // record and the page reader. A reader outside the execution set and outside the ReaderDirectory (not an IReader).
+  // R5a–R5: the web3:// gateway (ERC-5219 with ERC-7617 chunks; docs/LARGE-FILES.md) in two immutable contracts. R5a
+  // the content server (a revision record served: inline bytes, a chunk of a span tree, a location), R5 the entry
+  // point a web3:// URL names (parsing, names, lens, HEAD selection, listings), bound to the seed's root directory
+  // record, the page reader and the content server by address and codehash. Readers outside the execution set and
+  // outside the ReaderDirectory (not IReaders).
   const rootDirectory = seed.expected.root.directoryRecordId;
-  const gatewayTypes = { directory: ids[T.DIRECTORY], name: ids[T.NAME], root: ids[T.ROOT], child: ids[T.CHILD], content: ids[T.CONTENT], external_: ids[T.EXTERNAL], bytes_: ids[T.BYTES], span: ids[T.SPAN] };
-  const gateway = add("R5", "EfsWeb3Gateway", [ledgerProxy, reads.address, views.address, page.address, rootDirectory, gatewayTypes], {
-    LEDGER: ledgerProxy, READS: reads.address, VIEWS: views.address, PAGER: page.address, LAYOUT: layoutId, ROOT_DIRECTORY: rootDirectory,
-    DIRECTORY_TYPE: ids[T.DIRECTORY], NAME_TYPE: ids[T.NAME], ROOT_TYPE: ids[T.ROOT], CHILD_TYPE: ids[T.CHILD], CONTENT_TYPE: ids[T.CONTENT], EXTERNAL_TYPE: ids[T.EXTERNAL], BYTES_TYPE: ids[T.BYTES], SPAN_TYPE: ids[T.SPAN],
+  const contentTypes = { root: ids[T.ROOT], child: ids[T.CHILD], content: ids[T.CONTENT], external_: ids[T.EXTERNAL], bytes_: ids[T.BYTES], span: ids[T.SPAN] };
+  const web3Content = add("R5a", "EfsWeb3Content", [ledgerProxy, reads.address, contentTypes], {
+    LEDGER: ledgerProxy, READS: reads.address, LAYOUT: layoutId,
+    ROOT_TYPE: ids[T.ROOT], CHILD_TYPE: ids[T.CHILD], CONTENT_TYPE: ids[T.CONTENT], EXTERNAL_TYPE: ids[T.EXTERNAL], BYTES_TYPE: ids[T.BYTES], SPAN_TYPE: ids[T.SPAN],
   });
+  const gateway = add("R5", "EfsWeb3Gateway", [ledgerProxy, reads.address, views.address, page.address, web3Content.address, rootDirectory, ids[T.DIRECTORY]], {
+    LEDGER: ledgerProxy, READS: reads.address, VIEWS: views.address, PAGER: page.address, CONTENT: web3Content.address, CONTENT_CODEHASH: web3Content.runtimeCodehash,
+    LAYOUT: layoutId, ROOT_DIRECTORY: rootDirectory, DIRECTORY_TYPE: ids[T.DIRECTORY],
+  });
+  // R6–R11: the three topic readers (docs/TAG-DESIGN.md §6; the lens view, the public views, the lookups) and their
+  // ReaderDirectory listings
+  const topicMine = add("R6", "TopicMineReader", [ledgerProxy, views.address, reads.address], { LEDGER: ledgerProxy, VIEWS: views.address, READS: reads.address, LAYOUT: layoutId });
+  const topicEveryone = add("R7", "TopicEveryoneReader", [ledgerProxy, views.address, reads.address], { LEDGER: ledgerProxy, VIEWS: views.address, READS: reads.address, LAYOUT: layoutId });
+  const topicLookup = add("R8", "TopicLookupReader", [ledgerProxy, views.address, reads.address, ids[T.TOPIC], ids[T.TOPIC_WORD]], { LEDGER: ledgerProxy, VIEWS: views.address, READS: reads.address, LAYOUT: layoutId, TOPIC_TYPE: ids[T.TOPIC], WORD_TYPE: ids[T.TOPIC_WORD] });
+  listing("R9", READER_KINDS.topicMine, topicMine.address, "list TopicMineReader under efs/reader/topic-mine/1");
+  listing("R10", READER_KINDS.topicEveryone, topicEveryone.address, "list TopicEveryoneReader under efs/reader/topic-everyone/1");
+  listing("R11", READER_KINDS.topicLookup, topicLookup.address, "list TopicLookupReader under efs/reader/topic-lookup/1");
   steps.push(...seed.steps.map((s) => ({ id: s.id, kind: "EXECUTE", contract: "LedgerCore", to: ledgerProxy, from: owner, label: s.label, actions: jsonable(s.actions), bodies: s.bodies, marker: s.marker, postCheck: s.postCheck })));
 
   return {
@@ -577,11 +659,11 @@ async function computePlan({ chainId = DEFAULTS.chainId, realmSalt = DEFAULTS.re
     chainId, realmSalt, owner, fixturePrincipal: owner, declarationKey: owner, factory: FACTORY.address,
     hotAbiId: HOT_ABI_ID, layoutId, executionProfileId, limits: LIMITS, workModel: WORK_MODEL,
     genesis: { address: G, nonces: { controller: 1, registryProxy: 2, ledgerProxy: 3 } },
-    addresses: { ingress: ingress.address, apply: apply.address, control: control.address, ledgerReads: reads.address, ledgerViews: views.address, descriptorStore: store.address, indexReplayDecoder: decoder.address, readerDirectory: directory.address, filesFinalValidator: validator.address, refuseAllPolicy: refuseAll.address, ledgerImpl: core.address, registryImpl: registryImpl.address, genesis: G, controller, registryProxy, ledgerProxy, ledgerAdmin, registryAdmin, postingStore: posting.address, bitmapStore: bitmap.address, index: index.address, lensReader: lens.address, filesPageReader: page.address, keysView: keysView.address, web3Gateway: gateway.address },
-    readers: { lens: { address: lens.address, kind: READER_KINDS.lens, kindLabel: "efs/reader/lens/1", runtimeCodehash: lens.runtimeCodehash }, filesPage: { address: page.address, kind: READER_KINDS.filesPage, kindLabel: "efs/reader/files-page/1", runtimeCodehash: page.runtimeCodehash } },
-    gateway: { address: gateway.address, runtimeCodehash: gateway.runtimeCodehash, resolveMode: "5219", rootDirectory, pager: page.address, urlBase: `web3://${gateway.address}:${chainId}/` },
+    addresses: { ingress: ingress.address, apply: apply.address, control: control.address, ledgerReads: reads.address, ledgerViews: views.address, descriptorStore: store.address, indexReplayDecoder: decoder.address, readerDirectory: directory.address, filesFinalValidator: validator.address, refuseAllPolicy: refuseAll.address, ledgerImpl: core.address, registryImpl: registryImpl.address, genesis: G, controller, registryProxy, ledgerProxy, ledgerAdmin, registryAdmin, postingStore: posting.address, bitmapStore: bitmap.address, indexReads: indexReads.address, index: index.address, lensReader: lens.address, filesPageReader: page.address, topicMineReader: topicMine.address, topicEveryoneReader: topicEveryone.address, topicLookupReader: topicLookup.address, keysView: keysView.address, web3Gateway: gateway.address, web3Content: web3Content.address },
+    readers: { lens: { address: lens.address, kind: READER_KINDS.lens, kindLabel: "efs/reader/lens/1", runtimeCodehash: lens.runtimeCodehash }, filesPage: { address: page.address, kind: READER_KINDS.filesPage, kindLabel: "efs/reader/files-page/1", runtimeCodehash: page.runtimeCodehash }, topicMine: { address: topicMine.address, kind: READER_KINDS.topicMine, kindLabel: "efs/reader/topic-mine/1", runtimeCodehash: topicMine.runtimeCodehash }, topicEveryone: { address: topicEveryone.address, kind: READER_KINDS.topicEveryone, kindLabel: "efs/reader/topic-everyone/1", runtimeCodehash: topicEveryone.runtimeCodehash }, topicLookup: { address: topicLookup.address, kind: READER_KINDS.topicLookup, kindLabel: "efs/reader/topic-lookup/1", runtimeCodehash: topicLookup.runtimeCodehash } },
+    gateway: { address: gateway.address, runtimeCodehash: gateway.runtimeCodehash, resolveMode: "5219", rootDirectory, pager: page.address, content: { address: web3Content.address, runtimeCodehash: web3Content.runtimeCodehash }, urlBase: `web3://${gateway.address}:${chainId}/` },
     hotAbiIdString: HOT_ABI_ID_STRING,
-    realm, activation: set, index: { address: index.address, manifestHash: mHash, families, units: unitsList, specs, validatorIdentity },
+    realm, activation: set, index: { address: index.address, runtimeCodehash: index.runtimeCodehash, reads: { address: indexReads.address, runtimeCodehash: indexReads.runtimeCodehash }, manifestHash: mHash, families, units: unitsList, specs, validatorIdentity },
     profile, seed: seed.expected, units, steps,
     local: {
       artifacts: artifactSource(),
@@ -702,8 +784,8 @@ export const REMOTE_FILE = { name: "remote.txt", text: "This file lives at its l
  * files-external/1 record with a web3:// locator and the empty files-bytes/1 sentinel).
  */
 export function seedPlan({ ids, principalId, limits = LIMITS }) {
-  const action = (o) => ({ kind: 0, typeId: ZERO, bodyHashOrRecordId: ZERO, purpose: ZERO, subject: ZERO, role: ZERO, target: ZERO, expectedRevision: 0n, salt: ZERO, ...o });
-  const create = (salt) => ({ a: action({ kind: ACTION.CREATE, salt }), b: "0x" });
+  const action = (o) => ({ kind: 0, typeId: ZERO, bodyHashOrRecordId: ZERO, purpose: ZERO, subject: ZERO, role: ZERO, target: ZERO, expectedRevision: 0n, saltOrStrength: ZERO, ...o });
+  const create = (salt) => ({ a: action({ kind: ACTION.CREATE, saltOrStrength: salt }), b: "0x" });
   const publish = (typeId, body) => ({ a: action({ kind: ACTION.PUBLISH, typeId, bodyHashOrRecordId: keccak256(body) }), b: body });
   const bind = (purpose, subject, role, target, expectedRevision = 0n) => ({ a: action({ kind: ACTION.BIND, purpose, subject, role, target, expectedRevision }), b: "0x" });
   const step = (id, label, list, marker, postCheck) => ({ id, label, actions: list.map((x) => x.a), bodies: list.map((x) => x.b), marker, postCheck });

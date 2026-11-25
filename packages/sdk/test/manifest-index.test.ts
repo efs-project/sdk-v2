@@ -37,19 +37,14 @@ describe("deployment kernel floor", () => {
     limits: Record<string, number>;
     typeIds: Record<string, string>;
   };
-  it("reads the work model, the floor limits, and each Type's references and digest specs", () => {
+  it("reads the work model and the floor limits, every field, to check against the gas model", () => {
     const f = createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: raw }).deployment.kernelFloor;
     expect(f?.workModel).toEqual(doc.index.workModel);
     expect(f).toMatchObject({
       floorFreshGas: doc.limits["floorFreshGas"],
       floorRewriteGas: doc.limits["floorRewriteGas"],
       kernelTail: doc.limits["kernelTail"],
-      maxRefs: doc.limits["maxRefs"],
     });
-    const id = (name: string) => (doc.typeIds[name] as string).toLowerCase();
-    expect(f?.types[id("files-span/1")]).toEqual({ refs: 2, specs: 0 });
-    expect(f?.types[id("files-content/1")]).toEqual({ refs: 1, specs: 1 });
-    expect(f?.types[id("files-bytes/1")]).toEqual({ refs: 0, specs: 0 });
   });
 
   it("is null when the document records no work model, and a malformed one is refused", () => {
@@ -62,6 +57,30 @@ describe("deployment kernel floor", () => {
     (bad.index.workModel as Record<string, unknown>)["computeBase"] = "lots";
     expect(() => createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: bad })).toThrow(
       /index.workModel.computeBase/,
+    );
+  });
+});
+
+describe("deployment pins", () => {
+  it("refuses a contract it would read through when the document gives no code hash for it", () => {
+    const doc = raw as unknown as {
+      readers: Record<string, Record<string, unknown>>;
+      index: { reads?: Record<string, unknown>; runtimeCodehash?: string };
+    };
+    const noLookupHash = structuredClone(doc);
+    delete noLookupHash.readers["topicLookupReader"]?.["runtimeCodehash"];
+    expect(() => createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: noLookupHash })).toThrow(
+      /topicLookupReader names an address without its runtimeCodehash/,
+    );
+    const noReadsHash = structuredClone(doc);
+    delete noReadsHash.index.reads?.["runtimeCodehash"];
+    expect(() => createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: noReadsHash })).toThrow(
+      /index.reads names an address without its runtimeCodehash/,
+    );
+    const noIndexHash = structuredClone(doc);
+    delete noIndexHash.index.runtimeCodehash;
+    expect(() => createEfs({ rpcs: ["http://127.0.0.1:9/"], deployment: noIndexHash })).toThrow(
+      /index names an address without its runtimeCodehash/,
     );
   });
 });

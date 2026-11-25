@@ -28,6 +28,9 @@ const ABIS = {
   web3GatewayAbi: "EfsWeb3Gateway", // ERC-6860 resource requests (web3://)
   indexAbi: "RealmIndex", // IIndexReads: posting heads (the backlink list's live count), coverage, stores
   bitmapStoreAbi: "BitmapStore", // the kind-10 scope lists (a principal's positions under one subject)
+  topicMineReaderAbi: "TopicMineReader", // the lens view of a place (mine)
+  topicEveryoneReaderAbi: "TopicEveryoneReader", // the public views of a place (everyone, raw)
+  topicLookupReaderAbi: "TopicLookupReader", // byName, about, counts, word pages, children
 };
 
 function header(inputs) {
@@ -150,7 +153,12 @@ const files = {};
   const fc = c.files;
   if (!Number.isInteger(fc.mediaType?.maxLength))
     throw new Error("codegen: constants.files.mediaType.maxLength is missing");
-  let src = header(["release/release.json", "release/efs-deployment.json"]);
+  let src = header([
+    "release/release.json",
+    "release/efs-deployment.json",
+    "test/vectors/topics.json",
+    "test/vectors/numbers.json",
+  ]);
   src += `/** Action kinds (Actions.sol). \`*_RESERVED\` kinds are refused by the ledger. */\n`;
   src += `export const ACTION_KINDS = ${literal(c.actionKinds)} as const;\n\n`;
   src += "/** The action kinds a plan may use. */\n";
@@ -158,7 +166,7 @@ const files = {};
   src += "/** Deployment capability bits (describe().capabilities). */\n";
   src += `export const CAPABILITIES = ${literal(c.capabilities)} as const;\n\n`;
   src += "/** Binding purpose ids (keccak256 of their preimages, checked at codegen). */\n";
-  src += `export const PURPOSES = ${literal({ head: purposes.HEAD, folder: purposes.FOLDER, tag: purposes.TAG })} as const;\n\n`;
+  src += `export const PURPOSES = ${literal({ head: purposes.HEAD, folder: purposes.FOLDER, tag: purposes.TAG, property: purposes.PROPERTY, same: purposes.SAME, broader: purposes.BROADER })} as const;\n\n`;
   src +=
     "/** The status vocabulary this SDK maps. The pin refuses a deployment with another vocabulary id. */\n";
   src += `export const STATUS_VOCABULARY_ID = ${JSON.stringify(vocabId)} as const;\n`;
@@ -181,7 +189,30 @@ const files = {};
     chunkPayload: fc.chunking.chunkPayload,
     mediaTypeMaxLength: fc.mediaType.maxLength,
   })} as const;\n`;
-  src += `/** The largest declared length a Files body may carry (uint64). */\nexport const FILES_LENGTH_MAX = ${BigInt(fc.lengthMax)}n;\n`;
+  src += `/** The largest declared length a Files body may carry (uint64). */\nexport const FILES_LENGTH_MAX = ${BigInt(fc.lengthMax)}n;\n\n`;
+  // Topics (the tag release): the word and text grammars' limits and refused code points (test/vectors/topics.json,
+  // the chain's own table), and the binding number's strength limit (test/vectors/numbers.json).
+  const tc = c.topics;
+  const tv = json("test/vectors/topics.json");
+  const nv = json("test/vectors/numbers.json");
+  if (!tc || typeof tc.wordMax !== "number" || typeof tc.textMax !== "number")
+    throw new Error("codegen: constants.topics needs wordMax and textMax");
+  const refused = (tv.refused?.entries ?? []).map((e) => [e.lo, e.hi, e.class]);
+  for (let i = 0; i < refused.length; i++) {
+    const [lo, hi, cls] = refused[i];
+    if (!(Number.isInteger(lo) && Number.isInteger(hi) && lo <= hi && Number.isInteger(cls)))
+      throw new Error(`codegen: topics refused entry ${i} is malformed`);
+    if (i > 0 && lo <= refused[i - 1][1])
+      throw new Error("codegen: topics refused ranges must be sorted and disjoint");
+  }
+  if (!Number.isInteger(nv.maxStrength))
+    throw new Error("codegen: numbers.json has no maxStrength");
+  src +=
+    "/** Topics: the word and text limits, the refused-scalar classes and their sorted inclusive ranges [lo, hi, class]. */\n";
+  src += `export const TOPICS = ${JSON.stringify({ wordMax: tc.wordMax, textMax: tc.textMax, refusedClasses: tc.refusedClasses, refused })} as const;\n\n`;
+  src +=
+    "/** The largest strength a BIND or UNBIND carries (BindingNumber.MAX_STRENGTH): numbers run −(max + 1)..max. */\n";
+  src += `export const MAX_STRENGTH = ${nv.maxStrength};\n`;
   files["constants.ts"] = src;
 }
 
@@ -207,7 +238,17 @@ const files = {};
     "releaseFolder",
     "withdraw",
     "firstWriteSurcharge",
+    // The tag release's TAG rows (a first tag at a fresh pair, a later author's first yes, a number change, a lone
+    // negative, a mask, a release and a restore of a tag).
+    "bindTagFresh",
+    "bindTagSecondAuthor",
+    "bindTagNumberChange",
+    "unbindTagLone",
+    "unbindTag",
+    "releaseTag",
+    "restoreTag",
   ];
+  const TAG_LEVELS = ["mineNew", "mineExisting", "sharedNew", "sharedExisting"];
   const constants = (where, c) => {
     for (const k of ROWS)
       if (typeof c?.[k] !== "number" || !Number.isFinite(c[k]))
@@ -217,7 +258,62 @@ const files = {};
       throw new Error(`codegen: gasModel ${where}.publishNew needs files-bytes/1`);
     for (const [k, v] of Object.entries(pn))
       if (typeof v !== "number") throw new Error(`codegen: gasModel ${where}.publishNew.${k}`);
-    return Object.fromEntries([...ROWS.map((k) => [k, c[k]]), ["publishNew", pn]]);
+    const tl = c.tagLevel ?? {};
+    for (const k of TAG_LEVELS)
+      if (typeof tl[k] !== "number") throw new Error(`codegen: gasModel ${where}.tagLevel.${k}`);
+    return Object.fromEntries([
+      ...ROWS.map((k) => [k, c[k]]),
+      ["publishNew", pn],
+      ["tagLevel", Object.fromEntries(TAG_LEVELS.map((k) => [k, tl[k]]))],
+    ]);
+  };
+  // The kernel's floor inputs, per schedule: every field the planning rule reads is required (formula 2).
+  const WORK_MODEL = [
+    "formulaVersion",
+    "freshPerPublication",
+    "rwPerPublication",
+    "freshPerPublishFresh",
+    "freshPerPublishExisting",
+    "rwPerPublish",
+    "freshPerBindFresh",
+    "rwPerBind",
+    "rwPerBindLater",
+    "freshPerRef",
+    "freshPerDigestSpec",
+    "computeBase",
+    "computePerAction",
+    "computePerHookEffect",
+    "finalComputeBase",
+    "finalComputePerBind",
+    "finalComputePerPublish",
+  ];
+  const floorOf = (where, f) => {
+    const num = (path, v) => {
+      if (typeof v !== "number" || !Number.isFinite(v))
+        throw new Error(`codegen: gasModel ${where}.${path} must be a number`);
+      return v;
+    };
+    const wm = Object.fromEntries(
+      WORK_MODEL.map((k) => [k, num(`workModel.${k}`, f?.workModel?.[k])]),
+    );
+    const types = {};
+    for (const [t, v] of Object.entries(f?.types ?? {}))
+      types[t] = { refs: num(`types.${t}.refs`, v.refs), specs: num(`types.${t}.specs`, v.specs) };
+    return {
+      workModel: wm,
+      limits: {
+        floorFreshGas: num("limits.floorFreshGas", f?.limits?.floorFreshGas),
+        floorRewriteGas: num("limits.floorRewriteGas", f?.limits?.floorRewriteGas),
+        kernelTail: num("limits.kernelTail", f?.limits?.kernelTail),
+      },
+      callGasRetained: {
+        numerator: num("callGasRetained.numerator", f?.callGasRetained?.numerator),
+        denominator: num("callGasRetained.denominator", f?.callGasRetained?.denominator),
+      },
+      dispatchOverhead: num("dispatchOverhead", f?.dispatchOverhead),
+      types,
+      kernel: constants(`${where}.kernel`, f?.kernel),
+    };
   };
   const schedules = {};
   for (const [name, sch] of Object.entries(g.schedules ?? {})) {
@@ -229,6 +325,7 @@ const files = {};
       ...(sch.executionGas
         ? { executionGas: constants(`${name}.executionGas`, sch.executionGas) }
         : {}),
+      floor: floorOf(`${name}.floor`, sch.floor),
       maxAbsErrorPercent: sch.maxAbsErrorPercent,
     };
   }
@@ -242,7 +339,31 @@ const files = {};
   src += `export const GAS_SCHEDULES = ${literal(schedules)} as const;\n\n`;
   src +=
     "/** The per-transaction gas cap (EIP-7825) and the planning headroom the contracts use. */\n";
-  src += `export const GAS_ENVELOPE = ${literal({ txGasCap: env.txGasCap, headroomPercent: env.headroomPercent })} as const;\n`;
+  src += `export const GAS_ENVELOPE = ${literal({ txGasCap: env.txGasCap, headroomPercent: env.headroomPercent })} as const;\n\n`;
+  const pl = g.planning;
+  if (
+    typeof pl?.txGasCap !== "number" ||
+    typeof pl?.headroomPercent !== "number" ||
+    typeof pl?.limits?.maxActions !== "number" ||
+    typeof pl?.limits?.maxBindsPerPublication !== "number" ||
+    typeof pl?.limits?.maxBodyBytesPerPublication !== "number"
+  )
+    throw new Error("codegen: gasModel.planning needs txGasCap, headroomPercent and limits");
+  src +=
+    "/** The planning rule (gas/model.json planning): inside `limits`, and max(E, V) ≤ ⌊txGasCap × (100 − headroomPercent) / 100⌋. */\n";
+  src += `export const GAS_PLANNING = ${literal({ txGasCap: pl.txGasCap, headroomPercent: pl.headroomPercent, limits: pl.limits })} as const;\n\n`;
+  const pan = g.tagLists?.priceAsNew;
+  if (!Array.isArray(pan?.entries) || typeof pan?.entriesMultipleOf !== "number")
+    throw new Error("codegen: gasModel.tagLists.priceAsNew needs entries and entriesMultipleOf");
+  src +=
+    "/** A roll-up list holding one of `entries`, or a multiple of `entriesMultipleOf` (zero included), takes a fresh word on its next append: price that append as new. */\n";
+  src += `export const GAS_TAG_LISTS = ${literal({ priceAsNew: { entries: pan.entries, entriesMultipleOf: pan.entriesMultipleOf } })} as const;\n\n`;
+  const rd = g.reads;
+  if (typeof rd?.callGasCap !== "number" || !rd?.recommended?.prague)
+    throw new Error("codegen: gasModel.reads needs callGasCap and recommended bounds");
+  src +=
+    "/** The topic readers' bounds (gas/model.json reads): page × Lens per view, rows per call and entries read per call, keeping one call under callGasCap. */\n";
+  src += `export const GAS_READS = ${literal({ callGasCap: rd.callGasCap, marginPercent: rd.marginPercent, recommended: rd.recommended })} as const;\n`;
   files["gas.ts"] = src;
 }
 

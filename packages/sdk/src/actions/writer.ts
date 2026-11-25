@@ -15,6 +15,7 @@ import {
   type SequenceProgress,
   sequenceOps,
 } from "./sequence.js";
+import { gasPlanFor, type PlannedAction, ruleGas } from "./split.js";
 import type {
   Plan,
   PlanResult,
@@ -69,6 +70,21 @@ export interface EfsWriter {
   pendingSequences(): Promise<SequenceProgress[]>;
   /** Stop offering to continue; committed parts stay on chain. Refused while a part is in flight. */
   abandon(sequenceId: Hex, o?: SequenceOpts): Promise<SequenceProgress>;
+}
+
+/** V for a plan's actions alone (no shapes or rows known): every bind a first statement, so an upper bound. */
+function floorOf(
+  efs: Efs,
+  plan: { actions: readonly PlannedAction["action"][]; bodies: readonly Hex[] },
+): bigint | null {
+  const g = gasPlanFor(efs.deployment);
+  if (!g.ok || !g.model.floor) return null;
+  const list: PlannedAction[] = plan.actions.map((action, i) => ({
+    action,
+    body: plan.bodies[i] ?? "0x",
+    firstStatement: true,
+  }));
+  return BigInt(ruleGas(list, g.model, false, g.typeNames).V);
 }
 
 export async function createWriter(
@@ -130,7 +146,7 @@ export async function createWriter(
         kind: "efs.review",
         effects: plan.effects,
         prompts: 1,
-        gas: { estimate: "gas" in est ? est.gas : null, floor: null },
+        gas: { estimate: "gas" in est ? est.gas : null, floor: floorOf(efs, plan) },
         wouldRevert: "revert" in est ? est.revert : null,
         stale,
         atomic: true,

@@ -77,6 +77,7 @@ if (edit.status === "BASE_CHANGED") {
 | `@efs/sdk/links` | the route and link grammar alone, with no runtime dependencies (for startup routers) |
 | `@efs/sdk/files` | `openFile`, `readBytes`, `readRange`, `fileChunks`, `unverifiedChunks`, `planEditFile` |
 | `@efs/sdk/actions` | `createWriter`: plan, review, send and reconcile writes, exactly once |
+| `@efs/sdk/tags` | topics, tags and homes: `planTag`, `planDeny`, `planUntag`, `topicItems`, `tagsOf`, `topicChildren`, `wordPage` |
 | `@efs/sdk/web` | `streamFile` / `streamUnverified` (ReadableStream) |
 | `@efs/sdk/web/journal` | `indexedDbJournal`, the durable write journal for pages and workers |
 | `@efs/sdk/web/cache` | `indexedDbByteStore`, an opt-in persistent cache of verified bytes |

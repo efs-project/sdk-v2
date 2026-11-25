@@ -31,6 +31,10 @@
       "types": "./dist/actions/index.d.ts",
       "default": "./dist/actions/index.js"
     },
+    "./tags": {
+      "types": "./dist/tags/index.d.ts",
+      "default": "./dist/tags/index.js"
+    },
     "./web": {
       "types": "./dist/web/index.d.ts",
       "default": "./dist/web/index.js"

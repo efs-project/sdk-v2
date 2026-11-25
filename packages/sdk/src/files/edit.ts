@@ -18,6 +18,7 @@
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
+  batchGasOf,
   type GasModel,
   type PlannedAction,
   packBatches,
@@ -401,7 +402,7 @@ export async function planEditFile(
     txGasCap: gas.txGasCap,
     headroom: gas.headroom,
     ...(gas.blockGasLimit !== undefined ? { blockGasLimit: gas.blockGasLimit } : {}),
-    ...(gas.floor ? { floor: gas.floor } : {}),
+    typeNames: gas.typeNames,
     // Priced as if this were the principal's first publication ever (the surcharge is ~0.1% of the cap): planning
     // does not read the nonce, and an under-estimate is the one error a split must not make.
     firstWrite: true,
@@ -438,6 +439,7 @@ export async function planEditFile(
         split.parts.map((p) => ({
           actions: p.actions.map((a) => a.action),
           bodies: p.actions.map((a) => a.body),
+          ...batchGasOf(p),
         })),
         gas,
       ).length,
@@ -462,6 +464,7 @@ export async function planEditFile(
         ),
       ],
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
+      ...batchGasOf(p),
     }),
   );
   return { kind: "efs.editPlan", status: "PLANNED", parts, review, basis };

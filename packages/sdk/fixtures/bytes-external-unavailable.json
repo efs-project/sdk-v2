@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "cc59d0ca1f9fbcc8f554859cb2b2716da46d4d9b",
+  "contractsCommit": "2462e540f4bf06c55154faa55a8506ff3c4b32a3",
   "case": "bytes-external-unavailable",
   "note": "readBytes on an https location answering 404",
   "result": {

@@ -66,12 +66,18 @@ export function scopeKey(principal: PrincipalId, purpose: Hex, subject: Hex): He
 export function roleScopeKey(principal: PrincipalId, purpose: Hex, role: Hex): Hex {
   return k([W, W, W, W], [DOMAINS.roleScope, principal, purpose, role]);
 }
+/** The scope-below value key (index family 19): one list per (author, purpose, ancestor topic). */
+export function scopeBelowKey(principal: PrincipalId, purpose: Hex, ancestor: Hex): Hex {
+  return k([W, W, W, W], [DOMAINS.scopeBelow, principal, purpose, ancestor]);
+}
 
-/** Posting-list kinds (Keys.sol). 2, 3, 6, 7, 9 are reserved. */
+/** Posting-list kinds (Keys.sol). */
 export const POSTING_KIND = {
   byType: 1,
   byAuthor: 4,
   backlink: 5,
+  place: 6,
+  placeBelow: 7,
   history: 8,
   scope: 10,
   referencePosition: 11,
@@ -79,6 +85,9 @@ export const POSTING_KIND = {
   uniqueByType: 13,
   scalar: 14,
   digest: 15,
+  scopeBelow: 19,
+  positionAuthors: 20,
+  rolePlaces: 21,
 } as const;
 
 const ZERO: Hex = `0x${"0".repeat(64)}`;
@@ -88,7 +97,9 @@ export function postingKey(type: Hex, kind: number, ordinal: number, valueKey: H
 export const lists = {
   byType: (type: Hex): Hex => postingKey(type, POSTING_KIND.byType, 0, ZERO),
   byAuthor: (principal: PrincipalId): Hex => postingKey(ZERO, POSTING_KIND.byAuthor, 0, principal),
-  backlink: (target: Hex): Hex => postingKey(ZERO, POSTING_KIND.backlink, 0, target),
+  /** One backlink list per (purpose, target): no read spans every kind of link (FOLDER, TAG, …). */
+  backlink: (purpose: Hex, target: Hex): Hex =>
+    postingKey(purpose, POSTING_KIND.backlink, 0, target),
   history: (binding: Hex): Hex => postingKey(ZERO, POSTING_KIND.history, 0, binding),
   scope: (scope: Hex): Hex => postingKey(ZERO, POSTING_KIND.scope, 0, scope),
   reference: (sourceType: Hex, ordinal: number, target: Hex): Hex =>
@@ -99,6 +110,20 @@ export const lists = {
     postingKey(type, POSTING_KIND.scalar, spec, k([{ type: "uint8" }, W], [kind, value])),
   digest: (algorithm: Hex, value: Hex): Hex =>
     postingKey(ZERO, POSTING_KIND.digest, 0, k([W, W], [algorithm, value])),
+  /** Every filing at a place (a topic or a home), either sign: a fresh position and each later author's first yes. */
+  place: (purpose: Hex, place: Hex): Hex => postingKey(purpose, POSTING_KIND.place, 0, place),
+  /** The same, for every topic below `ancestor`. */
+  placeBelow: (purpose: Hex, ancestor: Hex): Hex =>
+    postingKey(purpose, POSTING_KIND.placeBelow, 0, ancestor),
+  /** One author's first statements on every topic below `ancestor`. */
+  scopeBelow: (principal: PrincipalId, purpose: Hex, ancestor: Hex): Hex =>
+    postingKey(ZERO, POSTING_KIND.scopeBelow, 0, scopeBelowKey(principal, purpose, ancestor)),
+  /** Every author who ever stated anything at a position (`live`: those who say yes now). */
+  positionAuthors: (position: Hex): Hex =>
+    postingKey(ZERO, POSTING_KIND.positionAuthors, 0, position),
+  /** Every statement about a thing, by role, wherever it was filed. */
+  rolePlaces: (purpose: Hex, role: Hex): Hex =>
+    postingKey(purpose, POSTING_KIND.rolePlaces, 0, role),
 } as const;
 
 /** The native-lane retry key (design §5.8). The ledger answers AlreadyAdmitted for the same digest and nonce. */

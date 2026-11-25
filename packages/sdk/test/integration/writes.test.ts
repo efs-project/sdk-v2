@@ -94,6 +94,10 @@ describe("write lifecycle (fixture)", () => {
     const review = await w.review(planned.plan);
     expect(review.wouldRevert).toBeNull();
     expect(review.prompts).toBe(1);
+    // V of the planning rule (an upper bound from the actions alone): above zero, and the call it prices fits the cap.
+    expect(review.gas.floor).toBeGreaterThan(0n);
+    expect(review.gas.floor).toBeLessThanOrEqual(16_777_216n);
+    expect(review.gas.estimate).toBeLessThanOrEqual(16_777_216n);
     const run = await w.run(planned.plan);
     expect(run.send.status).toBe("SUBMITTED");
     expect(run.reconcile?.outcome).toBe("COMMITTED");
@@ -349,7 +353,7 @@ describe("write lifecycle (fixture)", () => {
       role: ZERO_WORD,
       target: ZERO_WORD,
       expectedRevision: 0n,
-      salt: ZERO_WORD,
+      saltOrStrength: ZERO_WORD,
     }));
     const w0 = wallet(BOB);
     const w = await createWriter(efs, {

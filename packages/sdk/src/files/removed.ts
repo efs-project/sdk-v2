@@ -24,22 +24,29 @@ import { chainStatus, headState } from "../protocol/status.js";
 import type { Ctx, Evidence } from "./bytes.js";
 import { type EntryTarget, type FolderCoverage, type FolderRef, targetRef } from "./folders.js";
 
-export interface RemovedRow {
+/**
+ * What an entry pointed at before it was removed, read from its history:
+ * - KNOWN: the target of its last BIND, which Restore binds again;
+ * - NEVER_BOUND: a hide with no earlier bind by this author (a lone hide of someone else's entry at that name): there is
+ *   nothing to restore, and Unhide (planUnhideEntries) removes the hide;
+ * - UNKNOWN: the history is deeper than the walk's bound, or the endpoint can't walk it (`reason`); never a guess.
+ */
+export type LastBound =
+  | { last: "KNOWN"; target: EntryTarget }
+  | { last: "NEVER_BOUND" }
+  | { last: "UNKNOWN"; reason: Reason };
+
+export type RemovedRow = {
   name: string;
   /** The entry's FOLDER position. */
   position: Hex;
   /** RELEASED: removed (the next author's entry shows there). MASKED: removed with hide. */
   state: "RELEASED" | "MASKED";
-  /**
-   * The target the entry had before it was removed: what Restore binds again. Always known. A removed entry always had
-   * one (the ledger only hides or releases a bound entry), and a history that can't name it makes the page UNKNOWN.
-   */
-  target: EntryTarget;
-  /** The binding's revision now (what a restore's compare-and-swap expects). */
+  /** The binding's revision now (what a restore's or an unhide's compare-and-swap expects). */
   revision: bigint;
   /** The admission that removed it (ledger order). */
   removedAt: bigint;
-}
+} & LastBound;
 
 /** Continues a removed-entries listing: an index into the author's scope list, for the same folder and author. */
 export interface RemovedCursor {
@@ -356,21 +363,24 @@ export async function listRemoved(
                   "a removed entry's name record does not match its role",
                 ),
               };
-            const target = await lastBoundTarget(
+            const last = await lastBoundTarget(
               ctx,
               s,
               basis,
               bindingKey(author, x.position),
               x.head,
             );
-            if (!target.ok) return target;
+            if (!last.ok) return last;
+            const state = headState(x.head.state) as "RELEASED" | "MASKED";
+            // A released name you never placed anything at does nothing to any read: not a removed entry.
+            if (state === "RELEASED" && last.value.last === "NEVER_BOUND") continue;
             rows.push({
               name,
               position: x.position,
-              state: headState(x.head.state) as "RELEASED" | "MASKED",
-              target: target.value,
+              state,
               revision: BigInt(x.head.revision),
               removedAt: BigInt(x.head.admission),
+              ...last.value,
             });
           }
         }
@@ -429,13 +439,18 @@ export async function listRemoved(
   };
 }
 
-/** What a removed head's earlier version may be: UNBIND needs a BOUND head, RELEASE a BOUND or MASKED one. */
+/**
+ * What a removed head's earlier version may be, under the tag release's rules: UNBIND is admitted from every state (a
+ * first mask, a number change, a re-stated hide after a release), and RELEASE from a BOUND or MASKED head.
+ */
 const MAY_PRECEDE: Readonly<Record<"MASKED" | "RELEASED", readonly string[]>> = {
-  MASKED: ["BOUND"],
+  MASKED: ["BOUND", "MASKED", "RELEASED"],
   RELEASED: ["BOUND", "MASKED"],
 };
-/** historyAt's own bound on rows read from the live head (the walk needs at most two). */
-const HISTORY_ROWS = 8;
+/** The most versions the walk reads back from a removed head before it answers UNKNOWN for that entry. */
+export const HISTORY_WALK_VERSIONS = 32;
+/** historyAt's own bound: its walk from the live head, plus the hops a mask takes to find its last BIND's kind. */
+const HISTORY_HOPS = 2 * HISTORY_WALK_VERSIONS;
 const contradiction = (detail: string): Step<never> => ({
   ok: false,
   retryElsewhere: true,
@@ -443,16 +458,18 @@ const contradiction = (detail: string): Step<never> => ({
 });
 
 /**
- * The target a removed (MASKED or RELEASED) binding had: its last BOUND version, read from its history at the basis.
- * The ledger's rules decide what the walk can meet. UNBIND needs a BOUND head and RELEASE a BOUND or MASKED one, so
- * every binding starts with a BIND and the last bound version is at most two versions back (RELEASED, MASKED, BOUND).
- * So on an honest endpoint the target is always known. A history that can't be read, or one that breaks those rules
- * (a version that can't precede the next, an admission that isn't the one asked for, a target kind no FOLDER bind
- * can carry), is the endpoint's fault: the read fails and moves to the next endpoint. It never returns a guessed
- * target.
+ * The target a removed (MASKED or RELEASED) binding had: its last BOUND version, read from its history at the basis,
+ * one version at a time back from the head (at most HISTORY_WALK_VERSIONS; beyond, that entry is UNKNOWN). Under the
+ * tag release a history may alternate hides and releases to any depth, and may begin with a hide that names no
+ * target (a lone hide): that is NEVER_BOUND, not an error.
+ * A history that breaks the ledger's rules is the endpoint's fault, and the read fails and moves to the next
+ * endpoint; it never returns a guessed target. That covers:
+ * - a version that can't precede the next;
+ * - an admission other than the one asked for;
+ * - revisions that don't count down by one per version;
+ * - a first version that is not revision 1, or that carries a target although it is a hide;
+ * - a target kind no FOLDER bind can carry.
  * Shared by listRemoved and planRestoreEntries, so a row's target is exactly what Restore binds.
- * These rules hold for this contracts release only: the tag release admits UNBIND from every state, so this walk
- * changes at that re-vendor (docs/design/tags-0.1.md section 7, the re-vendor checklist).
  * @internal
  */
 export async function lastBoundTarget(
@@ -460,22 +477,52 @@ export async function lastBoundTarget(
   s: Session,
   basis: Basis,
   key: Hex,
-  head: { state: number; prevAdmission: bigint },
-): Promise<Step<EntryTarget>> {
+  head: { state: number; prevAdmission: bigint; revision: bigint | number },
+): Promise<Step<LastBound>> {
   const d = ctx.efs.deployment;
   let state = headState(head.state);
   let asOf = BigInt(head.prevAdmission);
+  let revision = BigInt(head.revision);
   if (state !== "MASKED" && state !== "RELEASED") return contradiction("the entry is not removed");
-  for (;;) {
-    if (asOf === 0n) return contradiction("a removed entry's history has no bound version");
+  for (let walked = 0; ; walked++) {
+    if (asOf === 0n) {
+      // The first version: only a hide can begin a history with nothing before it.
+      if (state !== "MASKED" || revision !== 1n)
+        return contradiction("a removed entry's history has no bound version");
+      return { ok: true, value: { last: "NEVER_BOUND" } };
+    }
+    if (walked === HISTORY_WALK_VERSIONS)
+      return {
+        ok: true,
+        value: {
+          last: "UNKNOWN",
+          reason: reason(
+            "LIMIT_EXCEEDED",
+            "never",
+            `the entry's history is more than ${HISTORY_WALK_VERSIONS} versions deep`,
+          ),
+        },
+      };
     ctx.requests += 1;
     const [out] = await callsAt(s, basis.blockHash, [
-      call(d.readers.ledgerViews, ledgerViewsAbi, "historyAt", [d.ledger, key, asOf, HISTORY_ROWS]),
+      call(d.readers.ledgerViews, ledgerViewsAbi, "historyAt", [d.ledger, key, asOf, HISTORY_HOPS]),
     ]);
     const h = decode<[number, RawHead]>(ledgerViewsAbi, "historyAt", out);
     if (!h.ok) return h;
-    if (h.value[0] !== 3)
-      // History.FOUND
+    const found = h.value[0]; // History: 1 UNKNOWN (beyond its hops), 2 NONE, 3 FOUND
+    if (found === 1)
+      return {
+        ok: true,
+        value: {
+          last: "UNKNOWN",
+          reason: reason(
+            "LIMIT_EXCEEDED",
+            "never",
+            "the entry's history is deeper than the reader walks",
+          ),
+        },
+      };
+    if (found !== 3)
       return {
         ok: false,
         retryElsewhere: true,
@@ -487,15 +534,23 @@ export async function lastBoundTarget(
       };
     const prior = h.value[1];
     const was = headState(prior.state);
-    if (BigInt(prior.admission) !== asOf || !MAY_PRECEDE[state].includes(was))
+    revision -= 1n;
+    if (
+      BigInt(prior.admission) !== asOf ||
+      BigInt(prior.revision) !== revision ||
+      !MAY_PRECEDE[state].includes(was)
+    )
       return contradiction("a removed entry's history breaks the ledger's rules");
     if (was === "BOUND") {
       const ref = targetRef(prior.targetKind, prior.target);
       return ref
-        ? { ok: true, value: ref }
+        ? { ok: true, value: { last: "KNOWN", target: ref } }
         : contradiction("a FOLDER bind names a target kind it can't carry");
     }
-    state = "MASKED"; // MAY_PRECEDE admits only BOUND or MASKED here, and only after RELEASED
+    // A hide with nothing before it names no target (a lone hide keeps target kind 0).
+    if (BigInt(prior.prevAdmission) === 0n && Number(prior.targetKind) !== 0)
+      return contradiction("a first hide carries a target");
+    state = was as "MASKED" | "RELEASED";
     asOf = BigInt(prior.prevAdmission);
   }
 }
