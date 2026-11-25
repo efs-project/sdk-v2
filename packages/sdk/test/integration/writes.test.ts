@@ -6,7 +6,13 @@ import { join } from "node:path";
 import { keccak256, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
-import { ACTION, createWriter, type Journal, memoryJournal } from "../../src/actions/index.ts";
+import {
+  ACTION,
+  createWriter,
+  type Journal,
+  memoryJournal,
+  type Plan,
+} from "../../src/actions/index.ts";
 import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import { encode } from "../../src/content/codec.ts";
@@ -286,6 +292,21 @@ describe("write lifecycle (fixture)", () => {
     expect(r.gas && r.gas.estimate > r.gas.cap).toBe(true);
     expect(r.gas?.suggestedParts).toBeGreaterThanOrEqual(2);
     expect(w0.sent).toBe(0);
+  });
+
+  it("planSequence: the parts of one save take consecutive nonces and commit in order", async () => {
+    const w = await createWriter(efs, {
+      authorizer: { kind: "local", profile: "direct", account: alice },
+      journal: memoryJournal(),
+    });
+    const part = (name: string) =>
+      putInline(efs, w.principal, docs, name, new TextEncoder().encode(name), salt(`seq-${name}`));
+    const seq = await w.planSequence([part("one.txt"), part("two.txt"), part("three.txt")]);
+    if (seq.status !== "PLANNED") throw new Error(seq.status);
+    const [a, b, c] = seq.plans as [Plan, Plan, Plan];
+    expect([b.nonce - a.nonce, c.nonce - a.nonce]).toEqual([1n, 2n]);
+    expect(new Set(seq.plans.map((p) => p.id)).size).toBe(3); // three exactly-once identities
+    for (const p of seq.plans) expect((await w.run(p)).reconcile?.outcome).toBe("COMMITTED");
   });
 });
 

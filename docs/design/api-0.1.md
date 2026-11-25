@@ -615,6 +615,28 @@ export interface ReconcileResult {
 - Unknown fields are preserved.
 - JSON codecs are exported: `encodeJournalRecord` / `decodeJournalRecord`, with bigint written as decimal strings.
 
+### Splitting a save into publications (0.1, model-independent part)
+
+`splitPublications(actions, { model, limits, txGasCap, headroom? })` in `@efs/sdk/actions` packs an ordered list of
+`PlannedAction`s (`{ action, body, shape?, exists?, group? }`) into publications that each fit one transaction.
+- **Batch limits** come from the kernel's own checks (`LedgerCore._bounds`): actions ≤ `maxActionsPerPublication`;
+  BIND, UNBIND and RELEASE ≤ `maxBindsPerPublication`; summed body bytes ≤ `maxBodyBytesPerPublication`; each
+  body ≤ `maxBodyBytes`.
+- **Gas** comes from the contracts' fitted model (release.json `gasModel`; until the next snapshot lands, the
+  caller passes the constants): `fixed + Σ actions`, a new PUBLISH being
+  `publishNew[shape] + perWord × ceil(bytes/32) + perByte × bytes`. The SDK adds the 21,000 intrinsic gas and the
+  calldata (every byte priced as non-zero), which the model excludes. Plans aim at `txGasCap / (1 + headroom)`,
+  15% by default.
+- **Order and grouping:** order is kept, so a record is never published after something that references it.
+  Consecutive actions sharing a `group` are never split, so a file's finish appears atomically.
+- **Refusals** name the index: a body over the record limit is `LIMIT_EXCEEDED`, and a group too big for any
+  transaction is `OVER_TX_GAS_CAP`. eth_estimateGas on the exact call stays the authority (see `send`).
+
+`writer.planSequence(parts)` plans the parts as consecutive native nonces: part 0 takes the next nonce, and part i
+takes that nonce + i. Each part is its own plan, journal record and exactly-once identity, so the parts are sent in
+order and a failure is reconciled part by part. Sending several parts under one approval (EIP-5792
+`wallet_sendCalls`) comes next.
+
 ## 8. Errors that do throw
 
 ```ts

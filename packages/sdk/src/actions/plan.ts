@@ -32,6 +32,11 @@ export interface PlanInput {
   effects: readonly EffectView[];
   /** Seconds from the basis block's timestamp (default 15 minutes). The ledger refuses the plan after this. */
   deadlineSeconds?: number;
+  /**
+   * An explicit native nonce, for the later parts of a sequence (planSequence): part i of a split save uses the
+   * first part's nonce + i. Default: the principal's next nonce at the basis.
+   */
+  nonce?: bigint;
 }
 
 export async function planPublication(
@@ -119,7 +124,10 @@ export async function planPublication(
         functionName: "acceptanceProfileOf",
         data: (outs[1] as { result: Hex }).result,
       }) as unknown as Hex;
-      return { ok: true, value: { nonce, profile: lower(profile), timestamp } };
+      return {
+        ok: true,
+        value: { nonce: input.nonce ?? nonce, profile: lower(profile), timestamp },
+      };
     },
     o,
   );
