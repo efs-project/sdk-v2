@@ -6,7 +6,7 @@
   "result": {
     "kind": "efs.send",
     "status": "AMBIGUOUS",
-    "planId": "0x2c92a80452b91493a032e4b891e525083e0d415421fc810553e0d2c8820f1511",
+    "planId": "0x89471215f5c06e4a953206840ab922bf5fec076bb825976f6c0cc97507889e3d",
     "reason": {
       "code": "RESPONSE_LOST",
       "retry": "after-reconcile",
