@@ -1,10 +1,32 @@
 # Tags, topics and homes: SDK design (0.1)
 
-> **Draft design. Nothing here is built.** It follows the owner's 2026-11-25 rulings on tags (T-1 to T-5, and "the
-> shared tag": paths tell tags apart, words connect them) and replaces the sketch in draft PR #36. The SDK builds
-> behind it as the contracts release lands: topic records, the tag's number, homes (C8), and the lists and
-> directories below. Names marked *(pending contracts)* follow the contracts dev's spike and can still change. Folders
-> are separate and already built: a folder is a Files Type with minted ids and named entries (`api-0.1.md`, "Folders").
+> **Built at the tag-release re-vendor** (contracts `2462e54`), as `@efs/sdk/tags`. It follows the owner's 2026-11-25
+> rulings on tags (T-1 to T-5, and "the shared tag": paths tell tags apart, words connect them). Folders are separate:
+> a folder is a Files Type with minted ids and named entries (`api-0.1.md`, "Folders").
+>
+> **Built:**
+> - ids and the chain's word and text grammars (`checkWord`, `checkText`, `wordPageId`, `pathId`, `homeId`,
+>   `propertyKey`). They match `test/vectors/topics.json` code for code: 197 words, 45 texts, the paths, and every
+>   EfsTopics builder's actions and hashes;
+> - the number law (`numbers.json`);
+> - `planTag` / `planDeny` / `planUntag`: registration strictly before the tag (pages, then path records, root first;
+>   earlier parts for a deep new path), the 16-bit number, lone negatives, number changes and restores, address
+>   targets. Each statement is priced by its tag row and the per-level terms, by the planning rule;
+> - `topicItems` (Mine, Everyone, Raw; exact or roll-up): who decided each row (`decider`: a Lens author or the
+>   public tier); the scan status, where only EXHAUSTED ends a listing and every other page carries a cursor; two
+>   limits per page (rows wanted, entries read); repeats removed by thing across calls and pages (`dedup`); per-call
+>   bounds from the gas model's `reads` section;
+> - `tagsOf`, `topicChildren` (each child's word read back and checked against its parent; an optional fold skips a
+>   word that is not its own fold), `wordPage`, `topicPath`, and `placeCount` / `authorCount` ("about" figures).
+>
+> **Not built yet:**
+> - the fold rule itself (James's ruling: the planners and readers take a `fold` step meanwhile, and check every
+>   word against the chain's grammar);
+> - the junk rule for children (two distinct authors), which needs a per-child author figure the readers don't
+>   give;
+> - synonym merging across "same as" lists;
+> - Lens-applied `tagsOf` (it reads no Lens today, and gives each place's exact yes-count);
+> - planners for labels, "same as" and "broader" (their actions are built and vector-tested).
 
 ## 1. The model
 

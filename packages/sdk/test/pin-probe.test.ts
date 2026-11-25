@@ -12,7 +12,7 @@ const B = `0x${"bb".repeat(20)}` as Hex;
 describe("the code-hash probe", () => {
   it("stores each hash after a zero word, with 2-byte offsets, and returns them all", () => {
     expect(codehashProbe([A, B])).toBe(
-      `0x73${"aa".repeat(20)}3f61002052` + `73${"bb".repeat(20)}3f61004052` + "6100606000f3",
+      `0x73${"aa".repeat(20)}3f6100205273${"bb".repeat(20)}3f610040526100606000f3`,
     );
   });
   it("takes the ten contracts the tag release pins in one call", () => {

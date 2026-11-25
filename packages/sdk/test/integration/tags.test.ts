@@ -1,0 +1,335 @@
+// SPDX-License-Identifier: MIT
+// Tags on a real chain (the tag release): registration strictly before the first tag, the 16-bit number, lone
+// negatives, number changes and untags, and the topic readers' views with the page laws: Mine, Everyone and Raw,
+// exact and roll-up; who decided each row; a short or padded page that is never the end; repeats removed by thing
+// across pages; and restore's alsoPlaced, which tags never change. Two accounts of anvil's public development
+// mnemonic (indexes 13 and 14, used by no other test file), funded here.
+import { readFileSync } from "node:fs";
+import { mnemonicToAccount } from "viem/accounts";
+import { beforeAll, describe, expect, inject, it } from "vitest";
+import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { createEfs } from "../../src/client.ts";
+import type { Hex, PrincipalId, RecordId } from "../../src/core/hex.ts";
+import {
+  planCreateFile,
+  planCreateFolder,
+  planRemoveEntries,
+  planRestoreEntries,
+} from "../../src/files/entries.ts";
+import type { FolderRef } from "../../src/files/folders.ts";
+import {
+  authorCount,
+  homeId,
+  pathId,
+  placeCount,
+  planDeny,
+  planTag,
+  planUntag,
+  type TopicPage,
+  tagsOf,
+  topicChildren,
+  topicItems,
+  topicPath,
+  topicTypesOf,
+  wordPage,
+} from "../../src/tags/index.ts";
+
+const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
+const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
+  root: { directoryRecordId: RecordId };
+};
+const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
+const root: FolderRef = { kind: "folder", directory: deployment.root.directoryRecordId };
+const MNEMONIC = "test test test test test test test test test test test junk";
+const ann = mnemonicToAccount(MNEMONIC, { addressIndex: 13 });
+const ben = mnemonicToAccount(MNEMONIC, { addressIndex: 14 });
+const T = topicTypesOf(efs.deployment);
+const text = (s: string) => new TextEncoder().encode(s);
+const journal = memoryJournal();
+const writerFor = (account: typeof ann) =>
+  createWriter(efs, { authorizer: { kind: "local", profile: "direct", account }, journal });
+let wa: Awaited<ReturnType<typeof writerFor>>;
+let wb: Awaited<ReturnType<typeof writerFor>>;
+let A: PrincipalId;
+let B: PrincipalId;
+let folder: FolderRef;
+const files: { kind: "file"; subject: Hex }[] = [];
+
+const rpc = async (method: string, params: unknown[]) => {
+  await fetch(fixture.rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+};
+const run = async (
+  writer: typeof wa,
+  planned: Promise<{ status: string } & Record<string, unknown>>,
+) => {
+  const p = (await planned) as {
+    status: string;
+    parts?: unknown[];
+    review?: Record<string, unknown>;
+  };
+  if (p.status !== "PLANNED")
+    throw new Error(
+      `not planned: ${JSON.stringify(p, (_k, v) => (typeof v === "bigint" ? `${v}` : v))}`,
+    );
+  expect((await writer.runSequence(p.parts as never)).state).toBe("COMPLETE");
+  return p.review as Record<string, unknown>;
+};
+/** Every row of a listing, page by page, with the pages' shapes. */
+const all = async (first: () => Promise<TopicPage>, more: (next: never) => Promise<TopicPage>) => {
+  const pages: TopicPage[] = [await first()];
+  for (let i = 0; i < 50; i++) {
+    const last = pages[pages.length - 1] as TopicPage;
+    if (last.status !== "PRESENT") throw new Error(`${last.status}: ${last.reason.detail}`);
+    if (last.finished) break;
+    pages.push(await more(last.next as never));
+  }
+  const rows = pages.flatMap((p) => (p.status === "PRESENT" ? p.rows : []));
+  return { pages, rows };
+};
+
+beforeAll(async () => {
+  for (const a of [ann, ben]) await rpc("anvil_setBalance", [a.address, "0x56bc75e2d63100000"]);
+  wa = await writerFor(ann);
+  wb = await writerFor(ben);
+  A = wa.principal;
+  B = wb.principal;
+  const made = await run(
+    wa,
+    planCreateFolder(efs, wa, { folder: root, name: "tags-test" }) as never,
+  );
+  folder = made["created"] as FolderRef;
+  for (const n of ["f0.txt", "f1.txt", "f2.txt", "f3.txt"]) {
+    const r = await run(
+      wa,
+      planCreateFile(efs, wa, { folder, name: n, content: text(n) }) as never,
+    );
+    files.push(r["file"] as { kind: "file"; subject: Hex });
+  }
+});
+
+describe("tags (fixture)", () => {
+  it("tags a file in a new 3-word topic: the topics are registered first, in one save, and it reads back", async () => {
+    const words = ["cars", "tesla", "model_y"];
+    const review = await run(
+      wa,
+      planTag(efs, wa, { topic: words, targets: [files[0] as never], number: 75 }) as never,
+    );
+    expect(review["newTopics"]).toEqual([
+      { words: ["cars"], id: pathId(T, ["cars"]) },
+      { words: ["cars", "tesla"], id: pathId(T, ["cars", "tesla"]) },
+      { words, id: pathId(T, words) },
+    ]);
+    expect(review["records"]).toBe(5); // three word pages, two path records
+    expect(review["statements"]).toMatchObject([{ number: 75, before: null, first: true }]);
+    const mine = await topicItems(efs, words, { view: "mine", lens: { principals: [A] } });
+    expect(mine).toMatchObject({ status: "PRESENT", finished: true });
+    expect(mine.status === "PRESENT" && mine.rows).toMatchObject([
+      {
+        thing: files[0]?.subject,
+        number: 75,
+        decider: { kind: "lens", index: 0, author: A, number: 75 },
+      },
+    ]);
+    // Everyone through a Lens of a stranger: someone says yes, so the public tier decides.
+    const ev = await topicItems(efs, words, { view: "everyone", lens: { principals: [B] } });
+    expect(ev.status === "PRESENT" && ev.rows).toMatchObject([
+      { thing: files[0]?.subject, decider: { kind: "public" }, yes: 1n, statements: 1n },
+    ]);
+    // The roll-up of /cars shows it, filed under /cars/tesla/model_y.
+    const below = await topicItems(efs, ["cars"], {
+      view: "mine",
+      lens: { principals: [A] },
+      below: true,
+    });
+    expect(below.status === "PRESENT" && below.rows).toMatchObject([
+      { thing: files[0]?.subject, topic: pathId(T, words) },
+    ]);
+    // The topic's words come back from its records.
+    expect(await topicPath(efs, pathId(T, words))).toMatchObject({ status: "PRESENT", words });
+  });
+
+  it("a stranger's 'not this' neither hides a row nor adds one; a Lens author's hides it from that Lens", async () => {
+    const words = ["cars", "tesla", "model_y"];
+    await run(wb, planDeny(efs, wb, { topic: words, targets: [files[0] as never] }) as never);
+    // Lens A: A's yes decides; Lens B: B's no hides it; Lens [stranger]: the public tier still shows it.
+    const byA = await topicItems(efs, words, { lens: { principals: [A, B] } });
+    expect(byA.status === "PRESENT" && byA.rows).toMatchObject([
+      { decider: { kind: "lens", author: A } },
+    ]);
+    const byB = await topicItems(efs, words, { lens: { principals: [B, A] } });
+    expect(byB.status === "PRESENT" && byB.rows).toEqual([]);
+    expect(await authorCount(efs, words, files[0]?.subject as Hex)).toMatchObject({
+      status: "PRESENT",
+      statements: 2n,
+      yes: 1n,
+    });
+    // Raw applies no rule.
+    const raw = await topicItems(efs, words, { view: "raw" });
+    expect(raw.status === "PRESENT" && raw.rows).toMatchObject([{ decider: { kind: "none" } }]);
+    // A lone negative on a thing nobody tagged: listed in Raw, never in Everyone.
+    await run(
+      wb,
+      planDeny(efs, wb, { topic: words, targets: [files[1] as never], number: -5 }) as never,
+    );
+    const ev = await topicItems(efs, words, { lens: { principals: [A] } });
+    expect(ev.status === "PRESENT" && ev.rows.map((r) => r.thing)).toEqual([files[0]?.subject]);
+    const raw2 = await topicItems(efs, words, { view: "raw" });
+    expect(raw2.status === "PRESENT" && raw2.rows.map((r) => r.thing).sort()).toEqual(
+      [files[0]?.subject, files[1]?.subject].sort(),
+    );
+  });
+
+  it("the number: a change is one re-bind, the same number is UNCHANGED, and untag says nothing again", async () => {
+    const words = ["cars", "tesla", "model_y"];
+    const changed = await run(
+      wa,
+      planTag(efs, wa, { topic: words, targets: [files[0] as never], number: 3 }) as never,
+    );
+    expect(changed["statements"]).toMatchObject([{ number: 3, before: 75, first: false }]);
+    expect(changed["newTopics"]).toEqual([]);
+    expect(
+      await planTag(efs, wa, { topic: words, targets: [files[0] as never], number: 3 }),
+    ).toMatchObject({ status: "REFUSED", refused: [{ index: 0, code: "UNCHANGED" }] });
+    await run(wa, planUntag(efs, wa, { topic: words, targets: [files[0] as never] }) as never);
+    const mine = await topicItems(efs, words, { view: "mine", lens: { principals: [A] } });
+    expect(mine.status === "PRESENT" && mine.rows).toEqual([]);
+    expect(await planUntag(efs, wa, { topic: words, targets: [files[0] as never] })).toMatchObject({
+      status: "REFUSED",
+      refused: [{ index: 0, code: "NOT_STATED" }],
+    });
+    // Out of range numbers and refused words never reach a plan.
+    await expect(
+      planTag(efs, wa, { topic: words, targets: [files[0] as never], number: 65_536 }),
+    ).rejects.toThrow(/number/);
+    await expect(
+      planTag(efs, wa, { topic: ["Cars"], targets: [files[0] as never] }),
+    ).rejects.toThrow(/code 3/);
+  });
+
+  it("a short page is never the end: lone negatives ahead of one real tag page through to it", async () => {
+    const words = ["padded"];
+    // The real tag first, then nine lone negatives on other things (newer, so read first).
+    await run(wa, planTag(efs, wa, { topic: words, targets: [files[2] as never] }) as never);
+    const others = Array.from({ length: 9 }, (_, i) => ({
+      kind: "address" as const,
+      address: `0x${(i + 1).toString(16).padStart(40, "0")}` as Hex,
+    }));
+    await run(wb, planDeny(efs, wb, { topic: words, targets: others as never }) as never);
+    const { pages, rows } = await all(
+      () => topicItems(efs, words, { lens: { principals: [A] }, entries: 3 }),
+      (next) => topicItems(efs, words, { lens: { principals: [A] }, entries: 3, cursor: next }),
+    );
+    expect(rows.map((r) => r.thing)).toEqual([files[2]?.subject]);
+    expect(pages.length).toBeGreaterThan(2);
+    for (const p of pages.slice(0, -1)) {
+      expect(p).toMatchObject({ status: "PRESENT", finished: false });
+      expect(p.status === "PRESENT" && p.next).toBeTruthy();
+    }
+    expect(pages.slice(0, -1).some((p) => p.status === "PRESENT" && p.rows.length === 0)).toBe(
+      true,
+    );
+    expect(pages[pages.length - 1]).toMatchObject({ finished: true, scan: "EXHAUSTED" });
+    expect(await placeCount(efs, words)).toMatchObject({ status: "PRESENT", positionsEver: 10n });
+  });
+
+  it("a roll-up removes repeats by thing across pages: one row for a thing filed under two children", async () => {
+    await run(
+      wa,
+      planTag(efs, wa, { topic: ["brands", "x"], targets: [files[3] as never] }) as never,
+    );
+    await run(
+      wa,
+      planTag(efs, wa, { topic: ["brands", "y"], targets: [files[3] as never] }) as never,
+    );
+    await run(
+      wa,
+      planTag(efs, wa, { topic: ["brands", "z"], targets: [files[2] as never] }) as never,
+    );
+    const { rows, pages } = await all(
+      () =>
+        topicItems(efs, ["brands"], {
+          view: "mine",
+          lens: { principals: [A] },
+          below: true,
+          rows: 1,
+        }),
+      (next) =>
+        topicItems(efs, ["brands"], {
+          view: "mine",
+          lens: { principals: [A] },
+          below: true,
+          rows: 1,
+          cursor: next,
+        }),
+    );
+    expect(rows.map((r) => r.thing).sort()).toEqual([files[2]?.subject, files[3]?.subject].sort());
+    // The newest filing that shows is the one kept: /brands/y for files[3].
+    expect(rows.find((r) => r.thing === files[3]?.subject)?.topic).toBe(pathId(T, ["brands", "y"]));
+    expect(pages.every((p) => p.status === "PRESENT" && p.dedup.state === "COMPLETE")).toBe(true);
+    // The directory: /brands has three children, each with its own word.
+    const kids = await topicChildren(efs, ["brands"]);
+    expect(kids.status === "PRESENT" && kids.rows.map((r) => r.word).sort()).toEqual([
+      "x",
+      "y",
+      "z",
+    ]);
+    // The word page of "x": the root /x is not registered, so its one place is /brands/x.
+    const wp = await wordPage(efs, "x");
+    expect(
+      wp.status === "PRESENT" && wp.rows.some((r) => r.topic === pathId(T, ["brands", "x"])),
+    ).toBe(true);
+    // tagsOf: every place files[3] is filed at.
+    const of = await tagsOf(efs, files[3]?.subject as Hex);
+    expect(of.status === "PRESENT" && of.rows.map((r) => r.topic).sort()).toEqual(
+      [pathId(T, ["brands", "x"]), pathId(T, ["brands", "y"])].sort(),
+    );
+  });
+
+  it("a home is a place: tags at an address need no record, and its id is the padded address", async () => {
+    const home = { kind: "home" as const, address: ann.address };
+    const review = await run(
+      wa,
+      planTag(efs, wa, { topic: home, targets: [files[1] as never], number: 1 }) as never,
+    );
+    expect(review["place"]).toMatchObject({ kind: "home", id: homeId(ann.address) });
+    expect(review["records"]).toBe(0);
+    const page = await topicItems(efs, home, { view: "mine", lens: { principals: [A] } });
+    expect(page.status === "PRESENT" && page.rows.map((r) => r.thing)).toEqual([files[1]?.subject]);
+  });
+
+  it("a deep new path registers in earlier parts, the tag last, and never a shortened path", async () => {
+    const words = Array.from({ length: 64 }, (_, i) => `deep${i}`);
+    const p = await planTag(efs, wa, { topic: words, targets: [files[0] as never] });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect(p.review.newTopics.length).toBe(64);
+    expect(p.parts.length).toBeGreaterThan(1);
+    const last = p.parts[p.parts.length - 1];
+    expect(last?.effects.map((e) => e.code)).toContain("tags.tag");
+    expect(
+      p.parts.slice(0, -1).every((x) => x.effects.every((e) => e.code === "tags.register")),
+    ).toBe(true);
+    expect((await wa.runSequence(p.parts)).state).toBe("COMPLETE");
+    const mine = await topicItems(efs, words, { view: "mine", lens: { principals: [A] } });
+    expect(mine.status === "PRESENT" && mine.rows.map((r) => r.thing)).toEqual([files[0]?.subject]);
+  });
+
+  it("restore's alsoPlaced counts folder placements only: a tag on the file never changes it", async () => {
+    const made = await run(
+      wa,
+      planCreateFile(efs, wa, { folder, name: "also.txt", content: text("also") }) as never,
+    );
+    const file = made["file"] as { kind: "file"; subject: Hex };
+    await run(wa, planRemoveEntries(efs, wa, { entries: [{ folder, name: "also.txt" }] }) as never);
+    const before = await planRestoreEntries(efs, wa, { entries: [{ folder, name: "also.txt" }] });
+    if (before.status !== "PLANNED") throw new Error(before.status);
+    await run(wa, planTag(efs, wa, { topic: ["also"], targets: [file as never] }) as never);
+    const after = await planRestoreEntries(efs, wa, { entries: [{ folder, name: "also.txt" }] });
+    if (after.status !== "PLANNED") throw new Error(after.status);
+    expect(after.review.entries[0]?.alsoPlaced).toBe(before.review.entries[0]?.alsoPlaced);
+    expect(after.review.entries[0]?.alsoPlaced).toBe(0);
+  });
+});

@@ -28,6 +28,9 @@ const ABIS = {
   web3GatewayAbi: "EfsWeb3Gateway", // ERC-6860 resource requests (web3://)
   indexAbi: "RealmIndex", // IIndexReads: posting heads (the backlink list's live count), coverage, stores
   bitmapStoreAbi: "BitmapStore", // the kind-10 scope lists (a principal's positions under one subject)
+  topicMineReaderAbi: "TopicMineReader", // the lens view of a place (mine)
+  topicEveryoneReaderAbi: "TopicEveryoneReader", // the public views of a place (everyone, raw)
+  topicLookupReaderAbi: "TopicLookupReader", // byName, about, counts, word pages, children
 };
 
 function header(inputs) {
@@ -150,7 +153,12 @@ const files = {};
   const fc = c.files;
   if (!Number.isInteger(fc.mediaType?.maxLength))
     throw new Error("codegen: constants.files.mediaType.maxLength is missing");
-  let src = header(["release/release.json", "release/efs-deployment.json"]);
+  let src = header([
+    "release/release.json",
+    "release/efs-deployment.json",
+    "test/vectors/topics.json",
+    "test/vectors/numbers.json",
+  ]);
   src += `/** Action kinds (Actions.sol). \`*_RESERVED\` kinds are refused by the ledger. */\n`;
   src += `export const ACTION_KINDS = ${literal(c.actionKinds)} as const;\n\n`;
   src += "/** The action kinds a plan may use. */\n";
@@ -158,7 +166,7 @@ const files = {};
   src += "/** Deployment capability bits (describe().capabilities). */\n";
   src += `export const CAPABILITIES = ${literal(c.capabilities)} as const;\n\n`;
   src += "/** Binding purpose ids (keccak256 of their preimages, checked at codegen). */\n";
-  src += `export const PURPOSES = ${literal({ head: purposes.HEAD, folder: purposes.FOLDER, tag: purposes.TAG })} as const;\n\n`;
+  src += `export const PURPOSES = ${literal({ head: purposes.HEAD, folder: purposes.FOLDER, tag: purposes.TAG, property: purposes.PROPERTY, same: purposes.SAME, broader: purposes.BROADER })} as const;\n\n`;
   src +=
     "/** The status vocabulary this SDK maps. The pin refuses a deployment with another vocabulary id. */\n";
   src += `export const STATUS_VOCABULARY_ID = ${JSON.stringify(vocabId)} as const;\n`;
@@ -181,7 +189,30 @@ const files = {};
     chunkPayload: fc.chunking.chunkPayload,
     mediaTypeMaxLength: fc.mediaType.maxLength,
   })} as const;\n`;
-  src += `/** The largest declared length a Files body may carry (uint64). */\nexport const FILES_LENGTH_MAX = ${BigInt(fc.lengthMax)}n;\n`;
+  src += `/** The largest declared length a Files body may carry (uint64). */\nexport const FILES_LENGTH_MAX = ${BigInt(fc.lengthMax)}n;\n\n`;
+  // Topics (the tag release): the word and text grammars' limits and refused code points (test/vectors/topics.json,
+  // the chain's own table), and the binding number's strength limit (test/vectors/numbers.json).
+  const tc = c.topics;
+  const tv = json("test/vectors/topics.json");
+  const nv = json("test/vectors/numbers.json");
+  if (!tc || typeof tc.wordMax !== "number" || typeof tc.textMax !== "number")
+    throw new Error("codegen: constants.topics needs wordMax and textMax");
+  const refused = (tv.refused?.entries ?? []).map((e) => [e.lo, e.hi, e.class]);
+  for (let i = 0; i < refused.length; i++) {
+    const [lo, hi, cls] = refused[i];
+    if (!(Number.isInteger(lo) && Number.isInteger(hi) && lo <= hi && Number.isInteger(cls)))
+      throw new Error(`codegen: topics refused entry ${i} is malformed`);
+    if (i > 0 && lo <= refused[i - 1][1])
+      throw new Error("codegen: topics refused ranges must be sorted and disjoint");
+  }
+  if (!Number.isInteger(nv.maxStrength))
+    throw new Error("codegen: numbers.json has no maxStrength");
+  src +=
+    "/** Topics: the word and text limits, the refused-scalar classes and their sorted inclusive ranges [lo, hi, class]. */\n";
+  src += `export const TOPICS = ${JSON.stringify({ wordMax: tc.wordMax, textMax: tc.textMax, refusedClasses: tc.refusedClasses, refused })} as const;\n\n`;
+  src +=
+    "/** The largest strength a BIND or UNBIND carries (BindingNumber.MAX_STRENGTH): numbers run −(max + 1)..max. */\n";
+  src += `export const MAX_STRENGTH = ${nv.maxStrength};\n`;
   files["constants.ts"] = src;
 }
 
@@ -262,7 +293,9 @@ const files = {};
         throw new Error(`codegen: gasModel ${where}.${path} must be a number`);
       return v;
     };
-    const wm = Object.fromEntries(WORK_MODEL.map((k) => [k, num(`workModel.${k}`, f?.workModel?.[k])]));
+    const wm = Object.fromEntries(
+      WORK_MODEL.map((k) => [k, num(`workModel.${k}`, f?.workModel?.[k])]),
+    );
     const types = {};
     for (const [t, v] of Object.entries(f?.types ?? {}))
       types[t] = { refs: num(`types.${t}.refs`, v.refs), specs: num(`types.${t}.specs`, v.specs) };
