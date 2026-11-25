@@ -388,6 +388,18 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
     - duplicates removed by thing in Mine as in Everyone; the row shown is the newest filing that shows, naming its
       topic, and the rest go to "where is this filed";
     - both limits sized from the `reads` terms of `gas/model.json`, never constants;
+  - **the readers rebuild's read costs** (contracts b163514, with the tag PM; provisional until the model's `reads`
+    section):
+    - a padded entry costs a reader about 36k gas whatever the Lens size, so a large entry limit is safe: padding
+      can't make a page expensive, only short;
+    - until the release-step speed-up lands, one call under a 10M cap holds about page × Lens = 760 for the Lens view
+      of one place and 312 for its roll-up, and 688 and 320 for Everyone. At a Lens of 64 that is 15 and 5 rows. These
+      will rise, so pages are sized from `gas/model.json`'s `reads` bounds, never from these figures;
+  - **the contracts gateway's 501** (until a gateway split serves them): it answers 501 "not served by this gateway
+    yet" for an existing file's or revision's object id. A files-external/1 whose locator points at the EFS
+    gateway's own by-id path then reads as unavailable, never as absent. The SDK already maps it so: any web3:// status
+    other than 200 or 307 fails that location, and a read with no working location is UNAVAILABLE
+    (GATEWAY_UNAVAILABLE, transient). `test/web3read.test.ts` pins the 501 case;
   - **plan every publication by the model's planning rule** (contracts floor follow-up 7d11236; `gas/model.json`
     `planning` and, per schedule, `floor`). This covers files as well as tags:
     - a publication is planned only when it is inside the Realm's limits (actions, bind-kind actions, PUBLISH body

@@ -20,8 +20,11 @@ const abi = parseAbi([
 ]);
 const HOSTILE = "0x00000000000000000000000000000000000000aa";
 
-/** A JSON-RPC endpoint whose only contract answers every request with `chunk` bytes and a next-chunk header. */
-function hostile(chunkBytes: number) {
+/**
+ * A JSON-RPC endpoint whose only contract answers every request with `chunk` bytes and a next-chunk header, under
+ * `statusCode` (200 unless a test says otherwise).
+ */
+function hostile(chunkBytes: number, statusCode = 200) {
   let calls = 0;
   const answer = (req: { id: number; method: string; params: unknown[] }) => {
     if (req.method === "eth_chainId") return `0x${deployment.chainId.toString(16)}`;
@@ -49,7 +52,7 @@ function hostile(chunkBytes: number) {
         abi,
         functionName: "request",
         result: [
-          200,
+          statusCode,
           `0x${"ab".repeat(chunkBytes)}`,
           [{ key: "web3-next-chunk", value: `/f?offset=${offset + chunkBytes}` }],
         ],
@@ -126,5 +129,21 @@ describe("web3:// reads against a hostile contract", () => {
     await expect(it.next()).rejects.toThrow(/STREAM_FAILED|stream stopped/);
     expect((await it.result).attempts[0]).toMatchObject({ outcome: "TOO_LARGE" });
     expect(h.calls()).toBe(0);
+  });
+});
+
+describe("web3:// statuses", () => {
+  it("a 501 from the gateway (not served there yet) fails that location, and the file is unavailable, never absent", async () => {
+    // The contracts gateway answers 501 for an object id it does not serve yet; a files-external/1 locator pointing
+    // at it must read as "can't read here, try later or elsewhere", never as a file that does not exist.
+    const h = hostile(16, 501);
+    const r = await readBytes(
+      createEfs({ rpcs: ["https://rpc.example/"], deployment, fetch: h.fetch }),
+      file(16n),
+    );
+    expect(r.grade).toBe("UNAVAILABLE");
+    expect(r.reason).toMatchObject({ code: "GATEWAY_UNAVAILABLE", retry: "transient" });
+    expect(r.attempts[0]).toMatchObject({ outcome: "FAILED", detail: "web3 status 501" });
+    expect(r.bytes).toBeUndefined();
   });
 });
