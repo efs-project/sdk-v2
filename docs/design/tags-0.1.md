@@ -107,7 +107,8 @@ type TagTarget = FileRef | RevisionRef | FolderRef | TopicRef | { kind: "address
     - plus the shared term (`tagLevel.sharedNew` or `sharedExisting`) for a fresh pair of either sign, and, since
       contracts step 3c, for a later author's first yes on an existing pair. A later author's first "not this" files
       nothing below, so it pays only the author's own terms;
-    - a list with exactly 1 entry, or a multiple of 5, is priced as new;
+    - which lists are priced as new is the model's own field, `tagLists.priceAsNew` (today: exactly 1 entry, or a
+      multiple of 5, zero included), read from the model and never typed in;
     - so a deep tag's cost grows with its depth, and the plan reads each term from the profile it plans for.
 - **Batches.** Many targets under one topic, or one target under many topics, split by gas like every other plan. A
   batch plans every tag or none, and lists each refusal by index, as the folder planners do.
@@ -387,6 +388,29 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
     - duplicates removed by thing in Mine as in Everyone; the row shown is the newest filing that shows, naming its
       topic, and the rest go to "where is this filed";
     - both limits sized from the `reads` terms of `gas/model.json`, never constants;
+  - **plan every publication by the model's planning rule** (contracts floor follow-up 7d11236; `gas/model.json`
+    `planning` and, per schedule, `floor`). This covers files as well as tags:
+    - a publication is planned only when it is inside the Realm's limits (actions, bind-kind actions, PUBLISH body
+      bytes) and `max(E, V) ≤ floor(txGasCap × (100 − headroomPercent) / 100)`. E is the model's execution
+      estimate (prague: `constants`; amsterdam: `split.executionGas`). V is the visible gas the kernel's floor checks
+      need, from the floor's own formula: its prefix floor and final reserve from `floor.workModel`, `floor.limits`
+      and `floor.types`, the kernel's share from `floor.kernel`, and the 63/64 forwarding;
+    - why: today's SDK plans by E alone and its review's `gas.floor` is always null. In the contracts' shared shapes
+      V exceeds E in every case, by about 0.04M to 1.56M gas. So E alone can admit a publication the floor refuses: on
+      prague, 11 create-file recipes in one publication have E 13.87M, inside the 14.26M budget, but V 15.42M. If
+      such a plan were made today, `eth_estimateGas` would refuse it before signing (OVER_TX_GAS_CAP, NOT_SENT) or
+      eat the headroom; no current planner was found to make one. Fill `gas.floor` with V;
+    - mirror `tools/gas-plan.mjs` (contracts), which reads only the model, and run its shared cases,
+      `test/vectors/floor-plan.json` (per schedule: lone negatives, first tags at depth 8 and 64 on new and existing
+      positions, a second author's first tags, masks, releases, restores, a registration chunk, create-file
+      recipes). Each case gives the largest admitted `k` with E, K, V, the prefix floor, the final reserve and the
+      slot counts, and the next `k` with why it is refused (gas or maxActions). The SDK must match every figure;
+    - never plan from the kernel's public floor helper: it prices every bind as a first statement, so it is an
+      upper bound only;
+    - an atomic EIP-5792 batch (several publications, one transaction) packs by the sum of max(E, V) per part, a
+      conservative bound, since each call must still find its floor;
+    - `eth_estimateGas` on the exact call stays the authority before sending, and the gas limit comes from the
+      estimate, never from V;
   - **the posting store's ABI id is now `efs/posting-store/2`** (contracts step 3b amended: `retain` and the
     UNCOUNTED append tag; `/1` before), so the vendored bundle and its generated ABIs bump at this re-vendor. The SDK
     checks no store ABI id today; any check the re-vendor adds takes the id from the release;
