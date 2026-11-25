@@ -78,7 +78,7 @@ try {
     ok("getting-started (the guide's walkthrough, every step asserted, on a live fixture chain)");
     dirs.push(npmConsumer("folders"));
     ok(
-      "folders (create, list, rename, remove and restore, every step asserted, on a live fixture chain)",
+      "folders (create, list, rename, remove, restore and route a link, every step asserted, on a live fixture chain)",
     );
   }
   if (only.has("foundry")) {

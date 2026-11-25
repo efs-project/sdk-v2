@@ -4,11 +4,12 @@
 // Realm's shared root is only a stand-in parent here: real folders will live under an address once homes land.
 import assert from "node:assert/strict";
 import { startFixtureChain } from "@efs/fixture";
-import { createEfs } from "@efs/sdk";
+import { createEfs, link, parseLink } from "@efs/sdk";
 import { createWriter, memoryJournal } from "@efs/sdk/actions";
 import {
   listFolder,
   lookupEntry,
+  openObject,
   planCreateFile,
   planCreateFolder,
   planMoveEntries,
@@ -117,6 +118,22 @@ try {
   assert.equal(back.status, "PRESENT");
   assert.deepEqual(back.selected.target, file.file);
   say("restore", "done.txt is back, pointing at the same file");
+
+  // 5. Share by permanent link, and route a link you are given. A folder's id is its record, a file's is its subject:
+  //    openObject says which, from the id alone, so a shared link never opens the wrong kind.
+  const shared = link({ kind: "object", subject: notes.directory });
+  const parsed = parseLink(shared);
+  assert.equal(parsed.status, "OK");
+  const folderObject = await openObject(efs, parsed.target.subject, { lens });
+  assert.equal(folderObject.status, "FOLDER");
+  assert.equal(folderObject.folder.owner, writer.principal);
+  const fileObject = await openObject(efs, file.file.subject, { lens });
+  assert.equal(fileObject.status, "FILE");
+  assert.equal(fileObject.open.status, "PRESENT");
+  say(
+    "link",
+    `${shared.slice(0, 18)}… opens as a ${folderObject.status.toLowerCase()} owned by its creator`,
+  );
 } finally {
   await chain.stop();
 }

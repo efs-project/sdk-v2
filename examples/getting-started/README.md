@@ -67,4 +67,15 @@ Saves outlive the page. The journal records each one before anything is sent.
 in `copy.mjs`). It also goes with a throw whose `sequenceMayHaveSent` is false. Everything else may have gone out,
 and the ledger decides.
 
+## 6. Folders
+
+```js
+const made = await planCreateFolder(efs, writer, { folder: parent, name: "notes", lens }); // parent: always yours to name
+const page = await listFolder(efs, made.review.created, { lens }); // COMPLETE, PARTIAL (keep reading) or UNKNOWN
+const object = await openObject(efs, idFromALink, { lens }); // FOLDER | FILE | ABSENT_PROVEN: route by the id itself
+```
+Create, rename and move (`planMoveEntries`), remove (`planRemoveEntries`: it releases, so the next author's entry at
+that name shows; `hide: true` masks it) and restore (`planRestoreEntries`). Every plan is reviewed and sent with
+`runSequence`, like an edit. A walkthrough CI runs on a live chain is in [`examples/folders`](../folders/README.md).
+
 More: [`docs/design/api-0.1.md`](../../docs/design/api-0.1.md), the full API and every reason code.

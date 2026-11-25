@@ -14,6 +14,10 @@ node tools/pack.mjs --only sdk,fixture && node tools/consumers.mjs --only fixtur
   name shows, and every planner's review says what this Lens will show afterwards.
 - **Remove releases** your entry, so the next author's entry at that name shows. `hide: true` masks the name instead.
   Nothing is destroyed: the file stays reachable by its link, and `planRestoreEntries` puts the entry back.
-- **Links outlive renames.** Share files by object link. A path is a lookup: a rename or a move can break it.
+- **Links outlive renames.** Share files and folders by object link (`~efs/o/<id>`). A path is a lookup: a rename or
+  a move can break it.
+- **A link says what it is.** A folder's id is its files-directory/1 record, which only its creator can publish; a
+  file's id is its subject. `openObject(efs, id)` answers FOLDER (with its owner), FILE (opened under your Lens) or
+  ABSENT_PROVEN from that id alone, so a shared link can never open as the wrong kind.
 
 More: [`docs/design/api-0.1.md`](../../docs/design/api-0.1.md), "Folders (0.1)".
