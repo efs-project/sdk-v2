@@ -36,9 +36,14 @@ async function rpc(method: string, params: unknown[] = []): Promise<unknown> {
   return ((await res.json()) as { result?: unknown }).result;
 }
 
-/** An endpoint whose view can be steered: no finality yet, and/or publications forgotten (a reorg). */
+/**
+ * An endpoint whose view can be steered: no finality yet, publications forgotten (a reorg), or no ledger at the
+ * finalized block (`finalUnknown`: publicationAt there answers UNKNOWN, as the readers do where the ledger has no
+ * code).
+ */
 function steered() {
-  const knobs = { noFinality: true, forget: false };
+  const knobs = { noFinality: true, forget: false, finalUnknown: false };
+  let finalHash: string | undefined;
   const fetchImpl: FetchLike = async (url, init) => {
     type Req = { id: number; method: string; params: unknown[] };
     const body = JSON.parse(init.body ?? "null") as Req | Req[];
@@ -52,6 +57,52 @@ function steered() {
       body: JSON.stringify(Array.isArray(body) ? reqs : reqs[0]),
     } as RequestInit);
     let text = await res.text();
+    const items = (t: string) => {
+      const parsed = JSON.parse(t) as
+        | { id: number; result?: { hash?: string } | string }[]
+        | { id: number; result?: { hash?: string } | string };
+      return { parsed, list: Array.isArray(parsed) ? parsed : [parsed] };
+    };
+    for (const item of items(text).list) {
+      const req = reqs.find((r) => r.id === item.id);
+      if (
+        req?.method === "eth_getBlockByNumber" &&
+        req.params[0] === "finalized" &&
+        typeof item.result === "object"
+      )
+        finalHash = item.result?.hash;
+    }
+    if (knobs.finalUnknown && finalHash) {
+      const atFinal = new Set(
+        reqs
+          .filter(
+            (r) =>
+              r.method === "eth_call" &&
+              JSON.stringify(r.params[1] ?? null).includes(finalHash as string) &&
+              (() => {
+                try {
+                  return (
+                    decodeFunctionData({
+                      abi: ledgerReadsAbi,
+                      data: (r.params[0] as { data: Hex }).data,
+                    }).functionName === "publicationAt"
+                  );
+                } catch {
+                  return false;
+                }
+              })(),
+          )
+          .map((r) => r.id),
+      );
+      const unknown = encodeFunctionResult({
+        abi: ledgerReadsAbi,
+        functionName: "publicationAt",
+        result: [1, 0n, ZERO_WORD],
+      });
+      const { parsed, list } = items(text);
+      for (const item of list) if (atFinal.has(item.id)) item.result = unknown;
+      text = JSON.stringify(parsed);
+    }
     if (knobs.forget) {
       const ids = new Set(
         reqs
@@ -198,6 +249,44 @@ describe("finality (fixture)", () => {
     knobs.forget = false;
     expect(await openJournal(efs, { journal }).reconcileSequence(done.sequenceId)).toMatchObject({
       state: "COMPLETE",
+    });
+  });
+
+  it("an UNKNOWN at the finalized block (no ledger there) is never evidence that a plan missed its deadline", async () => {
+    const { knobs, efs } = steered();
+    knobs.noFinality = false;
+    knobs.finalUnknown = true;
+    const journal = memoryJournal();
+    const w = await createWriter(efs, {
+      authorizer: { kind: "local", profile: "direct", account: ivan },
+      journal,
+    });
+    const recipe = putInline(
+      efs,
+      w.principal,
+      docs,
+      "never-sent.txt",
+      new TextEncoder().encode("never sent"),
+      salt("final-unknown"),
+    );
+    const planned = await w.planActions({ ...recipe, deadlineSeconds: 5 });
+    if (planned.status !== "PLANNED") throw new Error(planned.status);
+    await journal.put({
+      schema: "efs-sdk-attempt/1",
+      planId: planned.plan.id,
+      plan: planned.plan,
+      stage: "SUBMISSION_POSSIBLE",
+      history: [],
+    });
+    await rpc("evm_increaseTime", [60]);
+    await rpc("anvil_mine", ["0x50"]); // a finalized block past the deadline
+    // UNKNOWN there is "no ledger at that block", not "nonce unused": nothing is proven.
+    expect((await w.reconcile(planned.plan.id)).outcome).toBe("UNKNOWN");
+    // An ABSENT_PROVEN from the live ledger at that finalized block is the proof.
+    knobs.finalUnknown = false;
+    expect(await w.reconcile(planned.plan.id)).toMatchObject({
+      outcome: "NOT_COMMITTED_PROVEN",
+      final: true,
     });
   });
 });

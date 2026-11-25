@@ -10,9 +10,10 @@ import { callsAt, getBlock } from "../chain/basis.js";
 import { onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs } from "../client.js";
 import { type CallOpts, reason } from "../core/errors.js";
-import { type Hex, lower } from "../core/hex.js";
+import { type Hex, lower, ZERO_WORD } from "../core/hex.js";
 import type { DeploymentInfo } from "../deployment/manifest.js";
 import { ledgerReadsAbi } from "../generated/abis.js";
+import { chainStatus } from "../protocol/status.js";
 import type { Journal } from "./journal.js";
 import type { Plan, ReconcileResult } from "./types.js";
 
@@ -20,7 +21,15 @@ export type ReconcileOpts = CallOpts;
 
 type Admitted = { present: true; publication: bigint; digest: Hex } | { present: false };
 
-/** publicationAt at one block. `present: false` = empty return data: no ledger reader answered at this block. */
+/**
+ * publicationAt at one block, by its Status:
+ *   PRESENT        the nonce is used: by `publication`, for `digest`;
+ *   ABSENT_PROVEN  a live ledger at this block, and the nonce is unused (publication 0);
+ *   UNKNOWN        no ledger code at this block (before the deployment, or a wrong address, chain or fork), and
+ *                  empty return data (no reader code at this block) are both `present: false`: never evidence of
+ *                  absence.
+ * Anything else (UNSUPPORTED: not this layout, or not a ledger) is refused, never guessed at.
+ */
 async function admittedAt(
   s: Session,
   d: DeploymentInfo,
@@ -43,19 +52,19 @@ async function admittedAt(
       retryElsewhere: true,
       reason: out ? out.reason : reason("RPC_UNAVAILABLE", "transient"),
     };
-  // A live reader never returns empty data; empty means no code there (before deployment, or a wrong
-  // address/chain/fork). It is never read as "not admitted" by itself.
   if (out.result === "0x") return { ok: true, value: { present: false } };
+  let status: ReturnType<typeof chainStatus>;
+  let publication: bigint;
+  let digest: Hex;
   try {
-    const [, publication, digest] = decodeFunctionResult({
+    const [st, pub, dig] = decodeFunctionResult({
       abi: ledgerReadsAbi,
       functionName: "publicationAt",
       data: out.result as Hex,
     }) as unknown as [number, bigint, Hex];
-    return {
-      ok: true,
-      value: { present: true, publication: BigInt(publication), digest: lower(digest) },
-    };
+    status = chainStatus(st);
+    publication = BigInt(pub);
+    digest = lower(dig);
   } catch {
     return {
       ok: false,
@@ -63,6 +72,15 @@ async function admittedAt(
       reason: reason("RPC_ERROR", "transient", "publicationAt() did not decode"),
     };
   }
+  if (status === "PRESENT") return { ok: true, value: { present: true, publication, digest } };
+  if (status === "ABSENT_PROVEN")
+    return { ok: true, value: { present: true, publication: 0n, digest: ZERO_WORD } };
+  if (status === "UNKNOWN") return { ok: true, value: { present: false } };
+  return {
+    ok: false,
+    retryElsewhere: false,
+    reason: reason("UNSUPPORTED_PROFILE", "never", `publicationAt() answered ${status}`),
+  };
 }
 
 export async function reconcileAttempt(
@@ -100,7 +118,8 @@ export async function reconcileAttempt(
     async (s) => {
       const latest = await admittedAt(s, d, plan, basis.blockHash);
       if (!latest.ok) return latest;
-      // The pin verified the ledger at this block, so an empty answer here is an endpoint fault: try another.
+      // The pin verified the ledger at this block, so "no ledger here" (UNKNOWN or empty) is an endpoint fault: try
+      // another.
       if (!latest.value.present)
         return {
           ok: false,
