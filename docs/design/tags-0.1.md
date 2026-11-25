@@ -150,7 +150,12 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   each read by Lens and by page so every eth_call stays under a conservative per-call cap. It starts small and backs
   off when an endpoint runs out of gas. A call that ran out of gas is UNKNOWN or PARTIAL, never an empty page, and a
   big Lens never turns into UNKNOWN just because one call was too large.
-- **Skipped rows are counted, never dropped silently:** denied, duplicate, and below the junk rule.
+- **Skipped rows are counted, never dropped silently:** denied, duplicate, below the junk rule, and not their own
+  fold (next point).
+- **Every listed word is folded again** (a topic's children, a word's places): a row whose word is not its own fold
+  is skipped into the `skipped` count. The chain can't check case outside ASCII, unassigned characters or
+  compatibility forms, so this keeps a look-alike child that a careless or hostile client registered out of
+  listings (tag spec, planning ba33d7f).
 - **`tagsOf` has the three views too.** Mine reads the Lens authors' statements. Everyone and Raw read the contracts'
   all-authors list per target, which includes lone negatives for every kind of target, so it shows who says a tag
   applies and who says it doesn't. Hiding still uses only the Lens authors' denials, read directly.
@@ -256,6 +261,14 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
       `maxHops`, so on an alternating history it can answer UNKNOWN for a version the SDK reached within its own
       bound: that is a per-row UNKNOWN, not an endpoint fault. Each head (and history reply) gains the recorded
       strength as its last word, so the head ABI and its decoders change.
+  - **word listings re-fold each word** (section 5.2): children and word pages run every listed word through the
+    pluggable fold and skip, into `skipped`, any word that isn't its own fold. Built against the `FoldStep`
+    plug-in, so it doesn't wait for the fold ruling; tested with both candidates (NFKC_Casefold, and NFC then
+    lowercase), including look-alike children registered by raw actions;
+  - **gate before any lasting deployment: one Unicode version, one generator.** The chain's refused-character table
+    is part of the word Type's id and was built from Unicode 15.1; the SDK's fold evaluation used 18.0. Both must
+    come from one pinned version through one generator. Coordinate the generator with the contracts dev once James
+    rules on the fold, and add a CI check that the SDK's table and the chain's agree byte for byte.
 - **Built first, once confirmed:** `fold` and the link grammar with vectors, then the planners, then the reads.
 - **Statement planners** (label, definition, "same as", "moved to", parent) join section 4 once the contracts dev
   names their purposes.

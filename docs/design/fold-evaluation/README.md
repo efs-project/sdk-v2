@@ -93,6 +93,9 @@ rules, including the multi-character outputs above. Two clients can't disagree a
   lowercase table, or refuses everything assigned after the pin.
 - **Pin one Unicode version and refuse what it doesn't assign.** That rule is the same under both, and it is what
   keeps an id from ever changing.
+  - **The chain and the SDK must share that pin.** The contracts' refused-character table is part of the word
+    Type's id and was built from Unicode 15.1; this evaluation used 18.0. Before any lasting deployment, both come
+    from one pinned version through one generator, agreed with the contracts dev once the fold is ruled.
 - **EFS's own freeze rule (part of `efs/fold/1`, so it doesn't lean on Unicode's policies):** once a code point is
   allowed under a pin, its EFS mapping never changes. A newer pin only adds mappings for newly assigned code points,
   even if Unicode later changes a property such as which characters are ignorable. ENS had to keep a legacy quirk
