@@ -32,7 +32,7 @@ import {
   type SubjectId,
   ZERO_WORD,
 } from "../core/hex.js";
-import { ledgerViewsAbi } from "../generated/abis.js";
+import { indexAbi, ledgerAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { ACTION, FILES, PURPOSES } from "../generated/constants.js";
 import { checkName } from "../names/name.js";
 import { bindingKey, positionKey, recordFromHash, recordId, subjectId } from "../protocol/keys.js";
@@ -1134,6 +1134,67 @@ export async function planMoveEntries(
   });
 }
 
+// ---- where else a target is placed
+
+/**
+ * The live placements pointing at each target (the backlink family's `live` count) at the basis, read from the
+ * index generation the ledger names now. Null for a target whose count the index can't vouch for (coverage not
+ * COMPLETE), or when the deployment names no backlink family.
+ */
+async function placements(
+  ctx: Ctx,
+  s: Session,
+  basis: Basis,
+  targets: readonly Hex[],
+): Promise<Step<(number | null)[]>> {
+  const d = ctx.efs.deployment;
+  const family = d.index.backlinkFamily;
+  if (!family || targets.length === 0) return { ok: true, value: targets.map(() => null) };
+  ctx.requests += 1;
+  const [ix] = await callsAt(s, basis.blockHash, [
+    { to: d.ledger, data: encodeFunctionData({ abi: ledgerAbi, functionName: "index" }) },
+  ]);
+  if (!ix?.ok) return failed(ix);
+  let index: Hex;
+  try {
+    index = decodeFunctionResult({
+      abi: ledgerAbi,
+      functionName: "index",
+      data: ix.result as Hex,
+    }) as Hex;
+  } catch {
+    return bad("index");
+  }
+  ctx.requests += targets.length;
+  const outs = await callsAt(
+    s,
+    basis.blockHash,
+    targets.map((t) => ({
+      to: index,
+      data: encodeFunctionData({
+        abi: indexAbi,
+        functionName: "postingHeadOf",
+        args: [family, ZERO_WORD, 0, t],
+      }),
+    })),
+  );
+  const counts: (number | null)[] = [];
+  for (const out of outs) {
+    if (!out?.ok) return failed(out);
+    try {
+      const [coverage, , live] = decodeFunctionResult({
+        abi: indexAbi,
+        functionName: "postingHeadOf",
+        data: out.result as Hex,
+      }) as unknown as [number, bigint, bigint];
+      counts.push(coverage === 3 ? Number(live) : null); // Coverage.COMPLETE
+    } catch {
+      return bad("postingHeadOf");
+    }
+  }
+  return { ok: true, value: counts };
+}
+
 // ---- remove and restore
 
 export interface RemoveEntriesInput {
@@ -1243,6 +1304,11 @@ export interface RestoreReviewItem extends LensView {
   entry: EntryRef;
   /** The target the entry had before it was removed (read from its history). */
   target: EntryTarget;
+  /**
+   * How many live placements point at that target now, by anyone (the index's backlink count): above 0, restoring
+   * puts it in one more place (for example after it was moved). Null when the index can't vouch for the count.
+   */
+  alsoPlaced: number | null;
 }
 export interface RestoreReview extends FolderReviewBase {
   kind: "efs.restoreReview";
@@ -1380,10 +1446,26 @@ export async function planRestoreEntries(
         ],
         finishes: true,
       });
-      items.push({ entry: entryOf(p), target, ...viewAfterBind(principals, st, me) });
+      items.push({
+        entry: entryOf(p),
+        target,
+        alsoPlaced: null,
+        ...viewAfterBind(principals, st, me),
+      });
     }
     refuseCycles(restoredFolders);
     if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
+    // Where else each target is placed now: the backlink list's live count, from the live index generation.
+    const counted = await placements(
+      ctx,
+      s,
+      basis,
+      items.map((x) => lower(x.target.kind === "folder" ? x.target.directory : x.target.subject)),
+    );
+    if (!counted.ok) return counted;
+    items.forEach((x, i) => {
+      x.alsoPlaced = counted.value[i] ?? null;
+    });
     return {
       ok: true,
       value: () =>
