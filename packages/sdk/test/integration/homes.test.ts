@@ -7,6 +7,7 @@
 // Keys.principalFor): the key principal of a key account, the Realm's contract principal of a contract.
 // Two accounts of anvil's public development mnemonic (indexes 18 and 19, used by no other test file), funded here.
 import { readFileSync } from "node:fs";
+import { decodeFunctionResult, encodeFunctionResult } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
@@ -31,9 +32,11 @@ import {
   resolvePath,
 } from "../../src/files/folders.ts";
 import { listRemoved } from "../../src/files/removed.ts";
+import { filesPageReaderAbi } from "../../src/generated/abis.ts";
 import { link, parseLink } from "../../src/names/links.ts";
 import { contractPrincipal, keyPrincipal } from "../../src/protocol/keys.ts";
 import { recordingFetch } from "../../src/testing/index.ts";
+import { type Edit, sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -111,6 +114,42 @@ describe("homes: reads (fixture)", () => {
     expect(
       await resolvePath(efs, { from: home(nobody), segments: ["photos", "cat.jpg"] }),
     ).toMatchObject({ status: "ABSENT_PROVEN", segment: 0, chain: [] });
+  });
+
+  it("an empty home is COMPLETE only when the index vouches for it at the basis; else UNKNOWN, never empty", async () => {
+    const nobody = "0x00000000000000000000000000000000000e5e06" as Address;
+    // The index's own answer, rewritten: coverage UNKNOWN (1) or PARTIAL (2), with no complete-from-origin claim.
+    const withCoverage = (listingCoverage: number) => {
+      const edit: Edit = (result) => {
+        const page = decodeFunctionResult({
+          abi: filesPageReaderAbi,
+          functionName: "listDirectory",
+          data: result,
+        }) as unknown as Record<string, unknown>;
+        return encodeFunctionResult({
+          abi: filesPageReaderAbi,
+          functionName: "listDirectory",
+          result: { ...page, completeFromOrigin: false, listingCoverage } as never,
+        });
+      };
+      return createEfs({
+        rpcs: [fixture.rpcUrl],
+        deployment,
+        fetch: tampered({ [sel(filesPageReaderAbi, "listDirectory")]: edit }),
+      });
+    };
+    for (const coverage of [1, 2])
+      expect(await listFolder(withCoverage(coverage), home(nobody))).toMatchObject({
+        status: "UNKNOWN",
+        folder: { kind: "home", address: nobody },
+        reason: { code: "NOT_YET_DECIDABLE" },
+      });
+    // Untampered, the index vouches: an empty COMPLETE page.
+    expect(await listFolder(efs, home(nobody))).toMatchObject({
+      status: "PRESENT",
+      rows: [],
+      coverage: { state: "COMPLETE" },
+    });
   });
 
   it("a home's owner is the address's author identity: a contract's is its contract principal, a 7702 account's its key", async () => {
