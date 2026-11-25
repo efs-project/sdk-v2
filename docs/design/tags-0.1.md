@@ -285,7 +285,9 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
 - **The owner (James):**
   - the fold rule (NFKC_Casefold or NFC plus lowercase);
   - the default view for topics, and what a newcomer's Lens contains.
-- **The SDK's re-vendor checklist for that release** (each on a branch, then PM review):
+- **The SDK's re-vendor checklist for that release** (each on a branch, then PM review). The re-vendor happens once,
+  at the whole tag release (contracts step 5, after the step-4 readers and the floor follow-up), never at an earlier
+  step such as 3c: one bundle, and one re-pin for the client. The PM says when the release surface is handed over.
   - tag planners and reads as this document describes; the number is 16-bit (−65,536..65,535, MISUSE outside);
     registration strictly before the tag; address targets refused only for HEAD and FOLDER, at plan time as on chain
     (allowed for TAG, other purposes not judged);
