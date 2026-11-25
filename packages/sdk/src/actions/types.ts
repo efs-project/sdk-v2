@@ -46,6 +46,11 @@ export interface Plan {
   basis: Basis;
 }
 
+export type PlanSequenceResult =
+  | { kind: "efs.planSequence"; status: "PLANNED"; plans: readonly Plan[] }
+  /** `at`: the part that could not be planned. Nothing is sent by planning. */
+  | { kind: "efs.planSequence"; status: "REFUSED" | "UNKNOWN"; reason: Reason; at: number };
+
 export type PlanResult =
   | { kind: "efs.planResult"; status: "PLANNED"; plan: Plan }
   | { kind: "efs.planResult"; status: "REFUSED" | "UNKNOWN"; reason: Reason };

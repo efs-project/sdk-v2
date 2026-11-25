@@ -17,10 +17,20 @@ export { reconcileAttempt } from "./reconcile.js";
 export type { Authorizer, LocalAccountLike, SendOpts } from "./send.js";
 export { decodeRevert } from "./send.js";
 export type {
+  BatchLimits,
+  GasModel,
+  PlannedAction,
+  SplitOptions,
+  SplitPart,
+  SplitResult,
+} from "./split.js";
+export { actionGas, publicationGas, splitPublications } from "./split.js";
+export type {
   ActionData,
   EffectView,
   Plan,
   PlanResult,
+  PlanSequenceResult,
   ReconcileResult,
   Review,
   SendResult,

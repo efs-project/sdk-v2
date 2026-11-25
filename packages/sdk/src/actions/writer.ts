@@ -9,7 +9,14 @@ import { type AttemptRecord, type Journal, lockKey } from "./journal.js";
 import { type PlanInput, planPublication } from "./plan.js";
 import { type ReconcileOpts, reconcileAttempt } from "./reconcile.js";
 import { type Authorizer, estimate, type SendOpts, sendPlan } from "./send.js";
-import type { Plan, PlanResult, ReconcileResult, Review, SendResult } from "./types.js";
+import type {
+  Plan,
+  PlanResult,
+  PlanSequenceResult,
+  ReconcileResult,
+  Review,
+  SendResult,
+} from "./types.js";
 
 export interface WriterConfig {
   authorizer: Authorizer;
@@ -27,6 +34,15 @@ export interface EfsWriter {
   readonly principal: PrincipalId;
   /** Plan a publication from raw actions (the Files planner builds these for you). */
   planActions(input: Omit<PlanInput, "account">, o?: CallOpts): Promise<PlanResult>;
+  /**
+   * Plan the parts of one save (for example the output of splitPublications) as consecutive native nonces: part 0
+   * takes the next nonce, part i that nonce + i. Send them in order; each part is its own plan, journal record and
+   * exactly-once identity, so a failure anywhere is reconciled part by part.
+   */
+  planSequence(
+    parts: readonly Omit<PlanInput, "account" | "nonce">[],
+    o?: CallOpts,
+  ): Promise<PlanSequenceResult>;
   review(plan: Plan, o?: CallOpts): Promise<Review>;
   send(plan: Plan, o?: SendOpts): Promise<SendResult>;
   reconcile(planId: Hex, o?: ReconcileOpts): Promise<ReconcileResult>;
@@ -66,6 +82,26 @@ export async function createWriter(
     account,
     principal,
     planActions: (input, opts) => planPublication(efs, { ...input, account }, opts),
+    async planSequence(parts, opts) {
+      if (parts.length === 0) throw new EfsFault("MISUSE", "planSequence needs at least one part");
+      const plans: Plan[] = [];
+      for (let i = 0; i < parts.length; i++) {
+        const first = plans[0];
+        const r = await planPublication(
+          efs,
+          {
+            ...(parts[i] as Omit<PlanInput, "account">),
+            account,
+            ...(first ? { nonce: first.nonce + BigInt(i) } : {}),
+          },
+          opts,
+        );
+        if (r.status !== "PLANNED")
+          return { kind: "efs.planSequence", status: r.status, reason: r.reason, at: i };
+        plans.push(r.plan);
+      }
+      return { kind: "efs.planSequence", status: "PLANNED", plans };
+    },
     async review(plan, opts) {
       const est = await estimate(efs, plan, opts);
       const pin = await efs.at("latest", opts);
