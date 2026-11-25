@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Resumable split saves on a real chain: COMPLETE is the only success, PARTIAL resumes after a reload, settling
-// never needs the wallet, and an atomic EIP-5792 wallet takes every part under one approval.
+// never needs the wallet, and an atomic EIP-5792 wallet takes parts under one approval while they fit one transaction.
 import { readFileSync } from "node:fs";
 import { getAbiItem, keccak256, toFunctionSelector, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -12,10 +12,12 @@ import {
   type SequenceEvent,
   type SequenceProgress,
 } from "../../src/actions/index.ts";
+import { TX_GAS_CAP } from "../../src/actions/split.ts";
 import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import { EfsFault } from "../../src/core/errors.ts";
 import type { Hex } from "../../src/core/hex.ts";
+import { planCreateFile } from "../../src/files/entries.ts";
 import { ledgerReadsAbi } from "../../src/generated/abis.ts";
 import { putInline } from "./recipes.ts";
 
@@ -56,6 +58,12 @@ function wallet(
     refuseBatch?: boolean;
     /** wallet_sendCalls fails with this EIP-1193 code. */
     batchFailWith?: number;
+    /** wallet_sendCalls refuses a batch of more calls than this with 5740 ("Bundle too large"), sending nothing. */
+    maxCalls?: number;
+    /** wallet_sendCalls fails with this code for a batch of more calls than `maxCalls`, instead of 5740. */
+    tooBigWith?: number;
+    /** wallet_sendCalls answers an id and runs nothing; wallet_getCallsStatus then reports this status. */
+    failStatus?: number;
     dead?: boolean;
     switchAfterFirstSend?: Hex;
     holdFirst?: boolean;
@@ -66,6 +74,9 @@ function wallet(
   const w = {
     sends: 0,
     batches: 0,
+    /** Calls in each wallet_sendCalls request, and the summed gas its calls used on chain. */
+    batchSizes: [] as number[],
+    batchGas: [] as bigint[],
     account,
     held: [] as Hex[],
     async request({ method, params }: { method: string; params?: unknown }): Promise<unknown> {
@@ -97,23 +108,41 @@ function wallet(
         if (k.batchFailWith !== undefined)
           throw Object.assign(new Error("wallet error"), { code: k.batchFailWith });
         const req = (params as [{ from: string; calls: { to: string; data: string }[] }])[0];
+        w.batchSizes.push(req.calls.length);
+        if (k.maxCalls !== undefined && req.calls.length > k.maxCalls)
+          throw Object.assign(new Error("Bundle too large"), { code: k.tooBigWith ?? 5740 });
+        if (k.failStatus !== undefined) return { id: `batch-${w.batches}` };
+        let used = 0n;
         // A real wallet sequences its own transaction nonces; on anvil, wait for each call to be mined before the
         // next, or back-to-back sends share one pending nonce and only one of them is ever mined.
         for (const c of req.calls) {
           const hash = await rpc("eth_sendTransaction", [
             { from: req.from, to: c.to, data: c.data },
           ]);
-          for (let t = 0; t < 100 && !(await rpc("eth_getTransactionReceipt", [hash])); t++)
+          let receipt: { gasUsed: Hex } | null = null;
+          for (let t = 0; t < 100; t++) {
+            receipt = (await rpc("eth_getTransactionReceipt", [hash])) as { gasUsed: Hex } | null;
+            if (receipt) break;
             await new Promise((r) => setTimeout(r, 20));
+          }
+          used += BigInt(receipt?.gasUsed ?? 0);
         }
+        w.batchGas.push(used);
         if (w.batches === 1) k.afterFirstSend?.(); // every call above has gone out
         return { id: `batch-${w.batches}` };
       }
-      if (method === "wallet_getCallsStatus") return { status: 200 };
+      if (method === "wallet_getCallsStatus") return { status: k.failStatus ?? 200 };
       return rpc(method, (params as unknown[]) ?? []);
     },
   };
-  return w as Eip1193Like & { sends: number; batches: number; account: Hex; held: Hex[] };
+  return w as Eip1193Like & {
+    sends: number;
+    batches: number;
+    batchSizes: number[];
+    batchGas: bigint[];
+    account: Hex;
+    held: Hex[];
+  };
 }
 
 /**
@@ -542,6 +571,30 @@ describe("runSequence (fixture)", () => {
     expect(await back.resume(r.sequenceId, { pollMs: 50 })).toMatchObject({ state: "COMPLETE" });
   });
 
+  it("a duplicate bundle id (5720) is never NOT_SENT: an earlier attempt may have gone out, so it waits for reconcile", async () => {
+    const dup = wallet(ERIN, { atomic5792: true, batchFailWith: 5720 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: dup, account: ERIN },
+      journal: memoryJournal(),
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-5720"), {
+      settleMs: 200,
+      pollMs: 50,
+    });
+    expect(r).toMatchObject({
+      state: "IN_FLIGHT",
+      committed: 0,
+      mode: "batch",
+      reason: { code: "RESPONSE_LOST", retry: "after-reconcile" },
+    });
+    expect((await w.pending()).map((a) => a.stage)).toEqual([
+      "SUBMISSION_POSSIBLE",
+      "SUBMISSION_POSSIBLE",
+      "SUBMISSION_POSSIBLE",
+    ]);
+    expect([dup.batches, dup.sends]).toEqual([1, 0]); // not re-sent part by part either
+  });
+
   it("a batch whose wallet lost its connection (4900) stays in flight: it may have gone out", async () => {
     const offline = wallet(ERIN, { atomic5792: true, batchFailWith: 4900 });
     const w = await createWriter(efs, {
@@ -689,7 +742,7 @@ describe("runSequence (fixture)", () => {
     expect((await dead.resume(r.sequenceId)).state).toBe("ABANDONED");
   });
 
-  it("an atomic EIP-5792 wallet takes every part under one approval", async () => {
+  it("an atomic EIP-5792 wallet takes small parts that fit one transaction under one approval", async () => {
     const batching = wallet(ERIN, { atomic5792: true });
     const w = await createWriter(efs, {
       authorizer: { kind: "eip1193", profile: "direct", provider: batching },
@@ -723,5 +776,139 @@ describe("runSequence (fixture)", () => {
       state: "COMPLETE",
       mode: "sequential",
     });
+  });
+  // An atomic batch can be one transaction (EIP-7702 and ERC-4337 accounts run it so), so it falls under the same
+  // per-transaction cap as a single part: the SDK packs only parts whose summed estimate fits.
+  it("an atomic wallet gets batches that each fit one transaction: several, none over the cap", async () => {
+    const batching = wallet(FRANK, { atomic5792: true });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: batching, account: FRANK },
+      journal: memoryJournal(),
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-cap", 30), { pollMs: 50 });
+    expect(r).toMatchObject({ state: "COMPLETE", committed: 30 });
+    expect(batching.batches).toBeGreaterThanOrEqual(2);
+    for (const g of batching.batchGas) expect(g).toBeLessThanOrEqual(TX_GAS_CAP);
+    expect(batching.batchSizes.reduce((a, b) => a + b, 0) + batching.sends).toBe(30);
+  });
+
+  it("content parts that fill a transaction go one at a time on an atomic wallet, and the review says so", async () => {
+    const batching = wallet(ERIN, { atomic5792: true });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: batching, account: ERIN },
+      journal: memoryJournal(),
+    });
+    const content = new Uint8Array(40 * 1024).map((_, i) => (i * 7919) % 251);
+    const p = await planCreateFile(efs, w, {
+      folder: { kind: "folder", directory: docs },
+      name: "seq-batch-big.bin",
+      content,
+    });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect(p.review.parts).toBeGreaterThanOrEqual(2);
+    expect(p.review.prompts).toEqual({ sequential: p.review.parts, atomicBatch: p.review.parts });
+    const r = await w.runSequence(p.parts, { pollMs: 50 });
+    expect(r).toMatchObject({ state: "COMPLETE", committed: p.review.parts, mode: "sequential" });
+    expect([batching.batches, batching.sends]).toEqual([0, p.review.parts]);
+  });
+
+  it("a batch the wallet refuses as too large (5740): the save goes on in smaller batches, never the same one", async () => {
+    const journal = memoryJournal();
+    const picky = wallet(FRANK, { atomic5792: true, maxCalls: 2 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: picky, account: FRANK },
+      journal,
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-5740", 5), { pollMs: 50 });
+    expect(r).toMatchObject({ state: "COMPLETE", committed: 5 });
+    expect(picky.batchSizes).toEqual([5, 2, 2]);
+    expect(picky.sends).toBe(1);
+    expect((await journal.getSequence(r.sequenceId))?.batchMax).toBe(2);
+  });
+
+  it("a wallet that can't run the batch (5760): nothing went out, so the save goes on part by part at once", async () => {
+    const journal = memoryJournal();
+    const unable = wallet(FRANK, { atomic5792: true, batchFailWith: 5760 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: unable, account: FRANK },
+      journal,
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-5760"), { pollMs: 50 });
+    expect(r).toMatchObject({ state: "COMPLETE", committed: 3, mode: "sequential" });
+    expect([unable.batches, unable.sends]).toEqual([1, 3]);
+    expect((await journal.getSequence(r.sequenceId))?.batchMax).toBe(1);
+  });
+
+  it("the person declines the account upgrade (5750): the save stops, and Continue goes part by part", async () => {
+    const journal = memoryJournal();
+    const declined = wallet(FRANK, { atomic5792: true, batchFailWith: 5750 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: declined, account: FRANK },
+      journal,
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-5750"));
+    expect(r).toMatchObject({
+      state: "NOT_STARTED",
+      mode: "batch",
+      reason: { code: "USER_REJECTED", retry: "transient" },
+    });
+    expect([declined.batches, declined.sends]).toEqual([1, 0]);
+    const atomic = wallet(FRANK, { atomic5792: true });
+    const again = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: atomic, account: FRANK },
+      journal,
+    });
+    expect(await again.resume(r.sequenceId, { pollMs: 50 })).toMatchObject({ state: "COMPLETE" });
+    expect([atomic.batches, atomic.sends]).toEqual([0, 3]);
+  });
+
+  it("a batch the wallet failed for another reason: once proven unsent, the retry sends smaller batches", async () => {
+    const journal = memoryJournal();
+    const failing = wallet(ERIN, { atomic5792: true, maxCalls: 1, tooBigWith: -32603 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: failing, account: ERIN },
+      journal,
+    });
+    const three = parts(w.principal, "seq-batch-32603").map((x) => ({ ...x, deadlineSeconds: 30 }));
+    const r = await w.runSequence(three, { settleMs: 200, pollMs: 50 });
+    // The wallet's answer doesn't prove nothing went out: in flight until the ledger proves it.
+    expect(r).toMatchObject({
+      state: "IN_FLIGHT",
+      committed: 0,
+      reason: { code: "RESPONSE_LOST" },
+    });
+    expect((await journal.getSequence(r.sequenceId))?.batchMax).toBe(1);
+    await rpc("evm_increaseTime", [60]);
+    await rpc("evm_mine");
+    await rpc("anvil_mine", ["0x50"]); // a finalized block past the deadline
+    expect(await w.reconcileSequence(r.sequenceId)).toMatchObject({
+      state: "NOT_STARTED",
+      reason: { code: "EXPIRED" },
+    });
+    const good = wallet(ERIN, { atomic5792: true });
+    const again = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: good, account: ERIN },
+      journal,
+    });
+    expect(await again.resume(r.sequenceId, { pollMs: 50 })).toMatchObject({
+      state: "COMPLETE",
+      mode: "sequential",
+    });
+    expect([good.batches, good.sends]).toEqual([0, 3]);
+  });
+
+  it("a batch the wallet reports failed (400) halves that save's later batches", async () => {
+    const journal = memoryJournal();
+    const failing = wallet(FRANK, { atomic5792: true, failStatus: 400 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: failing, account: FRANK },
+      journal,
+    });
+    const r = await w.runSequence(parts(w.principal, "seq-batch-400", 4), {
+      settleMs: 200,
+      pollMs: 50,
+    });
+    expect(r).toMatchObject({ state: "IN_FLIGHT", committed: 0 }); // the ledger, not the wallet, decides
+    expect((await journal.getSequence(r.sequenceId))?.batchMax).toBe(2);
   });
 });

@@ -695,9 +695,25 @@ into publications that each fit one transaction.
 `writer.planSequence(parts)` plans the parts as consecutive native nonces: part 0 takes the next nonce, and part i
 takes that nonce + i. Each part is its own plan, journal record and exactly-once identity, so the parts are sent in
 order and a failure is reconciled part by part. `writer.runSequence(parts)` carries a split save, resumably:
-- **One approval where possible:** an atomic EIP-5792 wallet (`wallet_getCapabilities` reports atomic) gets every
-  remaining part in one `wallet_sendCalls` request. Only there are parts pre-planned with consecutive native
-  nonces.
+- **Fewer approvals where they fit:** an atomic EIP-5792 wallet (`wallet_getCapabilities` reports atomic) gets
+  consecutive remaining parts in one `wallet_sendCalls` request, but only while their summed gas fits ONE
+  transaction (`packBatches`). An atomic batch may run as a single transaction (EIP-7702 and ERC-4337 accounts run
+  it that way), so it is under the same per-transaction cap as one part.
+  - Content parts each nearly fill a transaction, so they still go one at a time: a 5 MB file is about 324 parts
+    and 324 approvals today, batch or not. Batches help when a save was split by the per-publication counts (64
+    actions or binds, 16 KiB of body), not by gas.
+  - Under the Glamsterdam schedule, where the cap counts only execution gas, a batch's whole gas must also fit
+    the block budget; with no block gas limit in the deployment document, nothing is batched. With no gas model
+    for the chain, nothing is batched either.
+  - Only a batch's parts are pre-planned with consecutive native nonces.
+  - **A failed batch makes the rest of that save's batches smaller.** The limit is kept on the sequence record
+    (`batchMax`), so a retry or a resume never sends the same batch again.
+    - It is halved when the wallet refuses the batch as too large (5740), answers an error it gives no reason
+      for, or reports the batch failed (status 400 or above).
+    - It drops to part by part when the wallet can't batch (4200, 5700, 5710, 5760, -32602) or the person
+      declines the account upgrade (5750).
+    - A refusal before anything went out (5740, or a wallet that can't batch) goes on at once in the smaller
+      batches. Anything that may have gone out waits for reconcile as always.
 - **Part by part otherwise:** each part is planned just before it is sent and sent only after the previous one
   committed. The EFS native nonce is inside the intent, and the wallet assigns only the transaction nonce, so a
   native-nonce gap cannot happen.
@@ -737,7 +753,9 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
 - **Wallet errors:** NOT_SENT only for errors that mean the request was refused before signing; the attempt is
   stamped NOT_SENT, so nothing waits on it. They are 4001 USER_REJECTED and 4100 WALLET_UNAUTHORIZED
   (`retry: "transient"`), and 4200 WALLET_UNSUPPORTED and -32602 WALLET_INVALID_PARAMS (`retry: "never"`: the same
-  wallet request will not work; for wallet_sendCalls, send part by part with `batch: "never"`). A disconnect, 4900
+  wallet request will not work; for wallet_sendCalls, the save goes on part by part). EIP-5792's own refusals of
+  wallet_sendCalls are NOT_SENT too: 5740 LIMIT_EXCEEDED (`retry: "after-replan"`: smaller batches), 5700, 5710
+  and 5760 WALLET_UNSUPPORTED, and 5750 USER_REJECTED (`retry: "transient"`: part by part). A disconnect, 4900
   WALLET_DISCONNECTED or 4901 WALLET_CHAIN_DISCONNECTED, can be raised after the wallet relayed, so it is AMBIGUOUS
   with that named reason (`retry: "after-reconcile"`: "Your wallet lost its connection; checking whether the save
   went out"), as is any other wallet error or a lost response: the part stays in flight until reconcile decides.
@@ -825,7 +843,8 @@ type EditPlanResult =
   commits. The model is `gasPlanFor(efs.deployment)` (`opts.gasModel` overrides; without either, planning is
   UNKNOWN). `opts.maxParts` (default 64) bounds the save.
 - **`review`:** `file`, `base`, the new `revision` id, `author` (the writer's principal), `size`, `sha256`,
-  `layout` (`inline` | `chunk` | `span` | `external`), `mediaType` (`""`: none), `parts`, `prompts { sequential, atomicBatch: 1 }`,
+  `layout` (`inline` | `chunk` | `span` | `external`), `mediaType` (`""`: none), `parts`, `prompts { sequential, atomicBatch }` (approvals part by part, and with an
+  atomic EIP-5792 wallet: the number of gas-packed batches, often equal to `sequential` for content),
   `gas { perPart, schedule }`, `records`, `expectedRevision`, `guard` and `visibleInLens`. `visibleInLens` is false
   when the edited Lens leaves the author out, or puts an earlier author of this HEAD first: the save still lands,
   but that view keeps showing the other revision (`efs.lens.mineFirst(account)` puts the author first).

@@ -21,7 +21,8 @@ import type { Plan } from "./types.js";
 
 export type BatchSendResult =
   | { kind: "efs.sendBatch"; status: "SUBMITTED"; batchId: string; atomic: boolean }
-  | { kind: "efs.sendBatch"; status: "NOT_SENT" | "AMBIGUOUS"; reason: Reason }
+  /** `walletCode`: the wallet's EIP-1193 / EIP-5792 error code, when the wallet itself answered with an error. */
+  | { kind: "efs.sendBatch"; status: "NOT_SENT" | "AMBIGUOUS"; reason: Reason; walletCode?: number }
   | { kind: "efs.sendBatch"; status: "STALE"; reasons: readonly string[]; revert?: RevertInfo }
   | { kind: "efs.sendBatch"; status: "BUSY" };
 
@@ -163,15 +164,26 @@ export async function sendPlansAsBatch(
           if (!batchId) throw new Error("wallet_sendCalls returned no id");
         } catch (e) {
           const how = classifyWalletError(e, "wallet_sendCalls");
+          const code = (e as { code?: unknown } | null)?.code;
+          const walletCode = typeof code === "number" ? { walletCode: code } : {};
           if ("notSent" in how) {
-            const code = (e as { code?: unknown }).code;
             for (const r of records)
               await bestEffort(
                 journal.put(stamp(r, "NOT_SENT", `the wallet refused it before signing (${code})`)),
               );
-            return { kind: "efs.sendBatch", status: "NOT_SENT", reason: how.notSent };
+            return {
+              kind: "efs.sendBatch",
+              status: "NOT_SENT",
+              reason: how.notSent,
+              ...walletCode,
+            };
           }
-          return { kind: "efs.sendBatch", status: "AMBIGUOUS", reason: how.ambiguous };
+          return {
+            kind: "efs.sendBatch",
+            status: "AMBIGUOUS",
+            reason: how.ambiguous,
+            ...walletCode,
+          };
         }
         for (const r of records)
           await bestEffort(
@@ -198,12 +210,16 @@ export async function sendPlansAsBatch(
   }
 }
 
-/** Wait (bounded) for the wallet to report the batch final. Informational: the ledger decides every part. */
+/**
+ * Wait (bounded) for the wallet to report the batch final, and return its final EIP-5792 status code (200
+ * confirmed; 400 not included, 500 reverted, 600 partly reverted), or undefined when it never said. Informational:
+ * the ledger decides every part; the status only tells a later batch to be smaller.
+ */
 export async function waitForBatch(
   provider: Eip1193Like,
   batchId: string,
   o: { timeoutMs?: number; pollMs?: number } = {},
-): Promise<void> {
+): Promise<number | undefined> {
   const until = Date.now() + (o.timeoutMs ?? 120_000);
   while (Date.now() < until) {
     try {
@@ -214,12 +230,14 @@ export async function waitForBatch(
         status?: number | string;
       };
       const code = typeof s?.status === "number" ? s.status : Number.NaN;
-      if (code >= 200 || s?.status === "CONFIRMED") return;
+      if (s?.status === "CONFIRMED") return 200;
+      if (code >= 200) return code;
     } catch {
-      return; // no status method: reconcile will tell
+      return undefined; // no status method: reconcile will tell
     }
     await new Promise<void>((r) => {
       setTimer(r, o.pollMs ?? 1000);
     });
   }
+  return undefined;
 }

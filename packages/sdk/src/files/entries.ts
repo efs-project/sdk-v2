@@ -17,7 +17,7 @@
 //   restore        BIND(FOLDER, at → the target it had before it was removed), read from the binding's history
 import { decodeFunctionResult, encodeFunctionData, keccak256 } from "viem";
 import type { SequencePartInput } from "../actions/sequence.js";
-import { type PlannedAction, splitPublications } from "../actions/split.js";
+import { type PlannedAction, packBatches, splitPublications } from "../actions/split.js";
 import type { EffectView } from "../actions/types.js";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
@@ -121,8 +121,12 @@ export interface FolderReviewBase {
   /** The principal the entries are written by: the writer's. */
   author: PrincipalId;
   parts: number;
-  /** One approval per part, or one in all with an atomic EIP-5792 wallet. */
-  prompts: { sequential: number; atomicBatch: 1 };
+  /**
+   * Wallet approvals: one per part, or `atomicBatch` with an atomic EIP-5792 wallet, which takes consecutive parts
+   * in one request only while their summed gas fits one transaction (so content parts that each fill a
+   * transaction still need one approval each).
+   */
+  prompts: { sequential: number; atomicBatch: number };
   /** The model's estimate per part (planning only; eth_estimateGas decides before each send). */
   gas: { perPart: readonly number[]; schedule: string };
   /** Records published (chunks, spans, descriptor, revision, folder, names). */
@@ -532,7 +536,7 @@ async function toParts<R extends FolderReviewBase>(
     review: review({
       author: me,
       parts: n,
-      prompts: { sequential: n, atomicBatch: 1 },
+      prompts: { sequential: n, atomicBatch: packBatches(parts, gas).length },
       gas: { perPart: split.parts.map((p) => p.gas), schedule: gas.model.schedule },
       records: recordsCount,
     }),

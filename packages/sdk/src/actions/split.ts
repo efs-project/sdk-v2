@@ -262,6 +262,69 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
   return { ok: true, parts, budget };
 }
 
+/** A part as a sequence keeps it: its actions and their bodies, with no shapes or bind rows. */
+export interface PartBody {
+  actions: readonly ActionData[];
+  bodies: readonly Hex[];
+}
+
+/**
+ * A conservative planning estimate of one part from its actions and bodies alone: new records at the dearest
+ * shape, BINDs at the dearest row, and the first-write surcharge always included.
+ */
+export function partGas(part: PartBody, m: GasConstants): number {
+  return publicationGas(
+    part.actions.map((action, i) => ({ action, body: part.bodies[i] ?? "0x" })),
+    m,
+    true,
+  );
+}
+
+/**
+ * Consecutive parts packed into atomic EIP-5792 batches, as lists of part indexes in order. An atomic batch may run
+ * as ONE transaction (EIP-7702 and ERC-4337 accounts run it that way), so it is under the same per-transaction cap
+ * as one part. Each batch's summed `partGas` fits txGasCap × (1 − headroom). Where the cap counts only execution
+ * gas (`model.total`), the summed whole gas must also fit the block budget, and with no block gas limit known
+ * nothing is batched. At most `maxParts` per batch. A part that fits with no neighbour goes alone.
+ */
+export function packBatches(
+  parts: readonly PartBody[],
+  g: { model: GasModel; txGasCap: bigint; headroom?: number; blockGasLimit?: bigint },
+  maxParts: number = Number.POSITIVE_INFINITY,
+): number[][] {
+  const keep = 1 - (g.headroom ?? 0.15);
+  const budget = Math.floor(Number(g.txGasCap) * keep);
+  const total = g.model.total;
+  const blockBudget =
+    total && g.blockGasLimit !== undefined ? Math.floor(Number(g.blockGasLimit) * keep) : undefined;
+  const alone = total !== undefined && blockBudget === undefined;
+  const out: number[][] = [];
+  let batch: number[] = [];
+  let gas = 0;
+  let all = 0;
+  parts.forEach((p, i) => {
+    const pg = partGas(p, g.model);
+    const pa = total ? partGas(p, total) : 0;
+    const fits =
+      batch.length > 0 &&
+      !alone &&
+      batch.length < maxParts &&
+      gas + pg <= budget &&
+      (blockBudget === undefined || all + pa <= blockBudget);
+    if (!fits && batch.length) {
+      out.push(batch);
+      batch = [];
+      gas = 0;
+      all = 0;
+    }
+    batch.push(i);
+    gas += pg;
+    all += pa;
+  });
+  if (batch.length) out.push(batch);
+  return out;
+}
+
 /** EIP-7825's per-transaction gas cap (2^24): the default when the deployment document states none. */
 export const TX_GAS_CAP: bigint = BigInt(GAS_ENVELOPE.txGasCap);
 /** The cap of this deployment's chain (efs-deployment.chain.txGasCap). Always enforced. */
