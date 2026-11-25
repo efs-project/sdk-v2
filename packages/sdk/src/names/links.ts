@@ -60,7 +60,10 @@ export interface HomeLink {
   kind: "home";
   address: Address;
   names: readonly string[];
-  /** The sharer's Lens (`?lens=`), when it differs from the route's default. */
+  /**
+   * The sharer's Lens (`?lens=`). Without one, a home opens under `efs.lens.place({ reader, owner: address })`: the
+   * reader, then the address.
+   */
   lens?: Lens;
 }
 /**
