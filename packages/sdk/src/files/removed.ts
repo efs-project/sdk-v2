@@ -444,12 +444,15 @@ const contradiction = (detail: string): Step<never> => ({
 
 /**
  * The target a removed (MASKED or RELEASED) binding had: its last BOUND version, read from its history at the basis.
- * The ledger's rules decide what the walk can meet. UNBIND needs a BOUND head and RELEASE a BOUND or MASKED one, so every
- * binding starts with a BIND and the last bound version is at most two versions back (RELEASED, MASKED, BOUND). So on an
- * honest endpoint the target is always known. A history that can't be read, or one that breaks those rules (a version
- * that can't precede the next, an admission that isn't the one asked for, a target kind no FOLDER bind can carry), is
- * the endpoint's fault: the read fails and moves to the next endpoint. It never returns a guessed target.
+ * The ledger's rules decide what the walk can meet. UNBIND needs a BOUND head and RELEASE a BOUND or MASKED one, so
+ * every binding starts with a BIND and the last bound version is at most two versions back (RELEASED, MASKED, BOUND).
+ * So on an honest endpoint the target is always known. A history that can't be read, or one that breaks those rules
+ * (a version that can't precede the next, an admission that isn't the one asked for, a target kind no FOLDER bind
+ * can carry), is the endpoint's fault: the read fails and moves to the next endpoint. It never returns a guessed
+ * target.
  * Shared by listRemoved and planRestoreEntries, so a row's target is exactly what Restore binds.
+ * These rules hold for this contracts release only: the tag release admits UNBIND from every state, so this walk
+ * changes at that re-vendor (docs/design/tags-0.1.md section 7, the re-vendor checklist).
  * @internal
  */
 export async function lastBoundTarget(

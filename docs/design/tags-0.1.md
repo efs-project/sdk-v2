@@ -229,6 +229,22 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
 - **The owner (James):**
   - the fold rule (NFKC_Casefold or NFC plus lowercase);
   - the default view for topics, and what a newcomer's Lens contains.
+- **The SDK's re-vendor checklist for that release** (each on a branch, then PM review):
+  - tag planners and reads as this document describes; the number is 16-bit (−65,536..65,535, MISUSE outside);
+    registration strictly before the tag; address targets for TAG only;
+  - restore's `alsoPlaced` switched to the FOLDER-keyed backlink family, with a test that tags don't change it;
+  - the index codehash in the index pin, if the deployment file carries it;
+  - **removed entries (listRemoved, planRestoreEntries).** Today's walk (`lastBoundTarget`) relies on UNBIND needing
+    a BOUND head and RELEASE a BOUND or MASKED one: a removed entry's last bound version is then at most two versions
+    back, so its target is always known and any other history is an endpoint fault (page-level UNKNOWN). The tag
+    release admits UNBIND from every state, for every purpose (contracts `docs/TAG-DESIGN.md`: "a first statement
+    may be negative"), including a hide of another author's FOLDER entry, so that invariant ends there:
+    - bring back a per-row state: KNOWN (the target), UNKNOWN (with its reason) and NEVER_BOUND (a mask with no
+      earlier bind by this author: "you hid someone else's entry here; Unhide", never something to restore);
+    - make the walk paged or bounded, with an honest UNKNOWN per row instead of page-wide, because release and mask
+      can alternate and an honest history can run deeper than 8;
+    - restore answers NEVER_BOUND rows with a named refusal, not ENTRY_ABSENT, and Unhide is a RELEASE of the mask;
+    - tests on the new contracts: a lone hide, and an alternating history deeper than 8.
 - **Built first, once confirmed:** `fold` and the link grammar with vectors, then the planners, then the reads.
 - **Statement planners** (label, definition, "same as", "moved to", parent) join section 4 once the contracts dev
   names their purposes.
