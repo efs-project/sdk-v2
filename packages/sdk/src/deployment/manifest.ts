@@ -65,7 +65,14 @@ export interface DeploymentInfo {
    * The index families the SDK reads, as the deployment recorded them (the live generation's address is read from
    * the ledger at each basis). `backlinkFamily`: bindings by target (kind 5, universe TARGET), null when absent.
    */
-  index: { address: Address | null; backlinkFamily: Hex | null };
+  index: {
+    address: Address | null;
+    backlinkFamily: Hex | null;
+    /** The kind-10 scope lists (universe SCOPE): a principal's positions under one subject, in first-bind order. */
+    scopeFamily: Hex | null;
+    /** The generation's bitmap store, which holds the scope lists. */
+    bitmapStore: Address | null;
+  };
   defaultLens: readonly PrincipalId[];
   typeIds: Readonly<Record<string, Hex>>;
   limits: ProtocolLimits;
@@ -90,20 +97,20 @@ const SPAN_CHUNK_BYTES = 8160;
 const ROOT_HEADER_BYTES = 64;
 
 /** Validate an efs-deployment/1 document. Pure; no network. */
-/** The backlink family's id (kind 5 over the TARGET universe), or null when the document names none. */
-function backlinkFamily(index: unknown): Hex | null {
-  const families = obj(index)?.["families"];
+/** The id of the family of `kind` over `universe` in the document's index, or null when it names none. */
+function familyOf(index: Record<string, unknown>, kind: number, universe: number): Hex | null {
+  const families = index["families"];
   if (!Array.isArray(families)) return null;
   for (const f of families) {
     const o = obj(f);
+    const id = o?.["familyId"];
     if (
-      o &&
-      o["kind"] === 5 &&
-      o["universe"] === 4 &&
-      typeof o["familyId"] === "string" &&
-      /^0x[0-9a-fA-F]{64}$/.test(o["familyId"])
+      o?.["kind"] === kind &&
+      o["universe"] === universe &&
+      typeof id === "string" &&
+      /^0x[0-9a-fA-F]{64}$/.test(id)
     )
-      return (o["familyId"] as string).toLowerCase() as Hex;
+      return id.toLowerCase() as Hex;
   }
   return null;
 }
@@ -135,6 +142,7 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
   const proxy = obj(obj(d["proxies"])?.["ledger"]) ?? {};
   const root = obj(d["root"]) ?? {};
   const indexDoc = obj(d["index"]) ?? {};
+  const indexStores = obj(indexDoc["stores"]) ?? {};
   const limits = obj(d["limits"]) ?? {};
   const activation = obj(d["activation"]) ?? {};
   const typeIds = obj(d["typeIds"]) ?? {};
@@ -210,7 +218,11 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       address: isAddress(indexDoc["address"])
         ? (lower(indexDoc["address"] as Address) as Address)
         : null,
-      backlinkFamily: backlinkFamily(indexDoc),
+      backlinkFamily: familyOf(indexDoc, 5, 4),
+      scopeFamily: familyOf(indexDoc, 10, 3),
+      bitmapStore: isAddress(indexStores["bitmap"])
+        ? (lower(indexStores["bitmap"] as Address) as Address)
+        : null,
     },
     defaultLens: defaultLens.map((p, i) => word(`defaultLensPrincipals[${i}]`, p) as PrincipalId),
     typeIds: typeIdOut,

@@ -876,6 +876,14 @@ Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out
 - Each reply is cross-checked: the folder must be a files-directory/1 record, the heads' selection must be the Lens
   law's, the page and Lens readers must agree on every row, and COMPLETE must hold locally.
 
+- `listRemoved(efs, { folder, author }, { limit?, cursor? })` ("Show removed"): one author's removed entries in a
+  folder, RELEASED or MASKED, each with `name`, `position`, `state`, the `target` it had before (from its history;
+  null when the history can't say), its binding `revision` and `removedAt`. Lens-independent: it reads only that
+  author's own scope list (the index's kind-10 list of the positions they ever bound there, in first-bind order), a
+  page of up to 64 entries at a time. The live index and its bitmap store must be the ones the deployment names, or
+  the page is UNKNOWN. COMPLETE only for the whole list read from its start; an empty page that is not COMPLETE is
+  UNKNOWN, never "nothing removed". Restore any row with `planRestoreEntries`.
+
 **Writes** (each `PLANNED { parts, review }` for `runSequence` | `REFUSED { refused }` | `TOO_LARGE` | `UNKNOWN`):
 - `planCreateFile(efs, w, { folder, name, content, mediaType?, lens?, salt? })`: CREATE, the root revision (inline,
   or chunks under a descriptor; a declared type means a descriptor), the name record if new, BIND(HEAD), BIND(FOLDER).
