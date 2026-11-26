@@ -458,6 +458,12 @@ const files = {};
     }
     sch.floor.kernel.interimNeverBoundBind = slot.executionGas;
     sch.floor.kernel.interimHistoryWord = 0;
+    // - interimFolderRetarget: a FOLDER BIND on a masked or released head that bound before makes the kernel rewrite
+    //   head.target when the target is new (LedgerApply), which restoreFolder (measured restoring the same target)
+    //   leaves out: one rewrite at the floor's price (floor.limits.floorRewriteGas), in K only (E over-predicts).
+    for (const c of [sch.constants, ...(sch.executionGas ? [sch.executionGas] : [])])
+      c.interimFolderRetarget = 0;
+    sch.floor.kernel.interimFolderRetarget = sch.floor.limits.floorRewriteGas;
   }
   if (!schedules.prague) throw new Error("codegen: gasModel has no prague schedule");
   const env = g.envelope ?? {};

@@ -5,7 +5,8 @@
 // with the same plan at a head that bound before and opens no history word, so the parts differ only by the facts:
 //   - a yes after a lone no (never bound, revision 1): the kernel's slot (E and K) and a history word (E);
 //   - a no, its release, then a yes (never bound, revision 2): the kernel's slot only, so exactly one slot more;
-//   - a restore that is the binding's 6th statement (revision 5): a history word only (E).
+//   - a restore that is the binding's 6th statement (revision 5): a history word only (E);
+//   - a folder entry placed again where it was removed (bound before): the kernel's target rewrite (K only).
 // A part's planned gas is intrinsic + calldata + max(E, V), and V ≥ E plus the kernel's reserve; for a single later
 // statement K + the floor's prefix need is above E too, so on the real model only K's slot shows. Each case is planned
 // twice: with the vendored model (what an app gets), and with the same model whose kernel constants are zero
@@ -33,6 +34,7 @@ const me = mnemonicToAccount("test test test test test test test test test test 
   addressIndex: 34,
 });
 const SLOT = 22_100; // the prague fixture's fresh slot (test/vectors/gas-schedules.json)
+const REWRITE = 5_000; // its floor's rewrite (floorRewriteGas): the kernel's folder retarget term
 let w: Awaited<ReturnType<typeof createWriter>>;
 
 type Planned = {
@@ -176,9 +178,22 @@ describe("INTERIM: fresh slots a later yes writes beyond its row (fixture)", () 
     });
     const atLone = await both("lone");
     const atGone = await both("gone");
+    // The removed name bound before, so its K carries the kernel's possible target rewrite instead of a fresh slot.
     expect({ real: atLone.real - atGone.real, e: atLone.e - atGone.e }).toEqual({
-      real: SLOT,
+      real: SLOT - REWRITE,
       e: 2 * SLOT,
     });
+    // That rewrite, alone: the same plan with the term zeroed in the kernel's model.
+    const g = gasPlanFor(efs.deployment);
+    if (!g.ok) throw new Error(g.reason.code);
+    const f = g.model.floor as NonNullable<GasModel["floor"]>;
+    const noTerm: GasModel = {
+      ...g.model,
+      floor: { ...f, kernel: { ...f.kernel, interimFolderRetarget: 0 } },
+    };
+    const without = gasOf(
+      await planned(planCreateFolder(efs, w, { folder: here, name: "gone" }, { gasModel: noTerm })),
+    );
+    expect(atGone.real - without).toBe(REWRITE);
   });
 });

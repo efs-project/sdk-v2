@@ -116,6 +116,15 @@ export interface GasConstants extends Readonly<Record<TierConstant, number>> {
    */
   interimNeverBoundBind?: number;
   interimHistoryWord?: number;
+  /**
+   * INTERIM, the same way (contracts 6d11858): a FOLDER BIND on a masked or released head that bound before (a new file
+   * placed at a removed name, a move into one) makes the kernel rewrite head.target when the target is new, which the
+   * restoreFolder rows (measured restoring the same target) leave out. One rewrite at the floor's price, in the kernel's
+   * model only (E over-predicts this shape). A same-target restore is over-priced by it, the safe side. Against
+   * `restoreFolderLongNewPlace`, the row a first statement at its place takes, the kernel's measured share is still
+   * 105 gas (prague) and 209 (amsterdam) a statement above the row plus this term: under 0.03% of V on a full batch.
+   */
+  interimFolderRetarget?: number;
   tagLevel: Readonly<Record<TagLevel, number>>;
 }
 
@@ -477,12 +486,18 @@ const HISTORY_UNMEASURED_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
   "restoreBroader",
 ]);
 
-/** INTERIM: the fresh slots a later BIND writes beyond its row (the kernel's head.target, the index's history word). */
+/**
+ * INTERIM: what a later BIND writes beyond its row: the kernel's fresh head.target, the index's history word, and the
+ * kernel's rewrite of a folder entry's target.
+ */
 function interimSlots(a: PlannedAction, m: GasConstants): number {
   let g = a.neverBound === true ? (m.interimNeverBoundBind ?? 0) : 0;
   const opens = a.headRevision !== undefined && opensHistoryWord(a.headRevision);
   if (opens && (a.bindRow === undefined || HISTORY_UNMEASURED_ROWS.has(a.bindRow)))
     g += m.interimHistoryWord ?? 0;
+  // a folder entry bound before, placed again: the kernel may rewrite its target (never on a never-bound head, whose
+  // target is written fresh and priced above)
+  if (a.bindRow === "restoreFolder" && a.neverBound !== true) g += m.interimFolderRetarget ?? 0;
   return g;
 }
 
