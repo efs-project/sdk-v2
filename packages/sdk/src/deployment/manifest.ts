@@ -103,6 +103,11 @@ export interface DeploymentInfo {
     backlinkFamily: Hex | null;
     /** The kind-10 scope lists (universe SCOPE): a principal's positions under one subject, in first-bind order. */
     scopeFamily: Hex | null;
+    /**
+     * The kind-22 head-authors lists (universe SCOPE; contracts 04526b1): each author's first HEAD statement on a file,
+     * of either sign, in order. Null when the deployment keeps none (fileVersions' public tier is then UNKNOWN).
+     */
+    headAuthorsFamily: Hex | null;
     /** The generation's bitmap store, which holds the scope lists. */
     bitmapStore: Address | null;
   };
@@ -331,6 +336,7 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       reads: optAddr(obj(indexDoc["reads"])?.["address"]),
       backlinkFamily: familyOf(indexDoc, 5, 4),
       scopeFamily: familyOf(indexDoc, 10, 3),
+      headAuthorsFamily: familyOf(indexDoc, 22, 3),
       bitmapStore: isAddress(indexStores["bitmap"])
         ? (lower(indexStores["bitmap"] as Address) as Address)
         : null,

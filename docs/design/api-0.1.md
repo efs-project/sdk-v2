@@ -609,6 +609,46 @@ export interface ChangeResult {
 }
 ```
 
+### Everyone's versions of a file (`fileVersions`, 0.1)
+
+`fileVersions(efs, { kind: "file", subject }, { lens?, cursor?, limit?, includeRemoved? })` reads, at one block, every
+author's version of a file from the contracts' `head-authors` list (contracts 04526b1 item 49; tag model spec §3.9).
+The list holds one entry per author's FIRST HEAD statement of either sign, in order: creating the file, saving one's
+own version of another's, or a first "not this". Anyone can add an entry with one HEAD statement, so it is a public
+tier. The result has four parts:
+
+- **`decision`**: what the file shows under the Lens, from the same LensReader walk `openFile` uses. The first Lens
+  author with a BOUND or MASKED head decides; UNSET and RELEASED heads fall through. `{ kind: "version", author,
+  revision, lensIndex }`; `{ kind: "hidden", author, lensIndex }` (a Lens author's MASKED head, their own version
+  hidden or a lone "not this": "hidden for you by" them); `{ kind: "none" }`; `{ kind: "unknown", reason }` (a head
+  that couldn't be read, never shown as "none"). Pass the Lens the file was actually opened under, an app's fallback
+  Lens included ("you, then its creator, then that Lens"): only then is `decision` what the file view shows.
+- **`lens`**: each Lens author's own version, in Lens order, with `lensIndex`. These are kernel reads, exact whatever
+  the list's coverage. A Lens author never listed: one with no head, or one who only ever said "not this".
+- **`creator`**: the creator's version (the subject's CREATE principal, never list position), when the creator is not
+  in the Lens. A view shows it after the Lens tier and before the public tier.
+- **`public`**: everyone else, newest first author first (by first HEAD statement: an edit writes nothing to the
+  list, so "most recently edited" can't be read from it). Lens authors and a creator shown apart are skipped.
+  `{ status: "UNKNOWN", reason }` unless the index vouches for the list (coverage COMPLETE): then there are no rows
+  and no counts, never "no other versions" or "1 version". Otherwise `{ status: "PRESENT", rows, total, live, count,
+  scanned, changed, next? }`:
+  - `live` is everyone's standing versions, the "N versions" a view shows. `count` is the authors who ever made a
+    HEAD statement on the file, of either sign: never a count of versions, and nothing should be derived from
+    `count − live`, which mixes lone noes, hidden and removed versions, and which anyone can raise cheaply.
+  - `total` is the standing public versions: `live` less the Lens authors' and the shown creator's standing ones.
+  - Paging is by absolute list position: each call scans at most `limit` entries (1 to `MAX_VERSIONS_PAGE`, 150, the
+    default) from the cursor's position toward the list's start, so appends never shift a page. Lone noes and
+    removed versions are filtered after the read, so a page can be short or empty while `next` is set: only a
+    missing `next` is the end. The scan ends early once every standing public version has been returned, unless
+    `includeRemoved` is set (removed versions can lie further back) or the list moved since the first page.
+  - `changed`: the list's `count` or `live` differs from the first page's (the cursor carries them): the scan
+    carries on, and the view can offer a refresh. A remove and a restore that cancel out are not seen.
+- **Rows**: `{ author, state: "PRESENT", revision, creator }` for a standing version; with `includeRemoved`, also `{
+  author, state: "MASKED" | "RELEASED", creator }` for a version hidden or taken back, with no revision (its head
+  names none; no history is read per row). An author who only ever said "not this" (targetKind 0) is never a row.
+- `ABSENT_PROVEN`: the subject was never created. `UNKNOWN`: the deployment isn't verified, every endpoint is behind
+  (`BEHIND`), or the reads failed. A cursor for another file, Lens or `includeRemoved` setting is MISUSE.
+
 ### Gateway policy and publisher locations (0.1)
 
 The default `gateways.allowSchemes` is `["ipfs", "ar", "data", "web3"]`: a publisher's `https://` location is fetched only
@@ -1659,10 +1699,12 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | Export | Kind | Summary |
 | --- | --- | --- |
 | `fileChunks` | function | Verified chunks of an opened file, pulled on demand. |
+| `fileVersions` | function | Everyone's versions of a file under a Lens: the Lens decision, the Lens tier, the creator's row and a page of the public tier, read at one block. "N versions" is `public.live`, never `count`. |
 | `listFolder` | function | One page of a folder's entries under a Lens, read at one block. |
 | `listRemoved` | function | List `author`'s removed entries in `folder` (released, or hidden), each with its last target, a page of their scope list at a time, at one block. |
 | `lookupEntry` | function | Look up one name in a folder under a Lens: the Lens's choice (`selected`), and every author in the Lens with an entry at that name, in Lens order with when each was first placed (`candidates`), so an app can show same-named entries as a list. |
 | `MAX_MEDIA_TYPE_BYTES` | const | The longest media type the chain accepts, in bytes (release constants.files.mediaType.maxLength). |
+| `MAX_VERSIONS_PAGE` | const | The most public-tier entries scanned in one call, and the default `limit` (the topic readers' row bound). |
 | `normalizeMediaType` | function | Normalize a caller's media type for planning: lowercase A–Z in the type and subtype (before the first ";"), keep the parameters exactly as given, then check the chain's grammar. |
 | `openFile` | function | Resolve a file's HEAD revision under the Lens, then its content layout. |
 | `openHome` | function | Open a home (`/0x<address>`, a HomeLink with no names): the address's author identity at one block (the gateway's Keys.principalFor: a key account's key principal, a contract's Realm contract principal), and the Lens to list it under, the reader first, then that owner, then `base`. |
@@ -1701,6 +1743,10 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `ExternalContent` | interface | Content stored elsewhere: the revision names a files-external/1 locator and its sha256. |
 | `FileChunks` | interface | Verified chunks of a file. |
 | `FileRef` | interface |  |
+| `FileVersion` | type | One author's version. |
+| `FileVersionsCursor` | interface | Where the public tier carries on: an absolute list position and what the earlier pages saw. |
+| `FileVersionsOpts` | interface |  |
+| `FileVersionsResult` | type |  |
 | `FolderCoverage` | type |  |
 | `FolderCursor` | interface | Continues a listing. |
 | `FolderPage` | type |  |
@@ -1715,6 +1761,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `HomeOpen` | type |  |
 | `HomeRef` | interface | A home: an address as a folder parent (design §12.5). |
 | `LastBound` | type | What an entry pointed at before it was removed, read from its history: - KNOWN: the target of its last BIND, which Restore binds again; - NEVER_BOUND: a hide with no earlier bind by this author (a lone hide of someone else's entry at that name): there is nothing to restore, and Unhide (planUnhideEntries) removes the hide; - UNKNOWN: the history is deeper than the walk's bound, or the endpoint can't walk it (`reason`); never a guess. |
+| `LensVersion` | type | A Lens author's version, with their place in the Lens. |
 | `LensView` | interface | What a reader with this Lens sees at a name. |
 | `ListFolderOpts` | interface |  |
 | `ListRemovedOpts` | interface |  |
@@ -1733,6 +1780,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `PathOpen` | type |  |
 | `PathResolution` | type |  |
 | `PathStep` | interface |  |
+| `PublicVersions` | type | The public tier: everyone else, newest first author first (by first HEAD statement, never by latest edit). |
 | `ReadOpts` | interface |  |
 | `RemovedCursor` | interface | Continues a removed-entries listing: an index into the author's scope list, for the same folder and author. |
 | `RemovedPage` | type |  |
@@ -1753,6 +1801,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `UnverifiedChunks` | interface | Chunks emitted before they are verified. |
 | `UnverifiedOpts` | interface |  |
 | `UnverifiedResult` | interface |  |
+| `VersionsDecision` | type | What the file shows under the Lens (LensReader.resolve, as openFile reads it): the first Lens author with a BOUND or MASKED head decides; UNSET and RELEASED heads fall through. |
 
 #### `@efs/sdk/actions`
 

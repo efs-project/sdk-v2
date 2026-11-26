@@ -19,8 +19,6 @@ depend on anything in this repository yet.
   words and leaves any other word as typed. The word guard refuses, on writes that add a tag, any non-ASCII word a
   candidate rule would change. The ruled rule extends the interim one and never contradicts it. Topic ids can still
   move when the refused-character table is regenerated from the pinned Unicode version.
-- **Everyone's versions of a file.** The contracts keep a `head-authors` list per file from genesis (the list
-  release); the SDK does not read it yet. Until it does, a file shows the versions a Lens names.
 - **Plan-time reuse.** A part whose records all exist, or are being published by an attempt in flight, is still sent.
   An identical publish-only part (the same bytes saved again) is held back while its first attempt is not final
   (ALREADY_ATTEMPTED), and sent again after. Reuse is parked until after the MVP: it waits on a design note settling
