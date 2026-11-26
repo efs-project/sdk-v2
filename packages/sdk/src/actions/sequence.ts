@@ -11,6 +11,8 @@
 //   - The only success is COMPLETE. PARTIAL means some parts committed and the save stopped; the parts already on
 //     chain stay there whatever happens next (an abandoned upload leaves chunks that never appear as a file).
 import { keccak256 } from "viem";
+import { getBlock } from "../chain/basis.js";
+import { onEndpoint } from "../chain/pool.js";
 import type { Efs } from "../client.js";
 import {
   type CallOpts,
@@ -20,7 +22,7 @@ import {
   reason,
   type SequenceFault,
 } from "../core/errors.js";
-import type { Address, Hex } from "../core/hex.js";
+import { type Address, type Hex, lower } from "../core/hex.js";
 import { toJson } from "../core/json.js";
 import { setTimer, utf8Encode } from "../core/platform.js";
 import {
@@ -108,6 +110,12 @@ export interface SequenceProgress {
   mode?: "batch" | "sequential";
   /** Why the save stopped (when it did not reach COMPLETE). */
   reason?: Reason;
+  /**
+   * COMPLETE: a read at or after this block sees the whole save (the highest block reconcile saw a part committed
+   * at). Pass it as `atLeast` from another tab or a worker; on this client, and on any client reading this journal
+   * on the same chain, the read floor already holds it.
+   */
+  visibleAt?: { blockNumber: bigint; blockHash: Hex };
   /**
    * What the save is for, e.g. { kind: "files.edit", file, revision }: name it ("readme.txt: Partially saved") and
    * hold new saves of that file. Display only, never what resume sends. Absent on saves started before 0.1 had it.
@@ -379,6 +387,24 @@ function sequenceFault(e: unknown, at: SequenceFault): EfsFault {
   return new EfsFault("INVARIANT", `unexpected error: ${message}`, { cause: e, sequence: at });
 }
 
+/** The highest block a committed part of `r` was seen committed at, or undefined. */
+function lastCommittedAt(r: SequenceRecord): { blockNumber: bigint; blockHash: Hex } | undefined {
+  let best: { blockNumber: bigint; blockHash: Hex } | undefined;
+  for (const p of r.parts)
+    if (p.committed && p.committedAt && (!best || p.committedAt.blockNumber > best.blockNumber))
+      best = p.committedAt;
+  return best;
+}
+
+/** This chain's genesis block hash, read once per client (the read floor keeps it); undefined when no endpoint says. */
+async function genesisOf(efs: Efs, o: CallOpts): Promise<Hex | undefined> {
+  const floor = efs._internal.pool.floor;
+  if (floor.genesis) return floor.genesis;
+  const g = await onEndpoint(efs._internal.pool, (s) => getBlock(s, 0n), o);
+  if (g.ok) floor.genesis = g.value.hash;
+  return floor.genesis;
+}
+
 function sequenceCore(efs: Efs, journal: Journal) {
   const derive = (r: SequenceRecord): SequenceState => {
     if (r.state === "ABANDONED") return "ABANDONED";
@@ -417,6 +443,11 @@ function sequenceCore(efs: Efs, journal: Journal) {
     const part = r.parts[index];
     const known = stage ?? (part && !part.planId ? "NOT_PLANNED" : undefined);
     const why = extra.reason ?? recordReason(r);
+    // Parts are admitted in nonce order, so once the last part's block is known, the highest block seen covers all.
+    const visible =
+      r.state === "COMPLETE" && r.parts[r.parts.length - 1]?.committedAt
+        ? lastCommittedAt(r)
+        : undefined;
     return {
       kind: "efs.sequence",
       sequenceId: r.sequenceId,
@@ -442,6 +473,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
       ...(extra.mode ? { mode: extra.mode } : {}),
       ...(why ? { reason: why } : {}),
       ...(r.effect ? { effect: r.effect } : {}),
+      ...(visible ? { visibleAt: visible } : {}),
     };
   };
 
@@ -450,6 +482,12 @@ function sequenceCore(efs: Efs, journal: Journal) {
     r: SequenceRecord,
     extra: { mode?: "batch" | "sequential"; reason?: Reason } = {},
   ): Promise<SequenceProgress> => {
+    // A save read back from the journal (another tab, a reload) is a read floor on this client, on its own chain
+    // only: same chain id and ledger here, the genesis hash when a pin would read below it (chain/floor.ts).
+    const seen = lastCommittedAt(r);
+    const d = efs.deployment;
+    if (seen && r.genesisHash && r.chainId === d.chainId && lower(r.ledger) === lower(d.ledger))
+      efs._internal.pool.floor.seed({ key: r.sequenceId, ...seen, genesisHash: r.genesisHash });
     const part = r.parts.find((p) => !p.committed);
     const stage = part?.planId
       ? ((await journal.get(part.planId))?.stage ?? "NOT_PLANNED")
@@ -485,6 +523,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
           else if (!p.reorged) p.expired = true;
           delete p.planId;
           delete p.committed;
+          delete p.committedAt;
           continue;
         }
         if (attempt.stage === "COMMITTED" && attempt.final !== false) {
@@ -511,6 +550,9 @@ function sequenceCore(efs: Efs, journal: Journal) {
           delete p.reorged;
           delete p.expired;
           if (rec.publication !== undefined) p.publication = rec.publication;
+          // The first block seen committed at: reconcile's basis, at or after the inclusion block.
+          if (!p.committedAt && rec.basis)
+            p.committedAt = { blockNumber: rec.basis.blockNumber, blockHash: rec.basis.blockHash };
         } else if (rec.outcome === "NOT_COMMITTED_PROVEN") {
           // A part that was committed here, or already seen reorged, is proven dropped (REORGED_DROPPED): sending it
           // again is the person's call.
@@ -518,11 +560,13 @@ function sequenceCore(efs: Efs, journal: Journal) {
           else if (!p.reorged) p.expired = true; // sent, never committed, past its deadline
           delete p.planId;
           delete p.committed;
+          delete p.committedAt;
         } else {
           // Not decided, or reorged out after a COMMITTED: in flight again (sending it again is the user's
           // choice, never automatic). A reorg is remembered on the part, so every later progress says REORGED.
           if (rec.reason?.code === "REORGED") p.reorged = true;
           delete p.committed;
+          delete p.committedAt;
           p.final = false;
           open = true;
         }
@@ -530,7 +574,10 @@ function sequenceCore(efs: Efs, journal: Journal) {
       if (!open || Date.now() >= until) break;
       await sleep(o.pollMs ?? 1000);
     }
-    return save({ ...r, parts });
+    // The chain a part's block belongs to, recorded with the first one (a floor for other clients on this chain only).
+    const genesisHash =
+      r.genesisHash ?? (parts.some((p) => p.committedAt) ? await genesisOf(efs, o) : undefined);
+    return save({ ...r, parts, ...(genesisHash ? { genesisHash } : {}) });
   };
 
   return { derive, save, progress, snapshot, reconcileParts };

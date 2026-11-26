@@ -146,6 +146,8 @@ export interface Basis {
   /** The endpoint's LABEL, or its origin only when no label was given. A raw URL never appears in a result,
    *  cache, journal or export: URLs often carry API keys. */
   endpoint: string;
+  /** With `atLeast.blockHash`: the asked-for block is no longer canonical as this basis sees it (reconcile it). */
+  reorgedSince?: { blockNumber: bigint; blockHash: Hex };
 }
 
 export type PinResult =
@@ -164,6 +166,58 @@ export interface DeploymentInfo {
   contractsCommit: string;
 }
 ```
+
+### The read floor (0.1)
+
+A read is never served from a block older than one this client has already read (design: docs/design/read-floor.md,
+accepted 2026-11-26). After a save commits, a re-read through an endpoint that is behind would otherwise show the
+state from before the save, and the new tag would quietly not be there.
+- **The floor:**
+  - Each `Efs` instance keeps one floor per policy, raised by every VERIFIED pin to the block it served.
+  - `latest` must be at or above every floor; `safe` at or above the safe and finalized floors; `finalized` at or
+    above its own. A finalized read after a latest one is not held back: it asked for an older block.
+  - Only a pin raises a floor. Calls pinned to a block hash (pages, bodies) never do.
+  - The check runs in `efs.at` (`pinDeployment`), the one place every read and plan gets its block. It costs no
+    request on the happy path.
+- **Behind:** an endpoint whose head is below the floor fails over; that costs one `eth_getBlockByNumber` and none of
+  the pin's other calls. When every endpoint is behind, the pin polls within `reads.behindWaitMs` (default 4000;
+  polls at 0.5, 1, 2 and 3.5 s), then answers UNKNOWN with reason `BEHIND` (`retry: "transient"`). `reason.floor`
+  is the block it must reach; `reason.served` is each endpoint's head. Never a quiet older read. Suggested copy:
+  "This network hasn't caught up with your last save yet. Checking…", with Retry once it is UNKNOWN.
+- **Reorgs:**
+  - A block at the floor's height with another hash is served and becomes the floor.
+  - A head above the floor is served without checking the floor's hash. Newer canonical state is right even if the
+    floor's block was reorged out.
+  - A chain shorter than the floor (every endpoint below its height) can't be told apart from lag. It happens in a
+    shallow reorg after a missed slot (it clears at the next block), and on a dev chain that was reset or rewound.
+    It stays BEHIND: there is no time-based reset, because a stuck node would then serve old reads again.
+    `efs.resetReadFloor()` is the escape: for a local chain only, behind a "The test chain was reset? Start over"
+    action. A new client starts with no floor.
+- **A save's block:**
+  - `SequencePart.committedAt` is the reconcile basis at which the part was first seen committed (at or after its
+    inclusion), cleared when a reorg undoes it.
+  - `SequenceProgress.visibleAt` (COMPLETE) is the highest of them: a read at or after it sees the whole save.
+  - On this client the floor already holds it, because reconcile's pin raised the floor.
+  - The record also stores the chain's genesis block hash (`genesisHash`). It is read once per client, at the first
+    commit: one request.
+- **The journal raises the floor by itself:** when `pendingSequences`, `reconcileSequence` or `resume` reads a save
+  back (a reload, another tab), its highest `committedAt` becomes a floor on that client.
+  - **Same chain only:** the record's chain id and ledger must match, and its genesis hash must match the current
+    chain's. That hash is read once per client, and only when the save's block would hold a read back.
+  - **Why the genesis:** a reset or restarted local chain (`pnpm dev:reset`, a fresh `pnpm demo`) keeps its chain id
+    and deterministic addresses, but anvil sets the genesis timestamp at start, so the genesis hash is new. The old
+    save is then ignored rather than holding every read BEHIND.
+  - **Caveats:** two anvil starts in the same wall-clock second share a genesis; and an anvil fork reports the forked
+    chain's genesis.
+- **`atLeast`:** `CallOpts.atLeast?: { blockNumber: bigint; blockHash?: Hex }` holds any read or plan to a block this
+  client can't know about: a worker, another tab (post `efs.readFloor()` or a save's `visibleAt`), or a link that
+  carries a basis.
+  - With `blockHash`, one `eth_getBlockByNumber` per new head checks that the block is still canonical. When it isn't,
+    the read is served (newer and canonical) with `basis.reorgedSince`, so reconcile the save rather than say "not
+    there".
+  - A malformed `atLeast` is MISUSE.
+- **Replay:** the floor follows a transcript's recorded heads (epoch replay repeats an epoch's last head, never a
+  lower one). The recorded edit flows include the one genesis read.
 
 ## 3. Shared vocabulary
 
@@ -200,6 +254,8 @@ export interface Reason {
   detail?: string;          // free text for logs and support: not a contract
   revert?: RevertInfo;      // the ledger refused the call (a simulated revert)
   wallet?: WalletMismatch;  // on WALLET_MISMATCH
+  floor?: { blockNumber: bigint; blockHash?: Hex };              // on BEHIND: the block the read must reach
+  served?: readonly { endpoint: string; blockNumber: bigint }[]; // on BEHIND: each endpoint's head
 }
 export interface RevertInfo {
   selector: Hex;                // always
@@ -218,6 +274,7 @@ export type ReasonCode =
   | "NOT_YET_DECIDABLE" | "REORGED_DROPPED" | "EXPIRED"
   | "WALLET_UNAUTHORIZED" | "WALLET_UNSUPPORTED" | "WALLET_INVALID_PARAMS"        // NOT_SENT
   | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED"                         // AMBIGUOUS
+  | "BEHIND"                    // every endpoint behind the read floor or atLeast (floor, served)
   | (string & Record<never, never>);    // open union
 ```
 

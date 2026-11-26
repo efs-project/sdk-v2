@@ -29,9 +29,9 @@
       "blockNumber": {
         "$efs:bigint": "79"
       },
-      "blockHash": "0x7842ec3fdbd577e735c4ad81e0bf98e42d519de8b5aad13ca3399a09914487ad",
+      "blockHash": "0x774efc26557bddb488cb43af6721b30a489ce69ea44c5309f755d34fdb4376bf",
       "timestamp": {
-        "$efs:bigint": "1795672303"
+        "$efs:bigint": "1795691776"
       },
       "executionSet": "0x0788d65963e48f73fe655a469cc2110365bc9e498cc37c56030d60ac3a9cb99d",
       "admissions": {

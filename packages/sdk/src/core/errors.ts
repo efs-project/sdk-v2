@@ -15,6 +15,12 @@ export interface Reason {
   detail?: string;
   /** Set when the ledger refused the call (a simulated revert): which error, as far as the vendored tables know it. */
   revert?: RevertInfo;
+  /**
+   * Set on BEHIND: the lowest block the read may be served at (the highest this client has already read, or the
+   * caller's `atLeast`), and the head each endpoint offered instead.
+   */
+  floor?: { blockNumber: bigint; blockHash?: Hex };
+  served?: readonly { endpoint: string; blockNumber: bigint }[];
   /** Set on WALLET_MISMATCH: the chain and account the plan needs, and what the wallet is on now. */
   wallet?: WalletMismatch;
   /**
@@ -86,6 +92,11 @@ export type ReasonCode =
   | "EXPIRED"
   | "BUSY"
   | "NOT_YET_DECIDABLE"
+  /**
+   * Every endpoint offered a block older than one this client has already read (or than the read's `atLeast`), and
+   * none caught up within the short wait: UNKNOWN rather than an older read. Retry; see `floor` and `served`.
+   */
+  | "BEHIND"
   | (string & Record<never, never>);
 
 export function reason(code: ReasonCode, retry: Reason["retry"], detail?: string): Reason {
@@ -162,6 +173,12 @@ export interface AbortSignalLike {
 }
 export interface CallOpts {
   signal?: AbortSignalLike;
+  /**
+   * Read at this block or a later one: for a block this client can't know about (another tab, a worker, a link that
+   * carries a basis, a save's `visibleAt`). Below it the read fails over, waits briefly, then is UNKNOWN BEHIND. With
+   * `blockHash`, a basis whose canonical block at that height is another says so in `basis.reorgedSince`.
+   */
+  atLeast?: { blockNumber: bigint; blockHash?: Hex };
 }
 
 /** Throw the caller's own abort reason (an AbortError) if the signal has fired. */

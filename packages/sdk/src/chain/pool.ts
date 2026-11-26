@@ -2,8 +2,10 @@
 // An ordered list of RPC endpoints for ONE chain. A logical read runs on one endpoint at one basis (block hash);
 // if that endpoint fails, the whole read restarts on the next endpoint at a fresh basis. Results are never
 // stitched across endpoints or bases. Every endpoint is checked against the expected chain id before first use.
+
 import { type CallOpts, type Reason, reason, throwIfAborted } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
+import { ReadFloor } from "./floor.js";
 import type { RpcOutcome, RpcPort, RpcRequest } from "./rpc.js";
 
 export interface Attempt {
@@ -28,6 +30,12 @@ export interface Basis {
   admissions?: bigint;
   /** Label or origin of the endpoint that served this basis. Never a URL. */
   endpoint: string;
+  /**
+   * Set when the read asked for `atLeast` with a block hash, and the canonical block at that height (as this basis
+   * sees it) is another one: the asked-for block was reorged out. The basis is newer and canonical; a save that was
+   * at that block may be gone, so reconcile it rather than say "not there".
+   */
+  reorgedSince?: { blockNumber: bigint; blockHash: Hex };
 }
 export type BasisPolicy = "latest" | "safe" | "finalized";
 
@@ -42,11 +50,18 @@ export interface Pool {
   readonly timeoutMs: number;
   /** Per-endpoint chain check results, cached for this pool's lifetime. */
   readonly checked: Map<string, Promise<Reason | null>>;
+  /** The read floor of the Efs instance that owns this pool (chain/floor.ts). */
+  readonly floor: ReadFloor;
 }
 
-export function createPool(chainId: number, ports: readonly RpcPort[], timeoutMs = 10_000): Pool {
+export function createPool(
+  chainId: number,
+  ports: readonly RpcPort[],
+  timeoutMs = 10_000,
+  floor: ReadFloor = new ReadFloor(),
+): Pool {
   if (ports.length === 0) throw new TypeError("at least one RPC endpoint is required");
-  return { chainId, ports, timeoutMs, checked: new Map() };
+  return { chainId, ports, timeoutMs, checked: new Map(), floor };
 }
 
 /** One endpoint, used for one logical read. */

@@ -61,6 +61,11 @@ export interface SequencePart {
   checkedAt?: { blockNumber: bigint; timestamp: bigint };
   /** True once the ledger admitted this part's plan. */
   committed?: boolean;
+  /**
+   * The block reconcile first saw this part committed at (its basis: at or after the inclusion block). Cleared when a
+   * reorg undoes the admission. A read at or after it sees this part.
+   */
+  committedAt?: { blockNumber: bigint; blockHash: Hex };
   /** True once that admission is at a finalized block. */
   final?: boolean;
   publication?: bigint;
@@ -131,6 +136,11 @@ export interface SequenceRecord {
   realmId: Hex;
   ledger: Address;
   account: Address;
+  /**
+   * The chain's genesis block hash, recorded with the first `committedAt`: a part's block is a read floor only on the
+   * chain it was recorded on (a reset dev chain keeps its chain id and addresses, never its genesis).
+   */
+  genesisHash?: Hex;
   parts: readonly SequencePart[];
   state: SequenceState;
   /** COMPLETE and every part's admission at a finalized block ("Saved" rather than "Saved · confirming"). */

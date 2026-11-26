@@ -3,6 +3,7 @@
 // read pins the deployment (pin.ts) and later reads reuse that result.
 
 import { type ByteStore, memoryByteStore } from "./cache/stores.js";
+import { ReadFloor, type ReadFloors } from "./chain/floor.js";
 import { type Basis, type BasisPolicy, createPool, type Pool } from "./chain/pool.js";
 import { type FetchLike, type RequestEvent, type RpcEndpoint, toPort } from "./chain/rpc.js";
 import { type CallOpts, EfsFault } from "./core/errors.js";
@@ -55,6 +56,11 @@ export interface EfsConfig {
    * never read from a store.
    */
   cache?: { bytes?: ByteStore };
+  /**
+   * The read floor (a read is never served from a block older than one this client has already read).
+   * `behindWaitMs`: how long a read polls when every endpoint is behind, before it is UNKNOWN BEHIND. Default 4000.
+   */
+  reads?: { behindWaitMs?: number };
 }
 
 export interface Capabilities {
@@ -101,8 +107,19 @@ export interface Efs {
   readonly gateways: GatewayConfig;
   /** Verify the deployment against the chain. Runs once; a VERIFIED result is reused. */
   pin(o?: CallOpts): Promise<PinResult>;
-  /** A fresh basis for one logical read (pins first if needed). */
+  /**
+   * A fresh basis for one logical read (pins first if needed), never older than a block this client has already
+   * read under the same or a stricter policy (`latest` ≥ `safe` ≥ `finalized`), nor than `o.atLeast`.
+   */
   at(policy?: BasisPolicy, o?: CallOpts): Promise<PinResult>;
+  /** The highest block this client has read, per policy: post it to a worker or another tab as `atLeast`. */
+  readFloor(): ReadFloors;
+  /**
+   * Forget the read floor, and ignore the saves the journal has offered so far as floors on this instance: for a
+   * dev chain that was reset or rewound (`anvil_reset`, `evm_revert`), where every endpoint is now below a block
+   * this client read and reads stay BEHIND. Never needed on a live chain; a new client starts with no floor.
+   */
+  resetReadFloor(): void;
   /** @internal for SDK modules (files, actions): the endpoint pool and fetch implementation. */
   readonly _internal: {
     pool: Pool;
@@ -160,10 +177,17 @@ export function createEfs(config: EfsConfig): Efs {
     ...(config.fetch ? { fetch: config.fetch } : {}),
     ...(config.onRequest ? { onRequest: config.onRequest } : {}),
   };
+  let floor: ReadFloor;
+  try {
+    floor = new ReadFloor(config.reads?.behindWaitMs ?? 4000);
+  } catch (e) {
+    throw new EfsFault("MISUSE", e instanceof Error ? e.message : String(e));
+  }
   const pool = createPool(
     deployment.chainId,
     config.rpcs.map((e) => toPort(e, portOpts)),
     config.timeoutMs ?? 10_000,
+    floor,
   );
   const cache = { bytes: config.cache?.bytes ?? memoryByteStore() };
   const pins = new PinMemory();
@@ -197,6 +221,8 @@ export function createEfs(config: EfsConfig): Efs {
     // Every logical read takes a pin at its own basis. A VERIFIED pin is remembered for that endpoint and block
     // hash only, so a new block (or another endpoint) is verified again in full.
     at: (policy = "latest", o) => pinDeployment(pool, deployment, policy, o, pins),
+    readFloor: () => floor.snapshot(),
+    resetReadFloor: () => floor.reset(),
     _internal: { pool, fetch: config.fetch, onRequest: config.onRequest, cache },
   };
   return Object.freeze(efs);
