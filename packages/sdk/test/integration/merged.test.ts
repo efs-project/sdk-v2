@@ -227,6 +227,23 @@ describe("topicItemsMerged (fixture)", () => {
     expect(page.dedup.dropped).toBe(0);
   });
 
+  it("an earlier author's yes AT the viewed topic beats a later author's 'not this' there: the thing shows through its own list", async () => {
+    // Ella (lens 0) files t at /mn1, then Finn (lens 1) says "not this" at /mn1 and files t at /mn2 (the newest).
+    // The /mn2 row is decided by Finn, so lens[0..1] is asked at /mn1: Finn's MASKED head hides that row. It is not
+    // marked seen, so the older /mn1 row, where the Lens law gives Ella's yes, still shows: spec 3.1's answer.
+    await same(we, ["mn1"], ["mn2"]);
+    await tag(we, ["mn1"], 110);
+    await deny(wf, ["mn1"], 110);
+    await tag(wf, ["mn2"], 110);
+    for (const view of ["mine", "everyone"] as const) {
+      const page = present(await topicItemsMerged(efs, ["mn1"], { view, lens: lens(E, F) }));
+      expect(rowsOf(page)).toEqual([[thing(110), "self"]]);
+      expect(page.rows[0]?.decider).toMatchObject({ kind: "lens", index: 0, author: E });
+      expect(page.counts.hiddenAtViewed).toBe(1);
+      expect(page.dedup.dropped).toBe(0);
+    }
+  });
+
   it("Everyone: a public-tier row from a synonym is asked of the whole Lens at the viewed topic", async () => {
     await same(we, ["mg1"], ["mg2"]);
     await tag(wg, ["mg2"], 60); // Gus is in nobody's Lens: the public tier
