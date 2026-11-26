@@ -29,7 +29,7 @@ import { checkedGasSetup } from "../files/plan.js";
 import { ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { positionKey } from "../protocol/keys.js";
-import { chainStatus, headState } from "../protocol/status.js";
+import { chainStatus, headState, neverBoundHead } from "../protocol/status.js";
 import {
   badReply,
   callOf,
@@ -183,7 +183,7 @@ export function planBroader(
 type Spec =
   | { purpose: "label"; topic: TagPlace; lang: string; text: string | undefined }
   | { purpose: "same" | "broader"; topic: readonly string[]; other: readonly string[] };
-type RawHead = { state: number; revision: bigint; target: Hex };
+type RawHead = { state: number; revision: bigint; target: Hex; targetKind: number };
 const PURPOSE = {
   label: PURPOSES.property,
   same: PURPOSES.same,
@@ -314,6 +314,7 @@ async function plan(
             state: Number(mine.state),
             revision: BigInt(mine.revision),
             target: lower(mine.target),
+            targetKind: Number(mine.targetKind),
           },
         },
       };
@@ -389,7 +390,16 @@ async function plan(
         : first
           ? "bindBroaderFresh"
           : "restoreBroader";
-  actions.push({ action: statement, body: "0x", firstStatement: first, bindRow: row });
+  actions.push({
+    action: statement,
+    body: "0x",
+    firstStatement: first,
+    bindRow: row,
+    // INTERIM: fresh slots a later yes writes beyond its row (a never-bound head; a history word it opens)
+    ...(!remove && !first
+      ? { headRevision: head.revision, ...(neverBoundHead(head) ? { neverBound: true } : {}) }
+      : {}),
+  });
 
   // ---- parts
   const g = await checkedGasSetup(efs, o);

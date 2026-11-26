@@ -59,7 +59,10 @@ export const publish = (
 /** A body-less action (CREATE, BIND, UNBIND, RELEASE). */
 export const plain = (
   a: Partial<ActionData>,
-  extra: Pick<PlannedAction, "bindRow" | "group" | "firstStatement"> = {},
+  extra: Pick<
+    PlannedAction,
+    "bindRow" | "group" | "firstStatement" | "neverBound" | "headRevision"
+  > = {},
 ): PlannedAction => ({ action: { ...blank, ...a }, body: "0x", ...extra });
 
 export interface GasSetup {

@@ -395,6 +395,16 @@ const files = {};
       throw new Error(`codegen: gas/model.json ${where} must be a number`);
     return v;
   };
+  const fees =
+    JSON.parse(readFileSync(join(IN, "test/vectors/gas-schedules.json"), "utf8")).schedules ?? {};
+  const freshSlotOf = (name) => {
+    const f = fees[name]?.freshSlot;
+    if (typeof f?.executionGas !== "number")
+      throw new Error(
+        `codegen: test/vectors/gas-schedules.json has no freshSlot for schedule ${name}`,
+      );
+    return { executionGas: f.executionGas, stateGas: f.stateGas ?? 0 };
+  };
   const schedules = {};
   for (const [name, sch] of Object.entries(g.schedules ?? {})) {
     if (!Array.isArray(sch.hardforks) || !sch.hardforks.length)
@@ -427,6 +437,27 @@ const files = {};
           }
         : {}),
     };
+  }
+  // INTERIM (until the contracts' list release prices these in gas/model.json; contracts 6d11858, figure (ii)), at the
+  // schedule's fresh slot (test/vectors/gas-schedules.json freshSlot), at or above the measured deltas:
+  // - interimNeverBoundBind: a BIND on a head that never bound writes head.target fresh in the kernel (LedgerApply),
+  //   one slot in E (all gas where the cap counts all gas, execution where it counts execution), one whole slot in
+  //   the all-gas total, and one slot of execution in K (the kernel's own spend; measured about 20.0k prague, 10.1k
+  //   amsterdam);
+  // - interimHistoryWord: a later BIND that opens the binding's next history word in the index (a callback: E and the
+  //   total, never K), where its row's own measurement did not.
+  for (const [name, sch] of Object.entries(schedules)) {
+    const slot = freshSlotOf(name);
+    const whole = slot.executionGas + slot.stateGas;
+    const e = sch.executionGas ? slot.executionGas : whole;
+    (sch.executionGas ?? sch.constants).interimNeverBoundBind = e;
+    (sch.executionGas ?? sch.constants).interimHistoryWord = e;
+    if (sch.executionGas) {
+      sch.constants.interimNeverBoundBind = whole;
+      sch.constants.interimHistoryWord = whole;
+    }
+    sch.floor.kernel.interimNeverBoundBind = slot.executionGas;
+    sch.floor.kernel.interimHistoryWord = 0;
   }
   if (!schedules.prague) throw new Error("codegen: gasModel has no prague schedule");
   const env = g.envelope ?? {};
@@ -473,16 +504,10 @@ const files = {};
   src += `export const GAS_READS = ${literal({ callGasCap: rd.callGasCap, marginPercent: rd.marginPercent, recommended: rd.recommended })} as const;\n\n`;
   // What a fresh storage slot costs on each schedule (execution + state gas): the chain's own pricing, which the
   // fee-schedule check measures to confirm the deployment document's schedule (src/chain/schedule.ts).
-  const fees =
-    JSON.parse(readFileSync(join(IN, "test/vectors/gas-schedules.json"), "utf8")).schedules ?? {};
   const fresh = {};
   for (const name of Object.keys(schedules)) {
-    const f = fees[name]?.freshSlot;
-    if (typeof f?.executionGas !== "number")
-      throw new Error(
-        `codegen: test/vectors/gas-schedules.json has no freshSlot for schedule ${name}`,
-      );
-    fresh[name] = f.executionGas + (f.stateGas ?? 0);
+    const f = freshSlotOf(name);
+    fresh[name] = f.executionGas + f.stateGas;
   }
   src +=
     "/** A fresh storage slot's whole price (execution + state gas) per fee schedule (test/vectors/gas-schedules.json). */\n";
