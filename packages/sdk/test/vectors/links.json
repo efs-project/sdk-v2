@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk/vectors/links/1",
-  "note": "The link grammar (tag model spec §5). `fold` names the fold step used: `none` (no fold given) or `ascii-test` (a stand-in for the tests only: lowercase A-Z and turn a run of spaces into one underscore; the real rule is efs/fold/1, still to be chosen). `expect` is the parse: status, then target and canonical, or rule, segment and detail (and, for bad-word, `word`: the segment as decoded, not folded). A `?lens=` parameter (1 to 64 principals, each once: a 20-byte address for an account, else a 32-byte principal id) is the only one defined, on every kind but revisions.",
+  "note": "The link grammar (tag model spec §5). `fold` names the fold step used: `none` (no fold given) or `ascii-test` (a stand-in for the tests only: lowercase A-Z and turn a run of spaces into one underscore; the real rule is efs/fold/1, still to be chosen). `expect` is the parse: status, then target and canonical, or rule, segment and detail (and, for bad-word, `word`: the segment as decoded, not folded, and `code`: the chain's own refusal code whenever the word grammar refused it; checkWord runs on what the fold produced, so `none` applies only the fold-independent rules). A `?lens=` parameter (1 to 64 principals, each once: a 20-byte address for an account, else a 32-byte principal id) is the only one defined, on every kind but revisions.",
   "cases": [
     {
       "label": "object link",
@@ -222,7 +222,8 @@
         "rule": "bad-word",
         "segment": 0,
         "detail": "slash",
-        "word": "cars/tesla"
+        "word": "cars/tesla",
+        "code": 3
       }
     },
     {
@@ -243,7 +244,8 @@
         "rule": "bad-word",
         "segment": 1,
         "detail": "dot",
-        "word": ".."
+        "word": "..",
+        "code": 4
       }
     },
     {
@@ -255,7 +257,8 @@
         "rule": "bad-word",
         "segment": 1,
         "detail": "reserved-tilde",
-        "word": "~x"
+        "word": "~x",
+        "code": 5
       }
     },
     {
@@ -267,7 +270,8 @@
         "rule": "bad-word",
         "segment": 1,
         "detail": "address-shaped",
-        "word": "0xabcdef0123456789abcdef0123456789abcdef01"
+        "word": "0xabcdef0123456789abcdef0123456789abcdef01",
+        "code": 6
       }
     },
     {
@@ -279,7 +283,8 @@
         "rule": "bad-word",
         "segment": 0,
         "detail": "address-shaped",
-        "word": "0XABCDEF0123456789ABCDEF0123456789ABCDEF01"
+        "word": "0XABCDEF0123456789ABCDEF0123456789ABCDEF01",
+        "code": 6
       }
     },
     {
@@ -311,7 +316,8 @@
         "rule": "bad-word",
         "segment": 0,
         "detail": "length",
-        "word": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "word": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "code": 1
       }
     },
     {
@@ -340,7 +346,8 @@
         "rule": "bad-word",
         "segment": 1,
         "detail": "control",
-        "word": "te\u0000sla"
+        "word": "te\u0000sla",
+        "code": 3
       }
     },
     {
@@ -352,7 +359,138 @@
         "rule": "bad-word",
         "segment": 1,
         "detail": "slash",
-        "word": "Straße/"
+        "word": "Straße/",
+        "code": 3
+      }
+    },
+    {
+      "label": "a bidi override can't be in a word (the chain's class 7)",
+      "input": "a%E2%80%AEb",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "refused-character",
+        "word": "a\u202eb",
+        "code": 7
+      }
+    },
+    {
+      "label": "a zero-width joiner can't be in a word",
+      "input": "cars/a%E2%80%8Db",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "refused-character",
+        "word": "a\u200db",
+        "code": 7
+      }
+    },
+    {
+      "label": "a no-break space can't be in a word",
+      "input": "a%C2%A0b",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "refused-character",
+        "word": "a\u00a0b",
+        "code": 7
+      }
+    },
+    {
+      "label": "a soft hyphen can't be in a word",
+      "input": "a%C2%ADb",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "refused-character",
+        "word": "a\u00adb",
+        "code": 7
+      }
+    },
+    {
+      "label": "a variation selector can't be in a word",
+      "input": "a%EF%B8%8Fb",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "refused-character",
+        "word": "a\ufe0fb",
+        "code": 7
+      }
+    },
+    {
+      "label": "a C1 control can't be in a word",
+      "input": "a%C2%85b",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "refused-character",
+        "word": "a\u0085b",
+        "code": 7
+      }
+    },
+    {
+      "label": "a noncharacter can't be in a word",
+      "input": "a%EF%BF%BEb",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "refused-character",
+        "word": "a\ufffeb",
+        "code": 7
+      }
+    },
+    {
+      "label": "U+FFFD (what a lone surrogate decodes to) can't be in a word",
+      "input": "a%EF%BF%BDb",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "refused-character",
+        "word": "a\ufffdb",
+        "code": 7
+      }
+    },
+    {
+      "label": "a backslash can't be in a word (the chain's class 3, a forbidden ASCII byte)",
+      "input": "a%5Cb",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 0,
+        "detail": "forbidden-ascii",
+        "word": "a\\b",
+        "code": 3
+      }
+    },
+    {
+      "label": "grammar only (no fold) leaves a bidi control to the fold: a fold may remove it",
+      "input": "a%E2%80%AEb",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["a\u202eb"]
+        },
+        "canonical": "a%E2%80%AEb"
       }
     },
     {

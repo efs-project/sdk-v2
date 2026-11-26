@@ -32,6 +32,7 @@ import { utf8Encode } from "../core/platform.js";
 import { foldWord } from "./fold.js";
 import { checkName, decodeScalars, type NameRule } from "./name.js";
 import { parseSegment, wireSegment } from "./segment.js";
+import { checkWord } from "./word.js";
 
 /** An object by subject id. Files open from it today; folders will reuse the same form. */
 export interface ObjectLink {
@@ -124,9 +125,18 @@ export type LinkParse =
    * `segment` (0-based) is the segment that breaks `rule`; `detail` is the name rule or the fold's rule. For
    * `bad-word`, `word` is that segment's text as the link spelled it, percent-decoded and not folded, so a page can
    * name it ("… doesn't accept: Straße"). It may hold the very characters that broke the rule (a control or bidi
-   * character, a slash): show it escaped or isolated, never as markup.
+   * character, a slash): show it escaped or isolated, never as markup. `code` is the chain's own refusal code
+   * (checkWord, TopicProfile: 1 length, 2 malformed UTF-8, 3 a forbidden ASCII byte, 4 a dot word, 5 a leading `~`,
+   * 6 address-shaped, 7 a refused character) whenever the word grammar refused it; absent when the fold refused.
    */
-  | { status: "INVALID"; rule: LinkRule; segment?: number; detail?: string; word?: string };
+  | {
+      status: "INVALID";
+      rule: LinkRule;
+      segment?: number;
+      detail?: string;
+      word?: string;
+      code?: number;
+    };
 
 export type LinkRule =
   | "empty"
@@ -340,9 +350,30 @@ const hasControl = (w: string): boolean =>
     return c < 0x20 || c === 0x7f;
   });
 
+/** The chain's code (checkWord) for each of the link grammar's own word rules, and a name for the codes it lacks. */
+const RULE_CODE: Readonly<Record<string, number>> = {
+  length: 1,
+  slash: 3,
+  control: 3,
+  unfolded: 3,
+  dot: 4,
+  "reserved-tilde": 5,
+  "address-shaped": 6,
+};
+const CODE_NAME: Readonly<Record<number, string>> = {
+  1: "length",
+  2: "malformed-utf8",
+  3: "forbidden-ascii",
+  4: "dot",
+  5: "reserved-tilde",
+  6: "address-shaped",
+  7: "refused-character",
+};
+
 /**
  * The fold-independent word rules (the chain's, on every word of a topic path): 1–255 bytes, no `/`, no ASCII
  * control, not `.` or `..`, not starting with `~`, not address-shaped. `typed` also allows what a fold will remove.
+ * What a fold produced must also pass the chain's whole grammar (checkWord), which these rules are a part of.
  */
 function wordRule(w: string, typed: boolean): string | null {
   const n = utf8Encode(w).length;
@@ -376,15 +407,29 @@ function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts)
   }
   const step = o.fold === null ? undefined : (o.fold ?? foldWord);
   const words: string[] = [];
+  const bad = (i: number, seg: string, detail: string, code?: number): LinkParse => ({
+    status: "INVALID",
+    rule: "bad-word",
+    segment: i,
+    detail,
+    word: seg,
+    ...(code !== undefined ? { code } : {}),
+  });
   for (const [i, seg] of decoded.entries()) {
     const typed = wordRule(seg, true);
-    if (typed) return { status: "INVALID", rule: "bad-word", segment: i, detail: typed, word: seg };
+    if (typed) return bad(i, seg, typed, RULE_CODE[typed]);
+    // Grammar only (fold: null): the typed text is not a word yet, and what the chain refuses in it depends on the
+    // fold (one may remove a bidi control or a joiner), so only the fold-independent rules apply; every read and
+    // planner folds and checks the word in full before it becomes an id.
     if (!step) continue;
     const f = step(seg);
-    if (!f.ok)
-      return { status: "INVALID", rule: "bad-word", segment: i, detail: f.rule, word: seg };
-    const after = wordRule(f.word, false); // what the fold produced is checked again
-    if (after) return { status: "INVALID", rule: "bad-word", segment: i, detail: after, word: seg };
+    if (!f.ok) return bad(i, seg, f.rule);
+    // What the fold produced is a word: the link grammar's names first, then the chain's whole grammar, so a link
+    // never names a word the chain can't hold (a bidi override, a joiner, a backslash, a no-break space…).
+    const after = wordRule(f.word, false);
+    if (after) return bad(i, seg, after, RULE_CODE[after]);
+    const chain = checkWord(f.word);
+    if (!chain.ok) return bad(i, seg, CODE_NAME[chain.code] ?? `code-${chain.code}`, chain.code);
     words.push(f.word);
   }
   const target: TopicLink = {
