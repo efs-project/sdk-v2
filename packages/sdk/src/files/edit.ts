@@ -54,9 +54,9 @@ import {
   blank,
   buildContent,
   checkContent,
+  checkedGasSetup,
   type ExternalContent,
   type FilesTypes,
-  gasSetup,
   publish,
   tooManyBytes,
 } from "./plan.js";
@@ -200,16 +200,16 @@ export async function planEditFile(
   const asked = askedMediaType(input.mediaType);
   const me = lower(writer.principal) as PrincipalId;
   const lens = input.lens ?? efs.lens.default;
-  const g = gasSetup(d, o);
-  if (!g.ok) return { kind: "efs.editPlan", status: "UNKNOWN", reason: g.reason };
-  const gas = g.gas;
-  const model = gas.model;
   const content = input.content;
   checkContent(content);
-
   const maxParts = o.maxParts ?? 64;
   const huge = tooManyBytes(content, maxParts, d.limits.maxBodyBytesPerPublication);
   if (huge) return { kind: "efs.editPlan", status: "TOO_LARGE", reason: huge };
+  // The caller's input is checked above; from here on the chain is asked (the fee schedule first).
+  const g = await checkedGasSetup(efs, o);
+  if (!g.ok) return { kind: "efs.editPlan", status: "UNKNOWN", reason: g.reason };
+  const gas = g.gas;
+  const model = gas.model;
 
   // ---- one basis: the Lens's HEAD (the base check) and the editor's own HEAD binding (the CAS revision)
   const pin = await efs.at("latest", o);

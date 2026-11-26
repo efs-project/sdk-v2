@@ -268,6 +268,7 @@ export interface Reason {
   wallet?: WalletMismatch;  // on WALLET_MISMATCH
   floor?: { blockNumber: bigint; blockHash?: Hex };              // on BEHIND: the block the read must reach
   served?: readonly { endpoint: string; blockNumber: bigint }[]; // on BEHIND: each endpoint's head
+  feeSchedule?: { document: string; chain: string | null; freshSlotGas: bigint }; // the document is not the chain's
 }
 export interface RevertInfo {
   selector: Hex;                // always
@@ -833,6 +834,22 @@ and the deployment's fee profile (`gasLimitOf`). A size refusal is NOT_SENT `OVE
     send keeps the 2^24 clamp, refusing an estimate over it.
   - **What hasn't run yet:** the SDK's own send path on Sepolia, because no v2 deployment exists there. The fixture's
     deployment named amsterdam tests it through the send path, and Foundry's amsterdam profile has no reservoir.
+- **The fee-schedule check:** a client confirms that the chain prices storage the way the deployment document says,
+  before its first plan or send. A document naming the wrong schedule is the silent-mismatch shape: prague on a chain
+  that prices by EIP-8037 would plan every part with the wrong model and clamp every limit at 2^24.
+  - **The probe:** one deployless `eth_call` with a gas limit of 2,000,000, under 2^24, so no client holds state
+    gas in a reservoir. It measures a fresh, cold `SSTORE` with `GAS` before and after. A measured opcode price is the
+    same whether or not a client applies the cap to `eth_call`.
+  - **Classification:** within bands of each schedule's price (`FRESH_SLOT_GAS`, from the contracts'
+    `test/vectors/gas-schedules.json`): prague about 22,100, amsterdam about 110,020 (12,100 + 97,920 state gas).
+    Outside every band is no known schedule, never the nearest.
+  - **A mismatch:** the planners (UNKNOWN), `planPublication` (REFUSED) and sends (NOT_SENT) refuse with
+    `UNSUPPORTED_PROFILE` (`retry: "never"`), naming both (`document: prague, chain: amsterdam`), with
+    `reason.feeSchedule: { document, chain, freshSlotGas }`. The measured schedule is never adopted.
+  - **When it runs:** on the write path only (planners, `planPublication`, `send`, batches), never on reads.
+  - **Caching:** a measurement is kept per client for 10 minutes, so a chain that forks under a long-lived page is
+    measured again. A failed probe is UNKNOWN for that call, measured again next time, and never kept.
+  - **Cost:** one request per client per 10 minutes on the write path. Recorded save flows carry it once.
 - **EIP-5792 batches:** `wallet_sendCalls` carries no gas limits; the wallet sets each call's. The SDK refuses only by
   the same rule, on the first part. On Glamsterdam, a wallet that estimates its own gas must do the same as above:
   never clamp at 2^24, and leave the state gas room above it. A wallet that clamps runs large-state parts out of gas.

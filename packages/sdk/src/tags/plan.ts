@@ -28,7 +28,7 @@ import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import { type Address, type Hex, lower, type PrincipalId } from "../core/hex.js";
 import { type Ctx, EMPTY_BASIS, type FileRef, type RevisionRef } from "../files/bytes.js";
 import { decodeCreator, type FolderRef, subjectInfoCall } from "../files/folders.js";
-import { type GasOpts, gasSetup } from "../files/plan.js";
+import { checkedGasSetup, type GasOpts } from "../files/plan.js";
 import { ledgerViewsAbi, topicLookupReaderAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { checkStableWord, foldWord } from "../names/fold.js";
@@ -562,7 +562,7 @@ async function plan(
   if (refused.length) return { kind: "efs.tagPlan", status: "REFUSED", refused, basis };
 
   // ---- parts
-  const g = gasSetup(d, o);
+  const g = await checkedGasSetup(efs, o);
   if (!g.ok) return { kind: "efs.tagPlan", status: "UNKNOWN", reason: g.reason, basis };
   const gas = g.gas;
   const all = [...registration, ...statements];

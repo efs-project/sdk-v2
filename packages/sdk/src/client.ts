@@ -2,6 +2,7 @@
 // createEfs: an immutable client for one deployment. No network or storage I/O happens at creation; the first
 // read pins the deployment (pin.ts) and later reads reuse that result.
 
+import type { ScheduleCache } from "./actions/schedule.js";
 import { type ByteStore, memoryByteStore } from "./cache/stores.js";
 import { ReadFloor, type ReadFloors } from "./chain/floor.js";
 import { type Basis, type BasisPolicy, createPool, type Pool } from "./chain/pool.js";
@@ -126,6 +127,8 @@ export interface Efs {
     fetch: FetchLike | undefined;
     onRequest: ((e: RequestEvent) => void) | undefined;
     cache: { bytes: ByteStore };
+    /** The last fee-schedule measurement (actions/schedule.ts): write path only. */
+    schedule: ScheduleCache;
   };
 }
 
@@ -227,7 +230,7 @@ export function createEfs(config: EfsConfig): Efs {
     at: (policy = "latest", o) => pinDeployment(pool, deployment, policy, o, pins),
     readFloor: () => floor.snapshot(),
     resetReadFloor: () => floor.reset(),
-    _internal: { pool, fetch: config.fetch, onRequest: config.onRequest, cache },
+    _internal: { pool, fetch: config.fetch, onRequest: config.onRequest, cache, schedule: {} },
   };
   return Object.freeze(efs);
 }

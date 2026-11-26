@@ -10,6 +10,7 @@ import type { Hex } from "../core/hex.js";
 import { setTimer } from "../core/platform.js";
 import { planGasLimit } from "./gaslimit.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
+import { scheduleCheck } from "./schedule.js";
 import {
   classifyWalletError,
   estimate,
@@ -96,6 +97,9 @@ export async function sendPlansAsBatch(
           const twin = await inFlightTwin(journal, lockKey(first), p);
           if (twin) return { kind: "efs.sendBatch", status: "NOT_SENT", reason: twinReason(twin) };
         }
+        // The document's fee schedule must be the chain's: the planning and the gas limits are set by it.
+        const fee = await scheduleCheck(efs, o);
+        if (!fee.ok) return { kind: "efs.sendBatch", status: "NOT_SENT", reason: fee.reason };
         // Only the first part can be simulated now: later parts need the earlier nonces used first. The split
         // planned every part under the gas budget.
         const est = await estimate(efs, first, o);

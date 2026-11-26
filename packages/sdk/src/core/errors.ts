@@ -21,6 +21,12 @@ export interface Reason {
    */
   floor?: { blockNumber: bigint; blockHash?: Hex };
   served?: readonly { endpoint: string; blockNumber: bigint }[];
+  /**
+   * Set when the deployment document's fee schedule does not match the chain (UNSUPPORTED_PROFILE): the document's
+   * schedule, the one the chain's storage pricing matches (null: none this SDK knows), and the measured price of a
+   * fresh storage slot.
+   */
+  feeSchedule?: { document: string; chain: string | null; freshSlotGas: bigint };
   /** Set on WALLET_MISMATCH: the chain and account the plan needs, and what the wallet is on now. */
   wallet?: WalletMismatch;
   /**

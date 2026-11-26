@@ -10,6 +10,7 @@ import { type CallOpts, reason } from "../core/errors.js";
 import { type Address, type Hex, lower } from "../core/hex.js";
 import { ingressAbi, ledgerAbi } from "../generated/abis.js";
 import { keyPrincipal, nativeIntentDigest } from "../protocol/keys.js";
+import { scheduleCheck } from "./schedule.js";
 import type { ActionData, EffectView, Plan, PlanResult } from "./types.js";
 
 /** The ABI type of Action[] exactly as `execute` declares it (taken from the generated ABI, not hand-written). */
@@ -91,6 +92,14 @@ export async function planPublication(
       ),
     };
   }
+  // The document's fee schedule must be the chain's (one measurement per client, kept 10 minutes).
+  const fee = await scheduleCheck(efs, o);
+  if (!fee.ok)
+    return {
+      kind: "efs.planResult",
+      status: fee.failed ? "UNKNOWN" : "REFUSED",
+      reason: fee.reason,
+    };
   const pin = await efs.at("latest", o);
   if (pin.status !== "VERIFIED")
     return {
