@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error: a plain ES module from the contracts (no types), vendored with the vectors it wrote.
-import { shapes } from "../../../protocol-inputs/contracts/tools/gas-plan.mjs";
+import { planner, shapes } from "../../../protocol-inputs/contracts/tools/gas-plan.mjs";
 import {
   type BindRow,
   budgetOf,
@@ -152,5 +152,55 @@ describe("the planning rule reproduces the contracts' shared verdicts", () => {
         expect(r.parts[0]?.actions.length).toBe(v.k * v.units);
       });
     }
+  }
+});
+
+describe("statements about topics are priced by their own rows, as the reference planner prices them", () => {
+  // contracts 0fb4804: a label (PROPERTY), "same as" and "broader", first and later; a label with a new text is the
+  // text/1 publish row plus bindPropertyFresh.
+  const rows: [BindRow, boolean][] = [
+    ["bindPropertyFresh", true],
+    ["bindPropertyRebind", false],
+    ["unbindProperty", false],
+    ["releaseProperty", false],
+    ["bindSameFreshWord", true],
+    ["bindSameFreshPath", true],
+    ["unbindSame", false],
+    ["releaseSame", false],
+    ["restoreSame", false],
+    ["bindBroaderFresh", true],
+    ["unbindBroader", false],
+    ["releaseBroader", false],
+    ["restoreBroader", false],
+  ];
+  for (const schedule of Object.keys(vectors.schedules)) {
+    const m = modelFor(schedule);
+    const ref = planner(model, schedule) as {
+      check: (a: RefAction[], o?: { firstWrite?: boolean }) => Figures;
+    };
+    const same = (acts: RefAction[], firstWrite: boolean) => {
+      const at = ruleGas(
+        acts.map((a) => toSdk(a, 0)),
+        m,
+        firstWrite,
+      );
+      const want = ref.check(acts, { firstWrite });
+      expect({ E: at.E, K: at.K, V: at.V }).toEqual({ E: want.E, K: want.K, V: want.V });
+    };
+    it(`${schedule}: each of the thirteen rows, alone and as a first write`, () => {
+      for (const [cost, first] of rows) {
+        same([{ kind: "bind", cost, first }], false);
+        same([{ kind: "bind", cost, first }], true);
+      }
+    });
+    it(`${schedule}: a label with a new 24-byte text`, () => {
+      same(
+        [
+          { kind: "publish", shape: "text/1", bytes: 24, fresh: true },
+          { kind: "bind", cost: "bindPropertyFresh", first: true },
+        ],
+        false,
+      );
+    });
   }
 });

@@ -230,8 +230,13 @@ export function propertyKey(key: string): Hex {
     ),
   );
 }
-/** A label's key in one language: the property key of "label:" ‖ the BCP 47 tag. */
-export const labelKey = (lang: string): Hex => propertyKey(`label:${lang}`);
+/**
+ * A label's key in one language: the property key of "label:" ‖ the BCP 47 tag with ASCII A–Z lowercased, exactly as
+ * EfsTopics.labelKey folds it (`pt-BR` and `pt-br` are one key). The chain can't check it (the key is a hash): every
+ * writer must fold the same way.
+ */
+export const labelKey = (lang: string): Hex =>
+  propertyKey(`label:${lang.replace(/[A-Z]/g, (c) => c.toLowerCase())}`);
 
 // ---- the number
 

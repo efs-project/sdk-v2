@@ -7,10 +7,11 @@
 //     finds both topics registered strictly before it (FilesFinalValidator codes 10 and 11; an earlier action of the
 //     same publication counts);
 //   - the text record when it is new, then the one statement, or with `remove: true` a RELEASE of your own;
-//   - parts by the planning rule. The gas model has no measured rows for PROPERTY, SAME or BROADER yet, so these binds
-//     are priced at the dearest bind row (an upper bound); eth_estimateGas decides before each send.
+//   - parts by the planning rule, each statement priced by its measured gas row (contracts 0fb4804: bindPropertyFresh,
+//     bindSameFreshWord, restoreSame, releaseBroader, …); eth_estimateGas decides before each send.
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
+  type BindRow,
   batchGasOf,
   type PlannedAction,
   packBatches,
@@ -367,8 +368,28 @@ async function plan(
       : spec.purpose === "same"
         ? sameAction(subjectId, otherId as Hex, rev)
         : broaderAction(subjectId, otherId as Hex, rev);
-  // No gas row is measured for these purposes yet: no bindRow, so the dearest row of the kind prices it.
-  actions.push({ action: statement, body: "0x", firstStatement: !remove && state === "UNSET" });
+  // Each statement is priced by its measured row (contracts 0fb4804). A first SAME takes bindSameFreshWord, the
+  // dearer of the two first-SAME rows (word ↔ word and path ↔ path differ by about 100 gas). A later bind (a new
+  // text, or a restore of a masked or released statement) takes the purpose's later row.
+  const first = !remove && state === "UNSET";
+  const row: BindRow = remove
+    ? spec.purpose === "label"
+      ? "releaseProperty"
+      : spec.purpose === "same"
+        ? "releaseSame"
+        : "releaseBroader"
+    : spec.purpose === "label"
+      ? first
+        ? "bindPropertyFresh"
+        : "bindPropertyRebind"
+      : spec.purpose === "same"
+        ? first
+          ? "bindSameFreshWord"
+          : "restoreSame"
+        : first
+          ? "bindBroaderFresh"
+          : "restoreBroader";
+  actions.push({ action: statement, body: "0x", firstStatement: first, bindRow: row });
 
   // ---- parts
   const g = gasSetup(d, o);

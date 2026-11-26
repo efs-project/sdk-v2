@@ -33,7 +33,7 @@
 | `@efs/sdk/web` | browser helpers (no journal) | yes |
 | `@efs/sdk/web/journal` | `indexedDbJournal`, submission lock (Web Locks) | no |
 | `@efs/sdk/node` | `fileJournal`, file-system stores (Node condition only) | no |
-| `@efs/sdk/testing` | `guestProbe`, RPC transcript replay, `planLoneHide` (a lone hide, for Unhide tests) | dev only |
+| `@efs/sdk/testing` | `guestProbe`, RPC transcript replay, `planLoneHide` (a lone hide, for Unhide tests), `planOtherEntry` (a junk row, for blocking tests) | dev only |
 | `@efs/sdk/fixtures/*.json` | recorded result fixtures (§9) | dev only |
 | `@efs/sdk/protocol-inputs.json` | the contracts commit (later, the release digest) this build targets | — |
 
@@ -1035,6 +1035,9 @@ takes a home as a parent (create, move to or from it, `via` from it, remove, res
   To test it on a chain, `planLoneHide(efs, w, { folder, name, lens? })` from `@efs/sdk/testing` plans a lone hide
   (the name record when missing, then an UNBIND at your revision there; review `efs.loneHideReview`, effect
   `files.hide`). It throws MISUSE unless the name is lone for you: never stated, or released after lone hides only.
+  `planOtherEntry(efs, w, { folder, name, salt?, lens? })` (also `@efs/sdk/testing`) places a subject with no file
+  version at a name in a folder or a home (a CREATE, the name record when missing, the FOLDER bind; review
+  `efs.otherEntryReview`): a listing shows it as kind `other`, the junk row an owner blocks with `planHideEntries`.
 - `planHideEntries(efs, w, { entries, lens? })`: hide other authors' entries (a folder owner hiding spam, say): an
   UNBIND, a mask, at your own position at each name, after the name record if it is missing. Nothing shows there for a
   reader whose Lens puts you before the entry's author; a reader who ranks that author first still sees it, and the

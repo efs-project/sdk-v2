@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "2462e540f4bf06c55154faa55a8506ff3c4b32a3",
+  "contractsCommit": "0fb4804fdfde33e5ab312eaacf00410785e995c3",
   "case": "pin-mismatch",
   "note": "efs.pin() with a forged LensReader code hash in the document",
   "result": {
@@ -11,15 +11,15 @@
       "blockNumber": {
         "$efs:bigint": "79"
       },
-      "blockHash": "0x5d70453ac4fd4c0a7d2ccf3f284e755fa968a3615b8e11cc4f5e58fa4a4bd06e",
+      "blockHash": "0x7f09efbfb74c6f2366d0e4c868942188b80b5b5b3ac538327d4fc5dd8ac9ab98",
       "timestamp": {
-        "$efs:bigint": "1795637831"
+        "$efs:bigint": "1795654066"
       },
-      "executionSet": "0xf5514949f83a07bdd6811d62d6d2afb6d4b3499e1553b8cd18ad0b260e38f00d",
+      "executionSet": "0x3a9a6aea417492210568a60a5383e17bea5cffae424aafaaded4cb835fd793e4",
       "admissions": {
         "$efs:bigint": "27"
       },
-      "endpoint": "http://127.0.0.1:8601"
+      "endpoint": "http://127.0.0.1:8600"
     },
     "mismatches": [
       {
@@ -31,7 +31,7 @@
     "evidence": {
       "attempts": [
         {
-          "endpoint": "http://127.0.0.1:8601",
+          "endpoint": "http://127.0.0.1:8600",
           "outcome": "FAILED",
           "reason": {
             "code": "NOT_VERIFIED_DEPLOYMENT",

@@ -93,6 +93,13 @@ describe("topic ids", () => {
   );
   it("a label key is the property key of label:<lang>", () => {
     expect(labelKey("en")).toBe(propertyKey("label:en"));
+    // ASCII A–Z folded, as EfsTopics.labelKey does: every vector, and its canonical form, gives the same id.
+    expect(topics.labelKeys.length).toBeGreaterThan(0);
+    for (const v of topics.labelKeys as { language: string; canonical: string; id: string }[]) {
+      expect(labelKey(v.language)).toBe(v.id.toLowerCase());
+      expect(labelKey(v.canonical)).toBe(v.id.toLowerCase());
+      expect(propertyKey(`label:${v.canonical}`)).toBe(v.id.toLowerCase());
+    }
   });
   it("refuses to id a word the chain refuses, with its code", () => {
     expect(() => wordPageId(T, "Tesla")).toThrow(/code 3/);

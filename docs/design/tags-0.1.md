@@ -35,8 +35,11 @@
 > - topic statements: `planLabel` (a topic's or a home's name in one BCP 47 language, lowercased; the text/1 record
 >   published when new), `planSame` and `planBroader` (both ends registered earlier in the same save, as the
 >   validator's codes 10 and 11 need; a topic is never either of these to itself), each with `remove: true` for a
->   RELEASE of your own, refused UNCHANGED or NOT_STATED. No gas row is measured for these purposes yet: they are
->   priced at the dearest bind row, which covers the contracts' step-2 figures, and eth_estimateGas decides;
+>   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (contracts 0fb4804): a
+>   first label `bindPropertyFresh` (a new text adds the text/1 row), a later one `bindPropertyRebind`, a first
+>   `same` `bindSameFreshWord` (the dearer of the two first-same rows), a first `broader` `bindBroaderFresh`, a later
+>   bind `restoreSame` / `restoreBroader`, and a removal `release*`, as the reference planner prices them; the label
+>   language is lowercased (ASCII A–Z) exactly as EfsTopics.labelKey folds it;
 > - names (section 5.5): `labelOf(subject, { lens, langs })`, and `topicName(topic, { lens, langs })` for every
 >   segment: a path-level label from the Lens, else the word's label, else the word (`source`). In each language,
 >   in the reader's order, the first Lens author with a label decides, and an earlier one's "no label" (MASKED) stops
