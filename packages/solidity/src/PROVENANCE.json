@@ -3,7 +3,7 @@
   "note": "Copied byte for byte from efs-project/contracts-v2 at `commit` by tools/solidity.mjs. Do not edit.",
   "contracts": {
     "repo": "https://github.com/efs-project/contracts-v2",
-    "commit": "6d11858bc88b10a25a1f61ab543917fc20827190"
+    "commit": "04526b1dd42992d8193c4d3c2db4129531dc7bfb"
   },
   "files": {
     "interfaces/Actions.sol": "26e98f79e9a2a02f6622d67870c9619a861be81321e981aa25a0312eeb503990",
@@ -25,13 +25,13 @@
     "interfaces/ITypeRegistry.sol": "0f7323f9c6f9982c1e2d37fefb2792ee04dd5bb5e7853f7928986709d594eb1c",
     "interfaces/IWeb3Content.sol": "7a1e7b125719b39245c37fdfe8afe920e12f851ff19c8b1d43a6e7a6a32000af",
     "interfaces/IWeb3Gateway.sol": "7fdbf781f32df3fa09aaa04f6790c3623e01eba96a26ab35388857dcff0f22ce",
-    "interfaces/Index.sol": "c34a01b041189ad96574ebc3a460459e800d17a80381327cc2fe98aab81c50a6",
+    "interfaces/Index.sol": "75aa277c31b5f2c1f4807a43fb85ea17d6b659d820d1df404491272171e75b6c",
     "interfaces/Limits.sol": "b66538ac9546f5baf085c8e86a5a7033400240ece9ad4208e4ae054332af9d52",
     "interfaces/Readers.sol": "721d1423be8e710730158ab3c0e0f4aa732ef6a7fad2a831583628a935cb7cfe",
     "interfaces/Results.sol": "7c2d00946fb9f082ef07e5c23cd9284060f51ae151fdddb742c9f840c364bf5e",
     "interfaces/Views.sol": "7a51777b0972c3814e7a2d00f275a5b8a1c7de472956b4270cbc6301bae2dab2",
-    "lib/Keys.sol": "349d96afc5cd3d0599e2c889f39d3a04a809af7ab95af44954af6a6c6044e8eb",
+    "lib/Keys.sol": "5b8bc6d8240d68378ee84ff21a0b44217585c52c5244f629ae739e068071e2ab",
     "lib/EfsNative.sol": "142caed2af755a3e4c070e892f53a2c86cea4be7e45eb4362d8eea6ef174a272",
-    "lib/EfsFiles.sol": "5e8bc2ff0d3af1217c92cbea174e5f820f2dbb6fb7c783901f75fd73988a7c32"
+    "lib/EfsFiles.sol": "8665a1dc06f99cc6d198b2fb6beb0e6b0a436b946570e6563c04496e89c7ea5f"
   }
 }

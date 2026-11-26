@@ -45,7 +45,7 @@ export function putInline(
   const steps = [
     plain({ kind: ACTION.CREATE, saltOrStrength: salt }),
     publish(t["files-root/1"] as Hex, rootBody),
-    publish(t["files-name/2"] as Hex, nameBytes),
+    publish(t["files-name/3"] as Hex, nameBytes),
     plain({
       kind: ACTION.BIND,
       purpose: PURPOSES.head,
@@ -94,7 +94,7 @@ export function putExternal(
     publish(t["files-external/1"] as Hex, externalBody),
     plain({ kind: ACTION.CREATE, saltOrStrength: salt }),
     publish(t["files-root/1"] as Hex, rootBody),
-    publish(t["files-name/2"] as Hex, nameBytes),
+    publish(t["files-name/3"] as Hex, nameBytes),
     plain({
       kind: ACTION.BIND,
       purpose: PURPOSES.head,

@@ -21,7 +21,7 @@ import { type Reason, reason } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
 import type { DeploymentInfo } from "../deployment/manifest.js";
 import { ACTION, PURPOSES } from "../generated/constants.js";
-import { GAS_PLANNING, GAS_SCHEDULES, GAS_TAG_LISTS } from "../generated/gas.js";
+import { GAS_LATER_ROWS, GAS_PLANNING, GAS_SCHEDULES, GAS_TAG_LISTS } from "../generated/gas.js";
 import type { ActionData } from "./types.js";
 
 /** The per-level terms a first TAG statement pays at each proper ancestor of its topic (tagLists). */
@@ -33,27 +33,35 @@ export type NewPlaceRow =
   | "releaseTag"
   | "restoreTag"
   | "bindTagNumberChange"
+  | "bindTagAfterNo"
   | "unbindFolder"
   | "releaseFolder"
   | "restoreFolder"
-  | "bindFolderRebind";
+  | "bindFolderRebind"
+  | "bindFolderAfterNo";
 /** Rows with long tiers: a later statement in a long or unknown-length list pays `<row>LongNewPlace` or `<row>LongSamePlace`. */
 export type LongRow =
   | "unbindTag"
   | "releaseTag"
   | "restoreTag"
+  | "bindTagAfterNo"
   | "unbindFolder"
   | "releaseFolder"
   | "restoreFolder"
+  | "bindFolderAfterNo"
   | "unbindProperty"
   | "releaseProperty"
+  | "restoreProperty"
+  | "bindPropertyAfterNo"
   | "unbindSame"
   | "releaseSame"
   | "restoreSame"
+  | "bindSameAfterNo"
   | "unbindBroader"
   | "releaseBroader"
-  | "restoreBroader";
-/** The list tiers' constants (gas/model.json laterLists; contracts 6d11858 tools/RELEASE.md item 47). */
+  | "restoreBroader"
+  | "bindBroaderAfterNo";
+/** The list tiers' constants (gas/model.json laterLists; contracts 6d11858 item 47, 04526b1 item 57). */
 export type TierConstant =
   | `${NewPlaceRow}NewPlace`
   | `${LongRow}LongNewPlace`
@@ -75,12 +83,19 @@ export interface GasConstants extends Readonly<Record<TierConstant, number>> {
   create: number;
   bindHeadFresh: number;
   bindHeadRebind: number;
+  /** HEAD's later rows (contracts 04526b1): a mask, a release, a restore to a new revision, a yes after a lone no. */
+  unbindHead: number;
+  releaseHead: number;
+  restoreHead: number;
+  bindHeadAfterNo: number;
   bindFolderFreshFile: number;
   bindFolderFreshDirectory: number;
   bindFolderRebind: number;
   unbindFolder: number;
   releaseFolder: number;
+  /** A folder entry placed again at a removed name, measured restoring to a NEW target (the dearest; contracts 04526b1). */
   restoreFolder: number;
+  bindFolderAfterNo: number;
   bindTagFresh: number;
   bindTagSecondAuthor: number;
   bindTagNumberChange: number;
@@ -88,43 +103,34 @@ export interface GasConstants extends Readonly<Record<TierConstant, number>> {
   unbindTag: number;
   releaseTag: number;
   restoreTag: number;
+  bindTagAfterNo: number;
   /** Statements about topics: a label (PROPERTY), "same as" and "broader", first and later (contracts 0fb4804). */
   bindPropertyFresh: number;
   bindPropertyRebind: number;
   unbindProperty: number;
   releaseProperty: number;
+  restoreProperty: number;
+  bindPropertyAfterNo: number;
   bindSameFreshWord: number;
   bindSameFreshPath: number;
   unbindSame: number;
   releaseSame: number;
   restoreSame: number;
+  bindSameAfterNo: number;
   bindBroaderFresh: number;
   unbindBroader: number;
   releaseBroader: number;
   restoreBroader: number;
+  bindBroaderAfterNo: number;
   withdraw: number;
   /** Added once to a principal's first publication ever. */
   firstWriteSurcharge: number;
   /**
-   * INTERIM, until the contracts' list release prices these in gas/model.json (contracts 6d11858, figure (ii)); each a
-   * fresh slot at the schedule's price, generated from test/vectors/gas-schedules.json, and nothing in a model
-   * without them:
-   * - a BIND on a head that never bound (`PlannedAction.neverBound`) writes head.target fresh in the kernel: E, the
-   *   all-gas total and K (the kernel's own spend) each pay one slot;
-   * - a later BIND that opens the binding's next history word in the index, where its row's measurement did not
-   *   (`PlannedAction.headRevision`; opensHistoryWord): E and the total pay one slot, K none (a callback).
+   * The binding's history word (gas/model.json laterRows, contracts 04526b1 item 57): added to a later statement whose
+   * position opens one when its row's measured position did not, subtracted in the opposite case (historyWordAdds).
+   * Its kernel share is zero (the index writes it in a callback).
    */
-  interimNeverBoundBind?: number;
-  interimHistoryWord?: number;
-  /**
-   * INTERIM, the same way (contracts 6d11858): a FOLDER BIND on a masked or released head that bound before (a new file
-   * placed at a removed name, a move into one) makes the kernel rewrite head.target when the target is new, which the
-   * restoreFolder rows (measured restoring the same target) leave out. One rewrite at the floor's price, in the kernel's
-   * model only (E over-predicts this shape). A same-target restore is over-priced by it, the safe side. Against
-   * `restoreFolderLongNewPlace`, the row a first statement at its place takes, the kernel's measured share is still
-   * 105 gas (prague) and 209 (amsterdam) a statement above the row plus this term: under 0.03% of V on a full batch.
-   */
-  interimFolderRetarget?: number;
+  historyWordOpen: number;
   tagLevel: Readonly<Record<TagLevel, number>>;
 }
 
@@ -199,12 +205,17 @@ export interface GasModel extends GasConstants {
 export type BindRow =
   | "bindHeadFresh"
   | "bindHeadRebind"
+  | "unbindHead"
+  | "releaseHead"
+  | "restoreHead"
+  | "bindHeadAfterNo"
   | "bindFolderFreshFile"
   | "bindFolderFreshDirectory"
   | "bindFolderRebind"
   | "unbindFolder"
   | "releaseFolder"
   | "restoreFolder"
+  | "bindFolderAfterNo"
   | "bindTagFresh"
   | "bindTagSecondAuthor"
   | "bindTagNumberChange"
@@ -212,39 +223,53 @@ export type BindRow =
   | "unbindTag"
   | "releaseTag"
   | "restoreTag"
+  | "bindTagAfterNo"
   | "bindPropertyFresh"
   | "bindPropertyRebind"
   | "unbindProperty"
   | "releaseProperty"
+  | "restoreProperty"
+  | "bindPropertyAfterNo"
   | "bindSameFreshWord"
   | "bindSameFreshPath"
   | "unbindSame"
   | "releaseSame"
   | "restoreSame"
+  | "bindSameAfterNo"
   | "bindBroaderFresh"
   | "unbindBroader"
   | "releaseBroader"
-  | "restoreBroader";
+  | "restoreBroader"
+  | "bindBroaderAfterNo";
 const BIND_ROWS: readonly BindRow[] = [
   "bindHeadFresh",
   "bindHeadRebind",
+  "restoreHead",
+  "bindHeadAfterNo",
   "bindFolderFreshFile",
   "bindFolderFreshDirectory",
   "bindFolderRebind",
   "restoreFolder",
+  "bindFolderAfterNo",
   "bindTagFresh",
   "bindTagSecondAuthor",
   "bindTagNumberChange",
   "restoreTag",
+  "bindTagAfterNo",
   "bindPropertyFresh",
   "bindPropertyRebind",
+  "restoreProperty",
+  "bindPropertyAfterNo",
   "bindSameFreshWord",
   "bindSameFreshPath",
   "restoreSame",
+  "bindSameAfterNo",
   "bindBroaderFresh",
   "restoreBroader",
+  "bindBroaderAfterNo",
 ];
 const UNBIND_ROWS: readonly BindRow[] = [
+  "unbindHead",
   "unbindFolder",
   "unbindTagLone",
   "unbindTag",
@@ -253,6 +278,7 @@ const UNBIND_ROWS: readonly BindRow[] = [
   "unbindBroader",
 ];
 const RELEASE_ROWS: readonly BindRow[] = [
+  "releaseHead",
   "releaseFolder",
   "releaseTag",
   "releaseProperty",
@@ -262,15 +288,24 @@ const RELEASE_ROWS: readonly BindRow[] = [
 /** Rows that are never a first statement: the author's head at the position already exists. */
 const LATER_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
   "bindHeadRebind",
+  "unbindHead",
+  "restoreHead",
+  "bindHeadAfterNo",
   "bindFolderRebind",
-  "bindTagNumberChange",
-  "restoreTag",
-  "unbindTag",
   "unbindFolder",
   "restoreFolder",
+  "bindFolderAfterNo",
+  "bindTagNumberChange",
+  "unbindTag",
+  "restoreTag",
+  "bindTagAfterNo",
   "bindPropertyRebind",
+  "restoreProperty",
+  "bindPropertyAfterNo",
   "restoreSame",
+  "bindSameAfterNo",
   "restoreBroader",
+  "bindBroaderAfterNo",
 ]);
 /** Later statements that are re-binds (a BIND on a BOUND head): the work model's re-bind row, and no long tier. */
 const REBIND_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
@@ -284,26 +319,34 @@ const NEW_PLACE_ROWS: ReadonlySet<BindRow> = new Set<NewPlaceRow>([
   "releaseTag",
   "restoreTag",
   "bindTagNumberChange",
+  "bindTagAfterNo",
   "unbindFolder",
   "releaseFolder",
   "restoreFolder",
   "bindFolderRebind",
+  "bindFolderAfterNo",
 ]);
 const LONG_ROWS: ReadonlySet<BindRow> = new Set<LongRow>([
   "unbindTag",
   "releaseTag",
   "restoreTag",
+  "bindTagAfterNo",
   "unbindFolder",
   "releaseFolder",
   "restoreFolder",
+  "bindFolderAfterNo",
   "unbindProperty",
   "releaseProperty",
+  "restoreProperty",
+  "bindPropertyAfterNo",
   "unbindSame",
   "releaseSame",
   "restoreSame",
+  "bindSameAfterNo",
   "unbindBroader",
   "releaseBroader",
   "restoreBroader",
+  "bindBroaderAfterNo",
 ]);
 
 export interface PlannedAction {
@@ -317,7 +360,13 @@ export interface PlannedAction {
   shape?: string;
   /** True when the record is known to exist already (priced as publishExisting). */
   exists?: boolean;
-  /** For a BIND, UNBIND or RELEASE: the row it is priced at, when the planner knows. */
+  /**
+   * For a BIND, UNBIND or RELEASE: the row it is priced at, when the planner knows, chosen from the head it read
+   * (gas/model.json laterRows.rule): an UNBIND or RELEASE of a head that exists is `unbind<P>` / `release<P>`; a BIND
+   * on a BOUND head is a re-bind; a BIND on a MASKED or RELEASED head is `bind<P>AfterNo` when it never bound
+   * (`neverBoundHead`), else `restore<P>`. A later statement's own position (the history word) is read from its
+   * `expectedRevision`, which the kernel checks exactly.
+   */
   bindRow?: BindRow;
   /** For a first TAG statement: the per-level terms it pays at its topic's proper ancestors (tagLists). */
   levels?: Readonly<Partial<Record<TagLevel, number>>>;
@@ -329,17 +378,6 @@ export interface PlannedAction {
    * later statement's row; an UNBIND is not (a lone negative says so). A RELEASE never is.
    */
   firstStatement?: boolean;
-  /**
-   * For a later BIND: the writer's head never bound (not UNSET, `targetKind` 0: a lone no, or a no then a release or
-   * another no). Priced at its row plus the model's `interimNeverBoundBind` (INTERIM; see GasConstants).
-   */
-  neverBound?: boolean;
-  /**
-   * For a later statement: the writer's head revision before it (how many statements the binding already has). A
-   * later BIND whose row was measured without opening a history word pays `interimHistoryWord` when it opens one
-   * (INTERIM; see opensHistoryWord).
-   */
-  headRevision?: bigint;
 }
 
 export interface BatchLimits {
@@ -434,7 +472,8 @@ function tierKey(row: BindRow, later: boolean, firstAtPlace: boolean): BindRow |
 /**
  * The model's gas for one action (without the per-publication terms). `firstAtPlace` (for a later statement): no
  * earlier later statement of the same publication is at its place (purpose, subject); omitted, true, the dearer
- * reading. modelGas and publicationGas work it out for each action of the list they price.
+ * reading. modelGas and publicationGas work it out for each action of the list they price. A later statement is
+ * corrected for its own position in its binding (historyWordAdds).
  */
 export function actionGas(a: PlannedAction, m: GasConstants, firstAtPlace = true): number {
   const k = a.action.kind;
@@ -451,54 +490,57 @@ export function actionGas(a: PlannedAction, m: GasConstants, firstAtPlace = true
   if (k === ACTION.WITHDRAW) return m.withdraw;
   if (isBindLike(k)) {
     const later = !firstStatement(a);
-    const rows = k === ACTION.BIND ? BIND_ROWS : k === ACTION.UNBIND ? UNBIND_ROWS : RELEASE_ROWS;
-    // Without a row, the dearest of its kind, its tiers included.
+    const rev = later ? a.action.expectedRevision : 0n;
+    const priced = (r: BindRow): number => {
+      const key = tierKey(r, later, firstAtPlace);
+      return m[key] + (later ? historyWordAdds(key, rev) * m.historyWordOpen : 0);
+    };
+    // Without a row, the dearest of its kind, its tiers and its position included.
     let g =
       a.bindRow !== undefined
-        ? m[tierKey(a.bindRow, later, firstAtPlace)]
-        : Math.max(...rows.flatMap((r) => [m[r], m[tierKey(r, later, firstAtPlace)]]));
+        ? priced(a.bindRow)
+        : Math.max(
+            ...rows(k).flatMap((r) => [
+              m[r],
+              m[tierKey(r, later, firstAtPlace)],
+              ...(later ? [priced(r)] : []),
+            ]),
+          );
     for (const [level, n] of Object.entries(a.levels ?? {}))
       g += m.tagLevel[level as TagLevel] * (n ?? 0);
-    if (k === ACTION.BIND && later) g += interimSlots(a, m);
     return g;
   }
   // an unknown kind: priced high, never zero
   return Math.max(m.create, ...BIND_ROWS.map((r) => m[r]), ...UNBIND_ROWS.map((r) => m[r]));
 }
 
+const rows = (k: number): readonly BindRow[] =>
+  k === ACTION.BIND ? BIND_ROWS : k === ACTION.UNBIND ? UNBIND_ROWS : RELEASE_ROWS;
+
 /**
- * INTERIM (contracts 6d11858, figure (ii)): whether a statement after `revision` statements opens the binding's next
- * history word in the index. The history list takes one append per statement (RealmIndex._foldBind), and a list's
- * append writes a fresh word when its count before is 1 (word 0) or a positive multiple of 5 (PostingStore._append):
- * the 2nd, 6th, 11th, 16th, 21st … statements, every fifth forever.
+ * Whether a statement after `revision` statements opens the binding's next history word in the index. The history
+ * list takes one append per statement of every kind (RealmIndex._foldBind), so its length before a statement is the
+ * head's revision, and a list's append writes a fresh word when its count before is 1 (word 0) or a positive multiple
+ * of 5 (PostingStore._append): the 2nd, 6th, 11th, 16th, 21st … statements, every fifth forever.
  */
 export const opensHistoryWord = (revision: bigint): boolean =>
   revision === 1n || (revision > 0n && revision % 5n === 0n);
-/**
- * The later BIND rows measured where no history word opened (a restore is measured as a binding's 3rd statement), so
- * they pay one when they open it. Every other later row (masks, releases, re-binds) was measured as a 2nd statement and
- * already includes one, over-pricing elsewhere: the safe side, so nothing is ever subtracted. Their tiers likewise.
- */
-const HISTORY_UNMEASURED_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
-  "restoreTag",
-  "restoreFolder",
-  "restoreSame",
-  "restoreBroader",
-]);
 
 /**
- * INTERIM: what a later BIND writes beyond its row: the kernel's fresh head.target, the index's history word, and the
- * kernel's rewrite of a folder entry's target.
+ * How many `historyWordOpen` a later statement priced at `key` adds at head revision `revision` before it
+ * (gas/model.json laterRows.rule; gas-plan.mjs `historyWordAdds`, symmetric): +1 when its position opens a word and the
+ * row's measured position did not, −1 when the row's did and its position opens none, else 0. A revision of 0 (a later
+ * statement can't have one) uses the row as it is. Safe both ways because the kernel refuses a BIND, UNBIND or RELEASE
+ * whose expected revision is not the head's (E_CAS, nothing written): a statement priced from a stale revision is
+ * refused, never admitted at a price it did not plan. A key the model doesn't place (never, in this release: the unit
+ * tests check every later key) never subtracts.
  */
-function interimSlots(a: PlannedAction, m: GasConstants): number {
-  let g = a.neverBound === true ? (m.interimNeverBoundBind ?? 0) : 0;
-  const opens = a.headRevision !== undefined && opensHistoryWord(a.headRevision);
-  if (opens && (a.bindRow === undefined || HISTORY_UNMEASURED_ROWS.has(a.bindRow)))
-    g += m.interimHistoryWord ?? 0;
-  // a folder entry bound before, placed again: the kernel may rewrite its target (never on a never-bound head, whose
-  // target is written fresh and priced above)
-  if (a.bindRow === "restoreFolder" && a.neverBound !== true) g += m.interimFolderRetarget ?? 0;
-  return g;
+function historyWordAdds(key: string, revision: bigint): number {
+  if (revision === 0n) return 0;
+  const opens = opensHistoryWord(revision);
+  const measured = (GAS_LATER_ROWS as Readonly<Record<string, boolean>>)[key];
+  if (measured === undefined) return opens ? 1 : 0;
+  return opens === measured ? 0 : opens ? 1 : -1;
 }
 
 /** A later statement's place: (purpose, subject), the author's scope list it changes (gas/model.json laterLists). */

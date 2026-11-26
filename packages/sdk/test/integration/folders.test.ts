@@ -155,7 +155,7 @@ describe("folder reads (fixture)", () => {
     );
     await expect(lookupEntry(efs, { folder: docs, name: "a/b" })).rejects.toMatchObject({
       code: "MISUSE",
-      details: { rule: "excluded-character" },
+      details: { rule: "reserved-character" },
     });
   });
 
@@ -190,7 +190,7 @@ describe("folder reads (fixture)", () => {
     expect(await resolvePath(efs, { from: root, segments: ["docs", ".."] })).toMatchObject({
       status: "INVALID",
       segment: 1,
-      rule: "dot-or-dotdot",
+      rule: "trailing-dot",
     });
     expect(
       await resolvePath(efs, { from: root, segments: ["docs", "readme.txt"] }, { maxSegments: 1 }),

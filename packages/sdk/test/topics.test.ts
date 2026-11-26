@@ -60,6 +60,33 @@ describe("the word grammar (TopicProfile.wordRefusal)", () => {
       if (code === 0 && pageId) expect(wordPageId(T, bytes(hex))).toBe(pageId.toLowerCase());
     },
   );
+
+  it("names every code the chain can return, and never an unused one (5 since the list release)", () => {
+    const g = topics.grammar as {
+      wordAscii: string;
+      wordCodes: Record<string, string>;
+      wordCodeUnused: Record<string, string>;
+    };
+    const seen = new Set<number>();
+    for (const w of topics.words as { hex: string; code: number }[]) {
+      const c = checkWord(bytes(w.hex));
+      if (!c.ok) {
+        seen.add(c.code);
+        expect(c.rule, `code ${c.code}`).not.toMatch(/^code \d+$/);
+      }
+    }
+    const chain = Object.keys(g.wordCodes)
+      .map(Number)
+      .filter((n) => n !== 0);
+    expect([...seen].sort((a, b) => a - b)).toEqual(chain.sort((a, b) => a - b));
+    for (const unused of Object.keys(g.wordCodeUnused))
+      expect(seen.has(Number(unused))).toBe(false);
+    // the ASCII a word may hold, byte by byte: exactly the 39 of wordAscii
+    for (let c = 0x21; c < 0x7f; c++) {
+      const r = checkWord(new Uint8Array([0x61, c, 0x61]));
+      expect(r.ok, `0x${c.toString(16)}`).toBe(g.wordAscii.includes(String.fromCharCode(c)));
+    }
+  });
 });
 
 describe("the text grammar (TopicProfile.textRefusal)", () => {

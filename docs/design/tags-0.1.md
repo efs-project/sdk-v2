@@ -47,7 +47,7 @@
 > - topic statements: `planLabel` (a topic's or a home's name in one BCP 47 language, lowercased; the text/1 record
 >   published when new), `planSame` and `planBroader` (both ends registered earlier in the same save, as the
 >   validator's codes 10 and 11 need; a topic is never either of these to itself), each with `remove: true` for a
->   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (first measured at contracts 0fb4804; the vendored gas model is now 6d11858's, whose later rows take the long tier: api-0.1 "The list tiers"): a
+>   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (first measured at contracts 0fb4804; the vendored gas model is now 04526b1's, whose later rows take the long tier and are chosen by the head: a yes where you only ever said no is `bind<Purpose>AfterNo`, a label set again after its removal `restoreProperty`, each corrected for its position by the binding's history word: api-0.1 "The list tiers" and "Later rows by head"): a
 >   first label `bindPropertyFresh` (a new text adds the text/1 row), a later one `bindPropertyRebind`, a first
 >   `same` `bindSameFreshWord` (the dearer of the two first-same rows), a first `broader` `bindBroaderFresh`, a later
 >   bind `restoreSame` / `restoreBroader`, and a removal `release*`, as the reference planner prices them; the label
@@ -151,18 +151,25 @@
   would need one, if any).
 - **Its own export.** `fold` and its tables ship as their own entry point, so an app that never touches tags does
   not pay for them under the size gate.
-- **The chain's word rules**, checked again by the SDK before planning so a bad word is never a revert:
-  - 1 to 255 bytes of well-formed UTF-8;
-  - no `/`, no ASCII control characters, no ASCII space, no ASCII `A–Z`;
-  - not `.` or `..`;
-  - not starting with `~`, and not `0x` followed by 40 hex digits (so no word page can shadow a home or a system link).
+- **The chain's word rules** (`topic-word/1`, contracts 04526b1 item 53; the label is unchanged, its rule and Type id
+  are new), checked again by the SDK before planning so a bad word is never a revert, and `checkWord` returns the
+  chain's first refusal:
+  - 1 to 255 bytes of well-formed UTF-8 (codes 1, 2);
+  - of ASCII only `a–z`, `0–9`, `-`, `_` and `.` (code 3: capitals, space, controls and every other punctuation
+    character, `~` anywhere included: so a word never needs escaping in a link and leaves every delimiter free;
+    `c++`, `c#`, `don't`, `q&a` and `~tesla` are not words, `cpp`, `.net`, `sci-fi` and `model_3` are);
+  - no refused character (code 7);
+  - not ending with `.` (code 4: `.`, `..`, `inc.`; a chat app trims a full stop after a pasted link);
+  - not starting with `-` (code 9: `-word` stays free to mean "not" in link syntax; a `-` elsewhere is fine);
+  - not `0x` followed by 40 hex digits (code 6: so no word page can shadow a home). Code 5 (once a leading `~`) is
+    unused and never reused.
 - **Links.** `parseLink` returns which kind a link is, and never guesses:
 
 | Form | Kind |
 | --- | --- |
 | `/<word>/<word>/…` | a topic: segments are percent-decoded, then folded, then hashed |
 | `/<word>` | that word's page |
-| `/0x<40 hex>/<name>/…` | a home, then folder and file names, which keep their case (files-name/2) |
+| `/0x<40 hex>/<name>/…` | a home, then folder and file names, which keep their case (files-name/3) |
 | `/~efs/o/…`, `/~efs/v/…` | permanent object and revision links (as built) |
 | `/~efs/o/<folder>/<name>/…` | a path from a folder named by its id, the shared root included (see api-0.1) |
 

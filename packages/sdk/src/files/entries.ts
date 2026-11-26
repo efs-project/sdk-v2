@@ -6,7 +6,7 @@
 // a silent overwrite.
 //
 // What each one publishes (contracts src/lib/EfsFiles.sol recipes; FilesFinalValidator: a FOLDER bind needs its
-// name's files-name/2 record, a files-directory/1 parent and a created subject or a directory record as target):
+// name's files-name/3 record, a files-directory/1 parent and a created subject or a directory record as target):
 //   create file    CREATE(salt), the root revision (inline, or chunks under a descriptor), the name record if new,
 //                  BIND(HEAD, file → root), BIND(FOLDER, parent, name → file)
 //   create folder  PUBLISH(files-directory/1 (writer, salt)), the name record if new, BIND(FOLDER, parent, name → it).
@@ -42,7 +42,7 @@ import {
 } from "../core/hex.js";
 import { indexAbi, ledgerAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { ACTION, FILES, PURPOSES } from "../generated/constants.js";
-import { checkName } from "../names/name.js";
+import { checkName, NAME_PROFILE } from "../names/name.js";
 import { bindingKey, positionKey, recordFromHash, recordId, subjectId } from "../protocol/keys.js";
 import { chainStatus, headState, neverBoundHead } from "../protocol/status.js";
 import type { Ctx, FileRef } from "./bytes.js";
@@ -412,14 +412,14 @@ function typesOf(efs: Efs): Types {
     span: pick("files-span/1"),
     external: pick("files-external/1"),
     directory: pick("files-directory/1"),
-    name: pick("files-name/2"),
+    name: pick(NAME_PROFILE),
   };
 }
 /** A place from a folder or home and a name, or MISUSE with checkName's rule. */
 function placeOf(folder: ParentRef, name: string, index: number): Place {
   const c = checkName(name);
   if (c.status !== "VALID")
-    throw misuse(`not a files-name/2 name: ${c.status === "INVALID" ? c.rule : c.status}`, {
+    throw misuse(`not a ${NAME_PROFILE} name: ${c.status === "INVALID" ? c.rule : c.status}`, {
       index,
       name,
       ...(c.status === "INVALID"
@@ -460,29 +460,24 @@ const lensPrincipals = (efs: Efs, lens: Lens | undefined): PrincipalId[] => {
   return ps;
 };
 /**
- * @internal The gas-model row of your FOLDER BIND at a position, by your head there: a first statement (fresh file or directory),
- * a re-bind of a bound entry (bindFolderRebind), or a restore of a masked or released one (restoreFolder; contracts
- * 6d11858). Unrecognized: none, so the bind is priced at the dearest row of its kind.
+ * @internal The gas-model row of your FOLDER BIND at a position, by your head there (gas/model.json laterRows.rule): a
+ * first statement (fresh file or directory), a re-bind of a bound entry (bindFolderRebind), a yes where you only ever
+ * hid (bindFolderAfterNo: never bound, perhaps released or hidden again), or a restore of an entry you removed
+ * (restoreFolder, measured placing a new target: a same-target restore is over-priced by the kernel's rewrite, the
+ * safe side). Unrecognized: none, so the bind is priced at the dearest row of its kind.
  */
 export const folderBindRow = (
-  h: Pick<RawHead, "state">,
+  h: Pick<RawHead, "state" | "targetKind">,
   directory: boolean,
 ): BindRow | undefined => {
   const state = headState(h.state);
   if (state === "UNSET")
     return directory ? ("bindFolderFreshDirectory" as const) : ("bindFolderFreshFile" as const);
   if (state === "BOUND") return "bindFolderRebind" as const;
-  if (state === "MASKED" || state === "RELEASED") return "restoreFolder" as const;
+  if (state === "MASKED" || state === "RELEASED")
+    return neverBoundHead(h) ? ("bindFolderAfterNo" as const) : ("restoreFolder" as const);
   return undefined;
 };
-/**
- * INTERIM: the head facts a later FOLDER BIND is priced by beyond its row (contracts 6d11858, figure (ii)): whether
- * your head never bound (a lone hide, perhaps released) and its revision (a history word the bind opens).
- */
-const neverBoundOf = (h: RawHead): { neverBound?: true; headRevision?: bigint } =>
-  isUnset(h)
-    ? {}
-    : { headRevision: BigInt(h.revision), ...(neverBoundHead(h) ? { neverBound: true } : {}) };
 /** The writer has never stated anything at this place: a BIND there is a first statement (the kernel's floor). */
 const isUnset = (h: RawHead): boolean => headState(h.state) === "UNSET";
 
@@ -747,7 +742,7 @@ export async function planCreateFile(
         FINISH,
       ),
     );
-    if (!nameExists) finish.push(publish(types.name, place.nameBytes, "files-name/2", FINISH));
+    if (!nameExists) finish.push(publish(types.name, place.nameBytes, NAME_PROFILE, FINISH));
     finish.push(
       plain(
         {
@@ -775,7 +770,6 @@ export async function planCreateFile(
           group: FINISH,
           firstStatement: isUnset(st.mine),
           ...(folderRow ? { bindRow: folderRow } : {}),
-          ...neverBoundOf(st.mine),
         },
       ),
     );
@@ -882,7 +876,7 @@ export async function planCreateFolder(
     const row = folderBindRow(st.mine, true);
     const actions: PlannedAction[] = [
       publish(types.directory, dirBody, "files-directory/1", 1),
-      ...(nameExists ? [] : [publish(types.name, place.nameBytes, "files-name/2", 1)]),
+      ...(nameExists ? [] : [publish(types.name, place.nameBytes, NAME_PROFILE, 1)]),
       plain(
         {
           kind: ACTION.BIND,
@@ -896,7 +890,6 @@ export async function planCreateFolder(
           group: 1,
           firstStatement: isUnset(st.mine),
           ...(row ? { bindRow: row } : {}),
-          ...neverBoundOf(st.mine),
         },
       ),
     ];
@@ -956,7 +949,7 @@ const viaOf = (v: DestinationPath | undefined, index: number): Via | undefined =
     const c = checkName(n);
     if (c.status !== "VALID")
       throw misuse(
-        `not a files-name/2 name in \`via\`: ${c.status === "INVALID" ? c.rule : c.status}`,
+        `not a ${NAME_PROFILE} name in \`via\`: ${c.status === "INVALID" ? c.rule : c.status}`,
         {
           index,
           segment: j,
@@ -1141,7 +1134,7 @@ export async function planMoveEntries(
       const group = i + 1;
       const row = folderBindRow(to.mine, target.kind === "folder");
       const actions: PlannedAction[] = [
-        ...(needName ? [publish(types.name, m.to.nameBytes, "files-name/2", group)] : []),
+        ...(needName ? [publish(types.name, m.to.nameBytes, NAME_PROFILE, group)] : []),
         plain(
           {
             kind: ACTION.RELEASE,
@@ -1165,7 +1158,6 @@ export async function planMoveEntries(
             group,
             firstStatement: isUnset(to.mine),
             ...(row ? { bindRow: row } : {}),
-            ...neverBoundOf(to.mine),
           },
         ),
       ];
@@ -1489,7 +1481,7 @@ const hideUnit = (
       text: `Hide ${p.name}`,
     }),
     actions: [
-      ...(needName ? [publish(types.name, p.nameBytes, "files-name/2", group)] : []),
+      ...(needName ? [publish(types.name, p.nameBytes, NAME_PROFILE, group)] : []),
       plain(
         {
           kind: ACTION.UNBIND,
@@ -1665,7 +1657,7 @@ export async function planOtherEntry(
     const row = folderBindRow(st.mine, false);
     const actions: PlannedAction[] = [
       plain({ kind: ACTION.CREATE, saltOrStrength: salt }, { group: 1 }),
-      ...(needName ? [publish(types.name, p.nameBytes, "files-name/2", 1)] : []),
+      ...(needName ? [publish(types.name, p.nameBytes, NAME_PROFILE, 1)] : []),
       plain(
         {
           kind: ACTION.BIND,
@@ -1679,7 +1671,6 @@ export async function planOtherEntry(
           group: 1,
           firstStatement: isUnset(st.mine),
           ...(row ? { bindRow: row } : {}),
-          ...neverBoundOf(st.mine),
         },
       ),
     ];
@@ -1897,8 +1888,9 @@ export async function planRestoreEntries(
               target: targetWord,
               expectedRevision: BigInt(st.mine.revision),
             },
-            // your own released or masked entry: the head exists (restoreFolder, contracts 6d11858)
-            { firstStatement: false, bindRow: "restoreFolder", ...neverBoundOf(st.mine) },
+            // your own released or masked entry: the head exists (restoreFolder, or bindFolderAfterNo where it never
+            // bound)
+            { firstStatement: false, bindRow: folderBindRow(st.mine, false) ?? "restoreFolder" },
           ),
         ],
         finishes: true,

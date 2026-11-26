@@ -110,7 +110,7 @@
         "status": "INVALID",
         "rule": "bad-name",
         "segment": 1,
-        "detail": "dot-or-dotdot"
+        "detail": "trailing-dot"
       }
     },
     {
@@ -121,7 +121,7 @@
         "status": "INVALID",
         "rule": "bad-name",
         "segment": 1,
-        "detail": "excluded-character"
+        "detail": "reserved-character"
       }
     },
     {
@@ -200,17 +200,16 @@
       }
     },
     {
-      "label": "qualifier",
+      "label": "a qualifier in parentheses is refused (ASCII punctuation, code 3)",
       "input": "space/mercury_(planet)",
       "fold": "ascii-test",
       "expect": {
-        "status": "OK",
-        "target": {
-          "kind": "topic",
-          "segments": ["space", "mercury_(planet)"],
-          "words": ["space", "mercury_(planet)"]
-        },
-        "canonical": "space/mercury_%28planet%29"
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "forbidden-ascii",
+        "word": "mercury_(planet)",
+        "code": 3
       }
     },
     {
@@ -243,9 +242,89 @@
         "status": "INVALID",
         "rule": "bad-word",
         "segment": 1,
-        "detail": "dot",
+        "detail": "trailing-dot",
         "word": "..",
         "code": 4
+      }
+    },
+    {
+      "label": "a word ending in a dot (link trimming)",
+      "input": "cars/inc.",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "trailing-dot",
+        "word": "inc.",
+        "code": 4
+      }
+    },
+    {
+      "label": "a word starting with a dash (kept free to mean not)",
+      "input": "cars/-tesla",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "leading-dash",
+        "word": "-tesla",
+        "code": 9
+      }
+    },
+    {
+      "label": "a dash elsewhere and inner dots are words",
+      "input": "sci-fi/a.b/x-",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["sci-fi", "a.b", "x-"]
+        },
+        "canonical": "sci-fi/a.b/x-"
+      }
+    },
+    {
+      "label": "punctuation is not a word character, typed or folded",
+      "input": "langs/c++",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "forbidden-ascii",
+        "word": "c++",
+        "code": 3
+      }
+    },
+    {
+      "label": "a first segment starting 0x that is not an address is a topic",
+      "input": "0xsplits/docs",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["0xsplits", "docs"],
+          "words": ["0xsplits", "docs"]
+        },
+        "canonical": "0xsplits/docs"
+      }
+    },
+    {
+      "label": "0x and 41 hex digits first is a topic word, not a home",
+      "input": "0xabcdef0123456789abcdef0123456789abcdef012",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "topic",
+          "segments": ["0xabcdef0123456789abcdef0123456789abcdef012"],
+          "words": ["0xabcdef0123456789abcdef0123456789abcdef012"]
+        },
+        "canonical": "0xabcdef0123456789abcdef0123456789abcdef012"
       }
     },
     {
@@ -256,9 +335,22 @@
         "status": "INVALID",
         "rule": "bad-word",
         "segment": 1,
-        "detail": "reserved-tilde",
+        "detail": "forbidden-ascii",
         "word": "~x",
-        "code": 5
+        "code": 3
+      }
+    },
+    {
+      "label": "a ~ inside a word",
+      "input": "cars/x~y",
+      "fold": "none",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "forbidden-ascii",
+        "word": "x~y",
+        "code": 3
       }
     },
     {
@@ -689,7 +781,7 @@
         "status": "INVALID",
         "rule": "bad-name",
         "segment": 4,
-        "detail": "dot-or-dotdot"
+        "detail": "trailing-dot"
       }
     },
     {
@@ -700,7 +792,7 @@
         "status": "INVALID",
         "rule": "bad-name",
         "segment": 3,
-        "detail": "excluded-character"
+        "detail": "reserved-character"
       }
     },
     {

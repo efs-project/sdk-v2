@@ -182,7 +182,7 @@ describe("folder writes (fixture)", () => {
       planCreateFile(efs, w, { folder, name: "a/b", content: text("x") }),
     ).rejects.toMatchObject({
       code: "MISUSE",
-      details: { rule: "excluded-character" },
+      details: { rule: "reserved-character" },
     });
   });
 
@@ -656,12 +656,12 @@ describe("planHideEntries: a folder owner hides another author's entry (fixture)
     // Bob puts a subject with no file version at junk.bin (a CREATE and no HEAD): it lists as "other", not a file.
     const salt = `0x${"0b".repeat(32)}` as Hex;
     const junk = subjectId(B, salt);
-    const nameType = efs.deployment.typeIds["files-name/2"] as Hex;
+    const nameType = efs.deployment.typeIds["files-name/3"] as Hex;
     const name = new TextEncoder().encode("junk.bin");
     const raw = await wb.planActions({
       actions: [
         plain({ kind: ACTION.CREATE, saltOrStrength: salt }).action,
-        publish(nameType, name, "files-name/2").action,
+        publish(nameType, name, "files-name/3").action,
         plain({
           kind: ACTION.BIND,
           purpose: PURPOSES.folder,
@@ -670,7 +670,7 @@ describe("planHideEntries: a folder owner hides another author's entry (fixture)
           target: junk,
         }).action,
       ],
-      bodies: ["0x", publish(nameType, name, "files-name/2").body, "0x"],
+      bodies: ["0x", publish(nameType, name, "files-name/3").body, "0x"],
       effects: [{ code: "test.junk", args: {} }],
     });
     if (raw.status !== "PLANNED") throw new Error(raw.status);

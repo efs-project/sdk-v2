@@ -252,9 +252,9 @@ describe("listRemoved (fixture)", () => {
   });
 });
 
-/** A files-name/2 record for `name`, alone. */
+/** A files-name/3 record for `name`, alone. */
 const publishName = (name: string) => {
-  const step = publish(efs.deployment.typeIds["files-name/2"] as Hex, text(name), "files-name/2");
+  const step = publish(efs.deployment.typeIds["files-name/3"] as Hex, text(name), "files-name/3");
   return {
     actions: [step.action],
     bodies: [step.body],

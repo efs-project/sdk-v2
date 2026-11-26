@@ -306,7 +306,7 @@ approve it next time. Map by `code` first, then use `retry` for codes the UI doe
 
 ```ts
 export interface Names {
-  /** files-name/2 rules. NFC normalization is the SDK's job (the contract cannot check it). */
+  /** files-name/3 rules. NFC normalization is the SDK's job (the contract cannot check it). */
   check(name: string): NameCheck;
   normalize(name: string): string;      // NFC
 }
@@ -333,15 +333,24 @@ string that an app places in its route, for example after `#/files/`:
 | Link | Form | Opens | Lens |
 |---|---|---|---|
 | object | `~efs/o/0x<64 hex subject id>[?lens=<p>,<p>…]` | the current head of that subject (a file today; folders reuse the form) | the route default, or the given ordered principals |
-| path | `~efs/o/0x<64 hex folder id>/<name>[/<name>…][?lens=…]` | a folder or file by name below a folder named by its id (files-name/2, case kept). Any folder, the shared root included | the given principals, else the reader then the folder's creator (`efs.lens.place`) |
+| path | `~efs/o/0x<64 hex folder id>/<name>[/<name>…][?lens=…]` | a folder or file by name below a folder named by its id (files-name/3, case kept). Any folder, the shared root included | the given principals, else the reader then the folder's creator (`efs.lens.place`) |
 | revision | `~efs/v/0x<64 hex revision record id>` | exactly that revision's bytes | no |
-| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address (parsed from `0x` or `0X` and hex of either case, as the gateway reads it; written lowercase), then folder and file names (files-name/2, case kept) | the given principals, else the reader then the address's own identity at the read (`openHome`: the key principal of a key account, a contract's Realm principal) |
+| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address (parsed from `0x` or `0X` and hex of either case, as the gateway reads it; written lowercase), then folder and file names (files-name/3, case kept) | the given principals, else the reader then the address's own identity at the read (`openHome`: the key principal of a key account, a contract's Realm principal) |
 | topic | `<word>[/<word>/…][?lens=…]` | a topic; one word alone is that word's page. Words are folded before lookup | the route default, or the given ordered principals |
 
 - The first segment is `~efs`. The name profile reserves that prefix, so no path can look like a link. This
   departs from the naming review's `o/<id>` and `v/<id>`, which collide with root folders named `o` or `v`.
 - `link()` emits lowercase ids. `parseLink()` accepts any hex case and one percent-decode per segment, and returns
   `canonical` so a router can redirect to the canonical form. `%2F` is never a separator.
+- **Names (files-name/3, contracts 04526b1; `checkName`):** 1–255 bytes of strict UTF-8, byte-exact and
+  case-sensitive; no control, none of `/ \ # ? % < > " | : * ;` (a pasted link keeps its meaning, and EFS URL
+  syntax keeps its delimiters), no bidi, invisible or noncharacter scalar, no Unicode white space first or last, not
+  starting with `~efs`, and not ending with `.` (a chat app trims a full stop after a pasted link). Inner spaces,
+  `& ( ) ' , + = ! @ $ [ ] { } ^ ~`, a leading dot or `-` and Windows device names (`con`, `nul.txt`) are names.
+  `NameRule` gives the chain's first failed check in its own order: `empty` / `too-long`, `reserved-prefix`, then
+  from the first byte `reserved-character` (one of the twelve), `excluded-character` or `malformed-utf8` (with `at`,
+  the scalar's index), then `trailing-dot`, `leading-whitespace`, `trailing-whitespace`. Copy: "A name can't use
+  # ? % / \ < > " | : * ; or end with a dot."
 - **The fold:** `foldWord` (from `@efs/sdk` and `@efs/sdk/links`) is the interim fold (docs/design/tags-0.1.md
   section 2). An all-ASCII word goes through the evaluation's white-space step (trimmed; a run of white space with the
   underscores touching it becomes one underscore), then A–Z become a–z. Any other word is left as typed.
@@ -359,19 +368,24 @@ string that an app places in its route, for example after `#/files/`:
   TopicLink, canonical }` or `{ status: "INVALID", rule, segment?, detail?, word?, code? }`. For `bad-word`, `word` is
   the refused segment as the link spelled it (percent-decoded, not folded), so a page can say which word: it may hold
   the characters that broke the rule, so show it escaped or isolated. `code` is the chain's own refusal code
-  (`checkWord`: 1 length, 2 malformed UTF-8, 3 a forbidden ASCII byte, 4 a dot word, 5 a leading `~`, 6
-  address-shaped, 7 a refused character), present whenever the word grammar refused (absent when the fold did).
+  (`checkWord`: 1 length, 2 malformed UTF-8, 3 an ASCII character other than a–z, 0–9, `-`, `_` and `.`, 4 ends with
+  `.`, 6 address-shaped, 7 a refused character, 9 starts with `-`; 5 is unused since the list release), present
+  whenever the word grammar refused (absent when the fold did). `detail` names it: `length`, `malformed-utf8`,
+  `slash`, `control`, `forbidden-ascii` (code 3: `~` and every other punctuation character), `unfolded` (a caller's
+  fold left a capital or a space), `trailing-dot`, `leading-dash`, `address-shaped`, `refused-character`.
   - **A link names only words the chain can hold:** what the fold produced must pass `checkWord`, the chain's whole
     word grammar. So a bidi override, a zero-width joiner, a no-break space, a soft hyphen, a variation selector, a
     C1 control, a noncharacter or a backslash makes the link INVALID, never a page for a word that can't exist.
-  - **Grammar only (`fold: null`) applies only the fold-independent rules** (length, slash, ASCII control, dot,
-    leading `~`, address shape). What the chain refuses in typed text depends on the fold: the recommended rule for
-    Q53 (NFKC_Casefold) removes bidi controls and joiners, so a link refused under the interim fold may name a real
-    word under the ruled one. A grammar-only parse has no `words`, and every read and planner folds and checks the
-    word in full before it becomes an id: a read by words refuses a word `checkWord` refuses with MISUSE, before
-    any request.
+  - **Grammar only (`fold: null`) applies only the fold-independent rules** (length; a slash, an ASCII control or
+    any other ASCII but a–z, A–Z, 0–9, a space, `-`, `_` and `.`; a trailing `.`; a leading `-`; the address
+    shape). What the chain refuses in typed text depends on the fold: the recommended rule for Q53 (NFKC_Casefold)
+    removes bidi controls and joiners, so a link refused under the interim fold may name a real word under the ruled
+    one. A grammar-only parse has no `words`, and every read and planner folds and checks the word in full before it
+    becomes an id: a read by words refuses a word `checkWord` refuses with MISUSE, before any request.
   - **Kinds:** every first segment starting with `~` is the system's (only `~efs` is defined); a first segment that
-    is an address is a home; anything else is a topic (tag model spec §5). The shared root has no named link (no
+    is an address (`0x` or `0X` and exactly 40 hex digits) is a home; anything else is a topic (tag model spec §5), a
+    first segment such as `0xsplits` or `0x` and 41 hex digits included (the gateway answers those 501, as it does
+    every topic path). The shared root has no named link (no
     `~root`), and `~home` is never defined: both are INVALID with rule `reserved-name`, like any other `~` segment.
 - **Path links** (`PathLink`, kind `path`): names after an object id are a path from that folder. It is its own
   kind, never an object link with names, so a router that only opens objects can't open the folder in place of the
@@ -862,7 +876,9 @@ and the deployment's fee profile (`gasLimitOf`). A size refusal is NOT_SENT `OVE
 `@efs/sdk/actions` packs an ordered list of `PlannedAction`s (`{ action, body, shape?, exists?, bindRow?, levels?,
 group?, firstStatement? }`) into publications that each fit one transaction, by the contracts' planning rule
 (gas/model.json `planning`). The contracts' `tools/gas-plan.mjs` is the reference, and the SDK reproduces its verdicts
-on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedules (`test/floor-plan.test.ts`).
+on all twenty-two shared shapes of `test/vectors/floor-plan.json`, on both schedules (`test/floor-plan.test.ts`;
+where a shape's vector is planned with a short list the SDK is held to the reference given the same actions without
+the count, and plans the same batch).
 - **Batch limits** come from the kernel's own checks (`LedgerCore._bounds`): actions ≤ `maxActionsPerPublication`;
   BIND, UNBIND and RELEASE ≤ `maxBindsPerPublication`; summed body bytes ≤ `maxBodyBytesPerPublication`; each
   body ≤ `maxBodyBytes`.
@@ -877,12 +893,14 @@ on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedu
     the 21,000 intrinsic gas, the calldata and the model's largest under-prediction of the gas the cap counts
     (`maxUnderErrorPercent` on prague, `maxUnderExecutionErrorPercent` on amsterdam; an over-prediction only plans
     less than the cap allows).
-  - **The list tiers** (gas/model.json `laterLists`, contracts 6d11858): a later statement (a mask, release, restore
+  - **The list tiers** (gas/model.json `laterLists`, contracts 6d11858; the list release adds the after-no and label
+    restore tiers): a later statement (a mask, release, restore
     or re-bind) costs more when the author's list at its place (purpose, subject) is long, or when it is the first
     later statement at that place in the publication. The SDK never passes the author's entry count: a count read
     when the save is planned goes stale as soon as an earlier part of the same save, or another tab, lands at that
     place, and a stale low count under-prices by up to about 21%. So every later statement whose row has long tiers
-    (TAG and FOLDER hides, removes and restores; PROPERTY, SAME and BROADER masks, releases and restores) is priced at
+    (TAG and FOLDER hides, removes, restores and yeses after a lone no; PROPERTY, SAME and BROADER masks, releases,
+    restores and yeses after a lone no) is priced at
     the long tier: `<row>LongNewPlace` for the first later statement at its place in the part, `<row>LongSamePlace`
     after it. A re-bind (a tag's number change, a folder entry pointed elsewhere) never searches the list and has no
     long tier: `<row>NewPlace` when first at its place, else its row. HEAD statements have none. "First at its place"
@@ -891,29 +909,29 @@ on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedu
     both schedules, count known or not). What it costs: on amsterdam a part's gas limit is at least 1.15 × the
     model's total, so it can be about 25% above what a save of tag masks uses. The person pays only the gas used,
     but the wallet must hold enough for the limit.
-  - **INTERIM: what a later yes writes beyond its row** (contracts 6d11858, figure (ii); until the contracts'
-    list release prices these shapes in gas/model.json). Each is one fresh slot at the schedule's price
-    (test/vectors/gas-schedules.json `freshSlot`), read from the head the planner already has (headsAt's `targetKind`,
-    served as stored, and `revision`):
-    - **A head that never bound** (not UNSET, `targetKind` 0: a lone no, or a no then a release or another no): the
-      BIND writes `head.target` fresh in the kernel. E and the all-gas total pay one slot, and K (the kernel's own
-      spend) one slot of execution.
-    - **A restore that opens the binding's next history word** (its head revision before it is 1 or a positive
-      multiple of 5: the 2nd, 6th, 11th, 16th … statement): the index writes a fresh word. E and the total pay one
-      slot, K none. The restore rows were measured as a 3rd statement, where no word opens; masks, releases and
-      re-binds were measured as a 2nd, where one does, so they never pay it (and over-price elsewhere by one slot, the
-      safe side).
-    A yes after a lone no pays both, so E stays at or above what the chain measured for every figure (ii) case. A
-    part is planned by max(E, V), and V includes K, so these batches move: a part of yeses after lone noes plans 46 on
-    prague and 48 on amsterdam (51 before). A part of restores at history-word positions moves only when E bounds it.
-    Also INTERIM, on the kernel's side only:
-    - **A folder entry placed again where it was removed** (a FOLDER BIND on a masked or released head that bound
-      before: a new file at a removed name, a move into one): the kernel rewrites `head.target` when the target is new,
-      which `restoreFolder` (measured restoring the same target) leaves out. K pays one rewrite at the floor's price
-      (`floorRewriteGas`: 5,000 prague, 12,100 amsterdam), E nothing (it over-predicts this shape). A same-target
-      restore is over-priced by it. Against `restoreFolderLongNewPlace` the kernel's measured share is still 105 gas
-      (prague) and 209 (amsterdam) a statement higher, under 0.03% of V on a full batch. It moves no largest part:
-      moves into removed names stay at 27 entries (prague) and 26 (amsterdam), new files at removed names at 13 and 16.
+  - **Later rows by head, corrected by position** (gas/model.json `laterRows`, contracts 04526b1, the list release).
+    The planner chooses each later statement's row from the head it already reads (`state`, and `targetKind`, which
+    `headsAt` serves as stored): an UNBIND or RELEASE is `unbind<P>` / `release<P>`; a BIND on a BOUND head is a
+    re-bind; a BIND on a MASKED or RELEASED head is `bind<P>AfterNo` when the head never bound (`targetKind` 0: a lone
+    no, perhaps released or followed by another no; the row carries the kernel's fresh target slot) and `restore<P>`
+    otherwise. The FOLDER, PROPERTY and HEAD restores are measured placing a NEW target (the kernel's rewrite of the
+    stored target is in the row and in `floor.kernel`), so a restore of the same target is over-priced by about 2,900
+    gas on prague and 10,100 on amsterdam, the safe side. A label set again after its removal is a restore, never the
+    re-bind row (and the work model's later class, not the re-bind class).
+    Each later row is measured at one position of its binding (`laterRows.rows[key]`: masks, releases, re-binds and
+    yeses after a lone no as the 2nd statement, where the binding's history word opens; restores as the 3rd, where
+    none does). A statement at another position is corrected by `historyWordOpen` (17,100 on prague; 97,920 of state
+    gas and none of execution on amsterdam; no kernel share), both ways: added where the statement opens a word (head
+    revision before it 1 or a positive multiple of 5: the 2nd, 6th, 11th, 16th … statement) and its row's did not,
+    subtracted where its row's did and it opens none. The position is the statement's own `expectedRevision`, which
+    the kernel checks exactly (`E_CAS`, nothing written), so a correction made from a stale revision is refused on
+    chain and never admitted under-priced. A row with no `bindRow` takes the dearest of its kind, its tiers and
+    position included.
+    Every restore and yes-after-no row is measured with its target's backlink list at a word-opening count, which a
+    planner cannot see; elsewhere it over-prices by one fresh slot (prague about 17,100; amsterdam 97,920 of state
+    gas). So for these shapes the model's total can be up to about 1.18× of what amsterdam measures (its stated
+    `maxOverErrorPercent` 18.42%, tag restores at revision 5); a gas limit taken from the total is that much above
+    the gas used. The person pays only the gas used.
   - **V**, the visible gas the kernel's floor needs: `max(K + prefixNeed(P), E) + ⌈F·64/63⌉ + kernelTail`. K is the
     kernel's own share of E (`floor.kernel`, the same model fitted with the index's callbacks removed). P and F are
     the kernel's own quote (`kernelQuote`: prefix floor, final reserve, fresh slots, rewrites; work model formula
@@ -923,7 +941,9 @@ on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedu
     `bindTagNumberChange`, `bindPropertyRebind`), or another later statement (a mask, release or restore; a RELEASE
     always). A later BIND with no row takes the larger of the re-bind and later rows, field by field. The surcharge's
     row of the same class is added when the action's purpose equals the work model's `surchargePurpose` (the kernel's
-    own test, zero included; generation 1 has no surcharge), and every WITHDRAW after the first adds the later row.
+    own test, zero included; since the list release the surcharge is HEAD's: a first HEAD statement adds 10 fresh,
+    10 rewrites and 4,500 compute, a later one 0, 10 and 10,000, for the everyone's-versions list), and every WITHDRAW
+    after the first adds the later row.
   - `SplitPart.rule` keeps E, K, V and the quote; `SplitPart.gas` is the figure shown to people (the model plus
     intrinsic and calldata gas). `packBatches` sums each part's max(E, V) with its intrinsic and calldata gas, since
     each call in an atomic batch must still find its own floor.
@@ -936,8 +956,10 @@ on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedu
   - Why it matters: on the release before this one (120,000 gas of final reserve per bind), 64-entry removes and
     moves were planned at about 9M gas and needed 18.9M to 22.2M, over the cap. This release reserves 7,400 per bind,
     and the rule fits each part to what the kernel actually checks. Formula 3 (contracts 6d11858) prices later
-    statements at their real spend, so prague's tag masks and releases plan 58 to a part (64 before) and restores 51
-    (60): a correction, not a regression. Re-binds gain (62 on prague, 64 and 61 on amsterdam).
+    statements at their real spend; the list release raises the later row (30, 50, 78,000), so prague's tag masks and
+    releases plan 54 to a part (58 at 6d11858, 64 before) and restores 48 (51, 60); amsterdam 54 and 50. Re-binds stay
+    (62 on prague, 64 and 61 on amsterdam); new files plan 9 a part on prague (10) for the HEAD surcharge; yeses after
+    lone noes 45 and 48. These are corrections, not regressions.
 - **Which model:** `gasPlanFor(deployment)` takes the schedule `efs-deployment.chain.feeSchedule` names, else the one
   whose hardforks include `chain.hardfork`, with `chain.txGasCap` (always enforced; 2^24 when not stated). It
   refuses (`UNSUPPORTED_PROFILE`) rather than guess when the document has no `chain` block or names a schedule this
@@ -1516,7 +1538,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | Export | Kind | Summary |
 | --- | --- | --- |
 | `checkLocator` | function | Whether a files-external/1 locator could ever be read, by its shape alone: pure, for checking one as it is typed (as checkName is for names). |
-| `checkName` | function | Check a name against files-name/2. |
+| `checkName` | function | Check a name against files-name/3. |
 | `checkStableWord` | function | Whether a word reads the same under both candidate fold rules, so writing it now can never leave text a ruling would fold differently. |
 | `checksumAddress` | function | EIP-55 checksum form of an address (for display). |
 | `createEfs` | function | Create a client for one EFS deployment. |
@@ -1529,9 +1551,9 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `link` | function | The link string for an object or revision. |
 | `LINK_PREFIX` | const | The first segment of every system link (`~efs`); the name profile reserves it, so no path can look like a link. |
 | `MAX_LINK_LENS` | const | The most principals a link's Lens may name (the deployment may allow fewer; reads enforce its limit). |
-| `MAX_NAME_BYTES` | const | The longest name files-name/2 admits, in UTF-8 bytes. |
+| `MAX_NAME_BYTES` | const | The longest name files-name/3 admits, in UTF-8 bytes. |
 | `memoryByteStore` | function | In-memory byte store, least recently used first out (default 32 MiB). |
-| `NAME_PROFILE` | const | The name profile folder and file names are checked against: files-name/2 (UTF-8, byte-exact, case-sensitive). |
+| `NAME_PROFILE` | const | The name profile folder and file names are checked against: files-name/3 (UTF-8, byte-exact, case-sensitive). |
 | `normalizeName` | function | NFC, the form the SDK writes. |
 | `parseLink` | function | Parse a link string from a route. |
 | `parseSegment` | function | Decode one segment (wire, display or encodeURIComponent form) to exact bytes. |
@@ -1573,10 +1595,10 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `ManifestCheck` | type |  |
 | `NameCheck` | type |  |
 | `NameInput` | type |  |
-| `NameRule` | type |  |
+| `NameRule` | type | Why a name is refused, the chain's checks in its own order (FilesName.valid): the length (`empty`, `too-long`), `reserved-prefix` (`~efs`), then scanning from the first byte the first of `reserved-character` (one of `/ \ # ? % < > " \| : *` and `;`: links and EFS URL syntax keep them), `excluded-character` (a control or another excluded scalar) or `malformed-utf8`, then `trailing-dot` (a name ending in '.', so '.' and '..' too), then `leading-whitespace` and `trailing-whitespace`. |
 | `ObjectLink` | interface | An object by subject id. |
 | `ParseLinkOpts` | interface |  |
-| `PathLink` | interface | A path from a folder named by its id (`~efs/o/<folder>/<name>/…`): that folder's object link, then at least one folder or file name, which keep their case (files-name/2). |
+| `PathLink` | interface | A path from a folder named by its id (`~efs/o/<folder>/<name>/…`): that folder's object link, then at least one folder or file name, which keep their case (files-name/3). |
 | `PinMismatch` | interface |  |
 | `PinResult` | type |  |
 | `PrincipalDisplay` | type | What a person should see for a principal (an author in a Lens, a row's `author`): - address: a key principal is its account's address, EIP-55 checksummed (the padded `0x0000…` id is never shown); - contract: a contract principal of this Realm, matched to an address you name (`contracts`, such as the Safe whose home you are showing) by recomputing it here: a contract principal is a hash, so it is never read back or guessed; - principal: anything else, as its id (lowercase): a contract principal you didn't name, another kind, the zero word. |
@@ -1623,7 +1645,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `LinkTarget` | type | What `link` accepts: an object, path, revision, topic or home link, or a FileRef / RevisionRef from ` |
 | `ObjectLink` | interface | An object by subject id. |
 | `ParseLinkOpts` | interface |  |
-| `PathLink` | interface | A path from a folder named by its id (`~efs/o/<folder>/<name>/…`): that folder's object link, then at least one folder or file name, which keep their case (files-name/2). |
+| `PathLink` | interface | A path from a folder named by its id (`~efs/o/<folder>/<name>/…`): that folder's object link, then at least one folder or file name, which keep their case (files-name/3). |
 | `RealmRef` | interface |  |
 | `RealmRule` | type |  |
 | `RealmSplit` | type |  |
@@ -1819,7 +1841,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `authorCount` | function | A (place, thing) pair's two counts: the authors who ever stated anything there, and how many say yes now. |
 | `broaderAction` | const | "subject is narrower than broader": (BROADER, subject, broader) → broader. |
 | `checkText` | function | The chain's text grammar (text/1, for labels; TopicProfile.textRefusal): 1–255 bytes of strict UTF-8; no C0, DEL or C1 control; no bidi control, invisible scalar or noncharacter. '/', spaces, uppercase and joiners are admitted. |
-| `checkWord` | function | The chain's word grammar (topic-word/1, TopicProfile.wordRefusal): 1–255 bytes of strict UTF-8; no '/', '\', ASCII control, space or A–Z; no refused scalar; not '.' or '..'; not starting with '~'; not '0x' and 40 lowercase hex digits. |
+| `checkWord` | function | The chain's word grammar (topic-word/1, TopicProfile.wordRefusal; contracts 04526b1 item 53): 1–255 bytes of strict UTF-8; of ASCII only a–z, 0–9, '-', '_' and '.'; no refused scalar; not ending with '.'; not starting with '-'; not '0x' and 40 lowercase hex digits. |
 | `childId` | function | The topic one word below `parent`: the topic/1 record (parent, word page). |
 | `denyAction` | function | "not this", n < 0 (−1 by default): a TAG UNBIND, which may be a first statement (a lone negative). |
 | `fileNames` | function | Names for files shown in a topic, by the spec §3.7 order, at one block: for each file, its tagger's own entry in their home or a folder they created, else its creator's entry, else the first Lens author's, else null. |

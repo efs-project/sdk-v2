@@ -10,15 +10,23 @@ export type GrammarCheck =
   /** `code`: the chain's own refusal code (TopicProfile); `rule`: what it means. */
   | { ok: false; code: number; rule: string };
 
+// Code 5 (once "starts with '~'") is unused since the list release: a '~' is code 3 wherever it stands. Never reused.
 const WORD_RULES: Readonly<Record<number, string>> = {
   1: "empty or longer than 255 bytes",
   2: "malformed UTF-8",
-  3: "a forbidden ASCII byte ('/', '\\', a control, a space or A-Z)",
-  4: "'.' or '..'",
-  5: "starts with '~'",
+  3: "an ASCII character other than a-z, 0-9, '-', '_' and '.'",
+  4: "ends with '.'",
   6: "'0x' and 40 lowercase hex characters (an address)",
   7: "a refused character (whitespace, a control, an invisible or bidi character, a joiner or a noncharacter)",
+  9: "starts with '-'",
 };
+
+/** The ASCII bytes a word may hold (TOPICS.wordAscii: a-z 0-9 - _ .), as a 128-entry table. */
+const WORD_ASCII: readonly boolean[] = (() => {
+  const t = new Array<boolean>(128).fill(false);
+  for (const ch of TOPICS.wordAscii) t[ch.charCodeAt(0)] = true;
+  return t;
+})();
 
 /** @internal The refused class of a scalar (TopicProfile.REFUSED), or 0 when it is not refused. */
 export function refusedClass(cp: number): number {
@@ -73,9 +81,11 @@ const fail = (code: number): GrammarCheck => ({
 });
 
 /**
- * The chain's word grammar (topic-word/1, TopicProfile.wordRefusal): 1–255 bytes of strict UTF-8; no '/', '\', ASCII
- * control, space or A–Z; no refused scalar; not '.' or '..'; not starting with '~'; not '0x' and 40 lowercase hex
- * digits. The length code first, then the first byte code found from the start, then the whole-word shapes.
+ * The chain's word grammar (topic-word/1, TopicProfile.wordRefusal; contracts 04526b1 item 53): 1–255 bytes of strict
+ * UTF-8; of ASCII only a–z, 0–9, '-', '_' and '.'; no refused scalar; not ending with '.'; not starting with '-'; not
+ * '0x' and 40 lowercase hex digits. It returns the chain's FIRST refusal: the length (1); then, scanning from the
+ * first byte, the first of malformed UTF-8 (2), an ASCII byte outside the 39 (3) or a refused scalar (7); then a
+ * trailing '.' (4), a leading '-' (9), an address (6).
  */
 export function checkWord(word: string | Uint8Array): GrammarCheck {
   const b = typeof word === "string" ? utf8Encode(word) : word;
@@ -83,8 +93,7 @@ export function checkWord(word: string | Uint8Array): GrammarCheck {
   for (let i = 0; i < b.length; ) {
     const c = b[i] as number;
     if (c < 0x80) {
-      if (c <= 0x20 || c === 0x2f || c === 0x5c || c === 0x7f || (c >= 0x41 && c <= 0x5a))
-        return fail(3);
+      if (!WORD_ASCII[c]) return fail(3);
       i++;
       continue;
     }
@@ -93,8 +102,8 @@ export function checkWord(word: string | Uint8Array): GrammarCheck {
     if (refusedClass(s.cp) !== 0) return fail(7);
     i += s.n;
   }
-  if ((b.length === 1 || b.length === 2) && b.every((c) => c === 0x2e)) return fail(4);
-  if (b[0] === 0x7e) return fail(5);
+  if (b[b.length - 1] === 0x2e) return fail(4);
+  if (b[0] === 0x2d) return fail(9);
   if (
     b.length === 42 &&
     b[0] === 0x30 &&

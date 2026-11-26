@@ -391,10 +391,10 @@ describe("a file's name in a topic (fixture)", () => {
   const text = (x: string) => new TextEncoder().encode(x);
   /** Place an existing file at `name` in `parent` (a raw FOLDER bind: no planner places someone else's file). */
   const place = async (w: typeof wc, parentWord: Hex, name: string, file: Hex) => {
-    const nameType = efs.deployment.typeIds["files-name/2"] as Hex;
+    const nameType = efs.deployment.typeIds["files-name/3"] as Hex;
     const p = await w.planActions({
       actions: [
-        publish(nameType, text(name), "files-name/2").action,
+        publish(nameType, text(name), "files-name/3").action,
         plain({
           kind: ACTION.BIND,
           purpose: PURPOSES.folder,
@@ -403,7 +403,7 @@ describe("a file's name in a topic (fixture)", () => {
           target: file,
         }).action,
       ],
-      bodies: [publish(nameType, text(name), "files-name/2").body, "0x"],
+      bodies: [publish(nameType, text(name), "files-name/3").body, "0x"],
       effects: [{ code: "test.place", args: {} }],
     });
     if (p.status !== "PLANNED") throw new Error(p.status);
