@@ -3,6 +3,11 @@
 // schedule only inside its band, the bands never overlap, and anything outside every band is no schedule, never a
 // guess. The probe's bytes are its opcodes. The check against a chain is tested on the fixture
 // (test/integration/fee-schedule.test.ts).
+//
+// Measured on Sepolia, 2026-11-26 (Glamsterdam live; block 12,216,821): this exact probe, as a read-only deployless
+// eth_call with gas 2,000,000 against the keyless publicnode endpoint, read 110,028 on both backends serving it
+// (Geth 1.17.9 and reth 2.11.0): a fresh slot's 110,020 plus the probe's 8, so a deployless creation context prices
+// the slot exactly as the contracts' state-override probe did. On the fixture (prague) it reads 22,108.
 import { describe, expect, it } from "vitest";
 import { classifySchedule, SCHEDULE_PROBE, scheduleBands } from "../src/actions/schedule.ts";
 import { FRESH_SLOT_GAS } from "../src/generated/gas.ts";
@@ -12,7 +17,8 @@ describe("classifying a measured fresh-slot price", () => {
     expect(FRESH_SLOT_GAS).toEqual({ prague: 22_100, amsterdam: 110_020 });
     expect(classifySchedule(22_108n)).toBe("prague");
     expect(classifySchedule(110_028n)).toBe("amsterdam");
-    // The contracts dev's measurement on Sepolia through a probe loop (110,068) is still amsterdam.
+    // This probe's own reading on Sepolia (both backends, see the header), and the contracts dev's loop (110,068).
+    expect(classifySchedule(110_028n)).toBe("amsterdam");
     expect(classifySchedule(110_068n)).toBe("amsterdam");
   });
 
