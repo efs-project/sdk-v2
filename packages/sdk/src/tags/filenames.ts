@@ -34,7 +34,7 @@ import { indexAbi, ledgerAbi, ledgerReadsAbi, ledgerViewsAbi } from "../generate
 import { PURPOSES } from "../generated/constants.js";
 import { checkName, decodeScalars, NAME_PROFILE } from "../names/name.js";
 import { recordFromHash } from "../protocol/keys.js";
-import { chainStatus, headState } from "../protocol/status.js";
+import { chainStatus, headState, headsAtServed } from "../protocol/status.js";
 import { badReply, callOf, decoded } from "./plan.js";
 
 const MAX_FILES = 32;
@@ -314,6 +314,7 @@ export async function fileNames(
           out5[2 * k + 1],
         );
         if (!h.ok) return h;
+        if (!headsAtServed(h.value[0])) return badReply(`headsAt (status ${h.value[0]})`);
         const mine = h.value[3][0];
         if (!mine || h.value[3].length !== 1) return badReply("headsAt (one head)");
         // The list is append-only: an entry counts only while its author still binds this very file there.

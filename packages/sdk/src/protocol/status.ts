@@ -36,3 +36,12 @@ export function neverBoundHead(h: {
 }): boolean {
   return headState(h.state) !== "UNSET" && Number(h.targetKind) === 0;
 }
+
+/**
+ * Whether a LedgerViews.headsAt reply's status is one it serves (PRESENT: a head decides; MASKED; ABSENT_PROVEN: none
+ * does). Anything else (UNKNOWN, a reserved state, a refusal) is the endpoint's fault: every headsAt read fails over.
+ */
+export function headsAtServed(status: number | bigint): boolean {
+  const cs = chainStatus(status);
+  return cs === "PRESENT" || cs === "MASKED" || cs === "ABSENT_PROVEN";
+}

@@ -35,7 +35,7 @@ import { PURPOSES } from "../generated/constants.js";
 import { checkStableWord, foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { positionKey } from "../protocol/keys.js";
-import { chainStatus, headState, neverBoundHead } from "../protocol/status.js";
+import { chainStatus, headState, headsAtServed, neverBoundHead } from "../protocol/status.js";
 import {
   checkWord,
   denyAction,
@@ -419,8 +419,9 @@ async function plan(
           outs[k],
         );
         if (!h.ok) return h;
+        if (!headsAtServed(h.value[0])) return badReply(`headsAt (status ${h.value[0]})`);
         const mine = h.value[3][0];
-        if (!mine) return badReply("headsAt (one head per Lens author)");
+        if (!mine || h.value[3].length !== 1) return badReply("headsAt (your head)");
         heads.push({
           state: Number(mine.state),
           revision: BigInt(mine.revision),

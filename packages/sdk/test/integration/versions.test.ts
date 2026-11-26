@@ -8,12 +8,10 @@
 // early stop, a moved list (`changed`), and a list the index does not vouch for (the public tier UNKNOWN, the Lens tier
 // and the decision exact). Accounts 36 to 42 of anvil's public development mnemonic (used by no other test file).
 import { readFileSync } from "node:fs";
-import { decodeFunctionResult, encodeFunctionResult, toFunctionSelector } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
-import type { FetchLike } from "../../src/chain/rpc.ts";
-import { createEfs, type Efs } from "../../src/client.ts";
+import { createEfs } from "../../src/client.ts";
 import type { Hex, PrincipalId, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { openFile } from "../../src/files/bytes.ts";
 import { planEditFile } from "../../src/files/edit.ts";
@@ -22,6 +20,7 @@ import type { FolderRef } from "../../src/files/folders.ts";
 import { type FileVersionsCursor, fileVersions } from "../../src/files/versions.ts";
 import { indexAbi, ledgerViewsAbi, lensReaderAbi } from "../../src/generated/abis.ts";
 import { planHeadNo, planHeadRelease } from "../../src/testing/index.ts";
+import { lyingEfs } from "./lying.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -65,54 +64,11 @@ const lensOf = (...who: (typeof C)[]) => efs.lens.from(who.map((x) => x.address)
 let file: SubjectId;
 const revisions = new Map<string, RecordId>();
 
-/**
- * A client on the same endpoint whose replies to one function are decoded, edited and encoded again: an endpoint that
- * lies about exactly one thing.
- */
 const rewriting = (
   abi: readonly unknown[],
   functionName: string,
   edit: (r: unknown[]) => unknown[],
-): Efs => {
-  const item = (abi as { type: string; name?: string }[]).find(
-    (x) => x.type === "function" && x.name === functionName,
-  );
-  const selector = toFunctionSelector(item as never);
-  const lying: FetchLike = async (url, init) => {
-    const res = await fetch(url, init as RequestInit);
-    const body = JSON.parse(init.body ?? "null");
-    const json = await res.json();
-    const reqs = (Array.isArray(body) ? body : [body]) as {
-      id: number;
-      method: string;
-      params: [{ data?: string }];
-    }[];
-    const ids = new Set(
-      reqs
-        .filter((r) => r.method === "eth_call" && r.params[0]?.data?.startsWith(selector))
-        .map((r) => r.id),
-    );
-    for (const o of (Array.isArray(json) ? json : [json]) as { id: number; result?: Hex }[])
-      if (ids.has(o.id) && typeof o.result === "string") {
-        const got = decodeFunctionResult({
-          abi: abi as never,
-          functionName,
-          data: o.result,
-        } as never);
-        const out = Array.isArray(got) ? [...got] : [got];
-        o.result = encodeFunctionResult({
-          abi: abi as never,
-          functionName,
-          result: (out.length === 1 ? edit(out)[0] : edit(out)) as never,
-        } as never);
-      }
-    return new Response(JSON.stringify(json), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }) as never;
-  };
-  return createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: lying });
-};
+) => lyingEfs(fixture.rpcUrl, deployment, abi, functionName, edit);
 
 /**
  * A HEAD statement the SDK's planners never make, by the testing helpers (planHeadNo: a "not this", planHeadRelease: a

@@ -26,7 +26,7 @@ import { foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
 import { positionKey, scopeKey } from "../protocol/keys.js";
-import { chainStatus, headState } from "../protocol/status.js";
+import { chainStatus, headState, headsAtServed } from "../protocol/status.js";
 import { callsIn } from "./filenames.js";
 import { badReply, callOf, decoded } from "./plan.js";
 import { topicPath } from "./read.js";
@@ -280,6 +280,7 @@ async function topicEdges(
       out5[2 * k + 1],
     );
     if (!h.ok) return h;
+    if (!headsAtServed(h.value[0])) return badReply(`headsAt (status ${h.value[0]})`);
     const heads = h.value[3];
     if (heads.length !== principals.length) return badReply("headsAt (one head per Lens author)");
     // The Lens law at this position: the first author with a stance decides.
