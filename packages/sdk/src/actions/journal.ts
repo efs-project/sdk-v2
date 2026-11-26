@@ -27,7 +27,11 @@ export interface AttemptRecord {
    * true once it is. Absent on records from older SDKs, which are treated as final.
    */
   final?: boolean;
-  history: readonly { stage: AttemptStage; at: number; detail?: string }[];
+  /**
+   * Each stage change, in order. `refusal`: set on a SUBMISSION_POSSIBLE entry when the wallet or node refused the
+   * send for a reason that may let the same plan go again (INSUFFICIENT_FUNDS; see send.ts fundsResendable).
+   */
+  history: readonly { stage: AttemptStage; at: number; detail?: string; refusal?: string }[];
   /** Unknown fields from newer SDKs are preserved here on rewrite. */
   extensions?: Record<string, unknown>;
 }

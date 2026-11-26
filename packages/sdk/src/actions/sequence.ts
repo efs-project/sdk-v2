@@ -44,7 +44,7 @@ import {
 import type { PlanInput } from "./plan.js";
 import { waitForReceipt } from "./receipt.js";
 import { reconcileAttempt } from "./reconcile.js";
-import { type Authorizer, notify, type SendOpts, sendPlan } from "./send.js";
+import { type Authorizer, fundsResendable, notify, type SendOpts, sendPlan } from "./send.js";
 import { gasPlanFor, packBatches } from "./split.js";
 import type { EffectView, Plan, PlanResult, PlanSequenceResult } from "./types.js";
 
@@ -710,9 +710,53 @@ export function sequenceOps(d: Deps) {
     });
     let r = await reconcileParts(r0, o, 0);
     committedSince(o, r0, r);
+    const a = d.authorizer;
+    // A part in flight because its send was refused for funds goes again as the same plan (the person's click: only
+    // resume reaches here with an attempt already made), through sendPlan's lock, twin guard and estimate; if the
+    // original landed meanwhile, the estimate fails, nothing is sent, and reconcile finds it committed. Every other
+    // part in flight waits for reconcile.
+    if (r.state === "IN_FLIGHT") {
+      for (let i = 0; i < r.parts.length; i++) {
+        const part = r.parts[i] as SequencePart;
+        if (part.committed || !part.planId) continue;
+        const attempt = await journal.get(part.planId);
+        if (!attempt || !fundsResendable(attempt)) continue;
+        r = await save(r, `sending part ${i + 1} of ${r.parts.length} again after a funds refusal`);
+        const sent = await sendPlan(
+          efs,
+          sendJournal,
+          a,
+          attempt.plan,
+          asking(o, r, [i], "sequential"),
+        );
+        if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o, settleMs);
+        const sentAt = r;
+        r = await reconcileParts(
+          r,
+          o,
+          sent.status === "SUBMITTED" || sent.status === "AMBIGUOUS" ? settleMs : 0,
+        );
+        committedSince(o, sentAt, r, "sequential");
+        // Not committed and not settled by a landed original: stop here, saying why (refused again, or not decided).
+        if (!(r.parts[i] as SequencePart).committed && sent.status !== "STALE")
+          return progress(r, {
+            mode: "sequential",
+            ...(sent.status === "AMBIGUOUS" || sent.status === "NOT_SENT"
+              ? { reason: sent.reason }
+              : sent.status === "BUSY"
+                ? {
+                    reason: reason(
+                      "BUSY",
+                      "transient",
+                      "another submission for this account is in progress",
+                    ),
+                  }
+                : {}),
+          });
+      }
+    }
     if (r.state === "IN_FLIGHT" || r.state === "COMPLETE" || r.state === "ABANDONED")
       return progress(r);
-    const a = d.authorizer;
     let mode: "batch" | "sequential" | undefined;
 
     /** One atomic request for `g`. `again`: nothing went out and a smaller batch (or part by part) can go now. */
