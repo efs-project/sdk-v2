@@ -339,6 +339,8 @@ export type RawInfo = {
   scanStatus: number;
   completeFromOrigin: boolean;
   scanned: bigint;
+  /** The entry the next page reads first (the newest not yet processed); 0 exactly at EXHAUSTED on a served page. */
+  frontier: bigint;
   rawTotal: bigint;
   positionsEver: bigint;
   repeatsSkipped: bigint;
@@ -487,6 +489,7 @@ export async function topicItems(
       let entryCap: number = callEntries;
       let rowCap: number = b.maxRows;
       let backoffs = 0;
+      let lastFrontier: bigint | null = null;
       while (calls < MAX_CALLS) {
         const limit = Math.min(entryCap, entriesWanted - read);
         const maxRows = Math.min(rowCap, rowsWanted - rows.length - unkinded.length);
@@ -563,6 +566,14 @@ export async function topicItems(
             retryElsewhere: true,
             reason: reason("RPC_ERROR", "transient", "a page read nothing and did not end"),
           };
+        const late = frontierFault(st, info, raw, lastFrontier);
+        if (late)
+          return {
+            ok: false,
+            retryElsewhere: true,
+            reason: reason("RPC_ERROR", "transient", late),
+          };
+        lastFrontier = BigInt(info.frontier);
         if (
           calls === 1 &&
           !o.cursor &&
@@ -711,6 +722,29 @@ export async function topicItems(
     basis,
     evidence,
   };
+}
+
+/**
+ * @internal Why a served page's `frontier` breaks the page laws, or null: it is 0 exactly at EXHAUSTED; every row of
+ * the page is above it; every row is at or below the frontier of the call before it in the same listing (`last`), and
+ * the frontier falls from call to call. A refused page carries 0 too, so this is asked only of served pages.
+ */
+export function frontierFault(
+  scan: ScanStatus,
+  info: { frontier: bigint },
+  raw: readonly { bindingOrdinal: bigint }[],
+  last: bigint | null,
+): string | null {
+  const f = BigInt(info.frontier);
+  if ((scan === "EXHAUSTED") !== (f === 0n))
+    return "a page's frontier is not 0 exactly at the end of its listing";
+  for (const r of raw) {
+    const e = BigInt(r.bindingOrdinal);
+    if (e <= f) return "a row at or below its page's frontier";
+    if (last !== null && e > last) return "a row above the frontier of the call before it";
+  }
+  if (last !== null && f >= last) return "a listing's frontier did not fall";
+  return null;
 }
 
 /** Why a reader's row can't be what it says, or null when it holds together. */

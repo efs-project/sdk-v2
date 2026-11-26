@@ -42,3 +42,39 @@ export function tampered(edits: Record<Hex, Edit>): FetchLike {
     };
   };
 }
+
+/**
+ * A fetch whose eth_call replies pass through `edit` with the call's own data, for edits that depend on what was
+ * asked (one list of several, the nth call). `edit` returns the new result, an error, or null to leave the reply.
+ */
+export function tamperedCalls(
+  edit: (data: Hex, result: Hex) => Hex | { error: { code: number; message: string } } | null,
+): FetchLike {
+  return async (url, init) => {
+    const res = await fetch(url, init as RequestInit);
+    const sent = JSON.parse(init.body ?? "null");
+    const reqs = Array.isArray(sent) ? sent : [sent];
+    const got = JSON.parse(await res.text());
+    const outs = Array.isArray(got) ? got : [got];
+    for (const r of reqs) {
+      if (r?.method !== "eth_call") continue;
+      const item = outs.find((o: { id: number }) => o.id === r.id);
+      if (!item || typeof item.result !== "string") continue;
+      const e = edit(String(r.params?.[0]?.data ?? "0x") as Hex, item.result as Hex);
+      if (e === null) continue;
+      if (typeof e === "string") item.result = e;
+      else {
+        delete item.result;
+        item.error = e.error;
+      }
+    }
+    const body = JSON.stringify(Array.isArray(got) ? outs : outs[0]);
+    return {
+      ok: true,
+      status: 200,
+      headers: res.headers,
+      text: async () => body,
+      arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer,
+    };
+  };
+}

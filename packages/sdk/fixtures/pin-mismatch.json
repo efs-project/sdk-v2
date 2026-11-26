@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "0fb4804fdfde33e5ab312eaacf00410785e995c3",
+  "contractsCommit": "cbf5b7807a9adf011d8bc2f8bf278a281b4e4752",
   "case": "pin-mismatch",
   "note": "efs.pin() with a forged LensReader code hash in the document",
   "result": {
@@ -11,11 +11,11 @@
       "blockNumber": {
         "$efs:bigint": "79"
       },
-      "blockHash": "0x7f09efbfb74c6f2366d0e4c868942188b80b5b5b3ac538327d4fc5dd8ac9ab98",
+      "blockHash": "0x7842ec3fdbd577e735c4ad81e0bf98e42d519de8b5aad13ca3399a09914487ad",
       "timestamp": {
-        "$efs:bigint": "1795654066"
+        "$efs:bigint": "1795672303"
       },
-      "executionSet": "0x3a9a6aea417492210568a60a5383e17bea5cffae424aafaaded4cb835fd793e4",
+      "executionSet": "0x0788d65963e48f73fe655a469cc2110365bc9e498cc37c56030d60ac3a9cb99d",
       "admissions": {
         "$efs:bigint": "27"
       },
@@ -25,7 +25,7 @@
       {
         "what": "code: LensReader",
         "expected": "0xabababababababababababababababababababababababababababababababab",
-        "actual": "0x860798ab8bc042290f1b2f24cfc4d098b28d73b26db1796ad45377ea297b8ce1"
+        "actual": "0x1e292b4ddd241b346e6789b20810a3dacbf36709958874a11be3c3ae84177c07"
       }
     ],
     "evidence": {
