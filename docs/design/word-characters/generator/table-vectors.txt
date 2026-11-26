@@ -1,0 +1,3478 @@
+# <word as UTF-8 hex> <expected: 7 a scalar of chain-table.txt, 0 none of it> <why>
+61c280 7 U+0080 first or last of 0080-00A8
+61c2a8 7 U+00A8 first or last of 0080-00A8
+61c2a9 0 U+00A9 beside 0080-00A8
+61c2aa 7 U+00AA first or last of 00AA-00AD
+61c2ad 7 U+00AD first or last of 00AA-00AD
+61c2ae 0 U+00AE beside 00AA-00AD
+61c2af 7 U+00AF first or last of 00AF-00B6
+61c2b6 7 U+00B6 first or last of 00AF-00B6
+61c2b7 0 U+00B7 beside 00AF-00B6
+61c2b8 7 U+00B8 first or last of 00B8-00DF
+61c39f 7 U+00DF first or last of 00B8-00DF
+61c3a0 0 U+00E0 beside 00B8-00DF
+61c3b7 7 U+00F7 first or last of 00F7-00F7
+61c3b6 0 U+00F6 beside 00F7-00F7
+61c3b8 0 U+00F8 beside 00F7-00F7
+61c480 7 U+0100 first or last of 0100-0100
+61c3bf 0 U+00FF beside 0100-0100
+61c481 0 U+0101 beside 0100-0100
+61c482 7 U+0102 first or last of 0102-0102
+61c483 0 U+0103 beside 0102-0102
+61c484 7 U+0104 first or last of 0104-0104
+61c485 0 U+0105 beside 0104-0104
+61c486 7 U+0106 first or last of 0106-0106
+61c487 0 U+0107 beside 0106-0106
+61c488 7 U+0108 first or last of 0108-0108
+61c489 0 U+0109 beside 0108-0108
+61c48a 7 U+010A first or last of 010A-010A
+61c48b 0 U+010B beside 010A-010A
+61c48c 7 U+010C first or last of 010C-010C
+61c48d 0 U+010D beside 010C-010C
+61c48e 7 U+010E first or last of 010E-010E
+61c48f 0 U+010F beside 010E-010E
+61c490 7 U+0110 first or last of 0110-0110
+61c491 0 U+0111 beside 0110-0110
+61c492 7 U+0112 first or last of 0112-0112
+61c493 0 U+0113 beside 0112-0112
+61c494 7 U+0114 first or last of 0114-0114
+61c495 0 U+0115 beside 0114-0114
+61c496 7 U+0116 first or last of 0116-0116
+61c497 0 U+0117 beside 0116-0116
+61c498 7 U+0118 first or last of 0118-0118
+61c499 0 U+0119 beside 0118-0118
+61c49a 7 U+011A first or last of 011A-011A
+61c49b 0 U+011B beside 011A-011A
+61c49c 7 U+011C first or last of 011C-011C
+61c49d 0 U+011D beside 011C-011C
+61c49e 7 U+011E first or last of 011E-011E
+61c49f 0 U+011F beside 011E-011E
+61c4a0 7 U+0120 first or last of 0120-0120
+61c4a1 0 U+0121 beside 0120-0120
+61c4a2 7 U+0122 first or last of 0122-0122
+61c4a3 0 U+0123 beside 0122-0122
+61c4a4 7 U+0124 first or last of 0124-0124
+61c4a5 0 U+0125 beside 0124-0124
+61c4a6 7 U+0126 first or last of 0126-0126
+61c4a7 0 U+0127 beside 0126-0126
+61c4a8 7 U+0128 first or last of 0128-0128
+61c4a9 0 U+0129 beside 0128-0128
+61c4aa 7 U+012A first or last of 012A-012A
+61c4ab 0 U+012B beside 012A-012A
+61c4ac 7 U+012C first or last of 012C-012C
+61c4ad 0 U+012D beside 012C-012C
+61c4ae 7 U+012E first or last of 012E-012E
+61c4af 0 U+012F beside 012E-012E
+61c4b0 7 U+0130 first or last of 0130-0130
+61c4b1 0 U+0131 beside 0130-0130
+61c4b2 7 U+0132 first or last of 0132-0134
+61c4b4 7 U+0134 first or last of 0132-0134
+61c4b5 0 U+0135 beside 0132-0134
+61c4b6 7 U+0136 first or last of 0136-0136
+61c4b7 0 U+0137 beside 0136-0136
+61c4b9 7 U+0139 first or last of 0139-0139
+61c4b8 0 U+0138 beside 0139-0139
+61c4ba 0 U+013A beside 0139-0139
+61c4bb 7 U+013B first or last of 013B-013B
+61c4bc 0 U+013C beside 013B-013B
+61c4bd 7 U+013D first or last of 013D-013D
+61c4be 0 U+013E beside 013D-013D
+61c4bf 7 U+013F first or last of 013F-0141
+61c581 7 U+0141 first or last of 013F-0141
+61c582 0 U+0142 beside 013F-0141
+61c583 7 U+0143 first or last of 0143-0143
+61c584 0 U+0144 beside 0143-0143
+61c585 7 U+0145 first or last of 0145-0145
+61c586 0 U+0146 beside 0145-0145
+61c587 7 U+0147 first or last of 0147-0147
+61c588 0 U+0148 beside 0147-0147
+61c589 7 U+0149 first or last of 0149-014A
+61c58a 7 U+014A first or last of 0149-014A
+61c58b 0 U+014B beside 0149-014A
+61c58c 7 U+014C first or last of 014C-014C
+61c58d 0 U+014D beside 014C-014C
+61c58e 7 U+014E first or last of 014E-014E
+61c58f 0 U+014F beside 014E-014E
+61c590 7 U+0150 first or last of 0150-0150
+61c591 0 U+0151 beside 0150-0150
+61c592 7 U+0152 first or last of 0152-0152
+61c593 0 U+0153 beside 0152-0152
+61c594 7 U+0154 first or last of 0154-0154
+61c595 0 U+0155 beside 0154-0154
+61c596 7 U+0156 first or last of 0156-0156
+61c597 0 U+0157 beside 0156-0156
+61c598 7 U+0158 first or last of 0158-0158
+61c599 0 U+0159 beside 0158-0158
+61c59a 7 U+015A first or last of 015A-015A
+61c59b 0 U+015B beside 015A-015A
+61c59c 7 U+015C first or last of 015C-015C
+61c59d 0 U+015D beside 015C-015C
+61c59e 7 U+015E first or last of 015E-015E
+61c59f 0 U+015F beside 015E-015E
+61c5a0 7 U+0160 first or last of 0160-0160
+61c5a1 0 U+0161 beside 0160-0160
+61c5a2 7 U+0162 first or last of 0162-0162
+61c5a3 0 U+0163 beside 0162-0162
+61c5a4 7 U+0164 first or last of 0164-0164
+61c5a5 0 U+0165 beside 0164-0164
+61c5a6 7 U+0166 first or last of 0166-0166
+61c5a7 0 U+0167 beside 0166-0166
+61c5a8 7 U+0168 first or last of 0168-0168
+61c5a9 0 U+0169 beside 0168-0168
+61c5aa 7 U+016A first or last of 016A-016A
+61c5ab 0 U+016B beside 016A-016A
+61c5ac 7 U+016C first or last of 016C-016C
+61c5ad 0 U+016D beside 016C-016C
+61c5ae 7 U+016E first or last of 016E-016E
+61c5af 0 U+016F beside 016E-016E
+61c5b0 7 U+0170 first or last of 0170-0170
+61c5b1 0 U+0171 beside 0170-0170
+61c5b2 7 U+0172 first or last of 0172-0172
+61c5b3 0 U+0173 beside 0172-0172
+61c5b4 7 U+0174 first or last of 0174-0174
+61c5b5 0 U+0175 beside 0174-0174
+61c5b6 7 U+0176 first or last of 0176-0176
+61c5b7 0 U+0177 beside 0176-0176
+61c5b8 7 U+0178 first or last of 0178-0179
+61c5b9 7 U+0179 first or last of 0178-0179
+61c5ba 0 U+017A beside 0178-0179
+61c5bb 7 U+017B first or last of 017B-017B
+61c5bc 0 U+017C beside 017B-017B
+61c5bd 7 U+017D first or last of 017D-017D
+61c5be 0 U+017E beside 017D-017D
+61c5bf 7 U+017F first or last of 017F-017F
+61c680 0 U+0180 beside 017F-017F
+61c681 7 U+0181 first or last of 0181-0182
+61c682 7 U+0182 first or last of 0181-0182
+61c683 0 U+0183 beside 0181-0182
+61c684 7 U+0184 first or last of 0184-0184
+61c685 0 U+0185 beside 0184-0184
+61c686 7 U+0186 first or last of 0186-0187
+61c687 7 U+0187 first or last of 0186-0187
+61c688 0 U+0188 beside 0186-0187
+61c689 7 U+0189 first or last of 0189-018B
+61c68b 7 U+018B first or last of 0189-018B
+61c68c 0 U+018C beside 0189-018B
+61c68e 7 U+018E first or last of 018E-0191
+61c691 7 U+0191 first or last of 018E-0191
+61c68d 0 U+018D beside 018E-0191
+61c692 0 U+0192 beside 018E-0191
+61c693 7 U+0193 first or last of 0193-0194
+61c694 7 U+0194 first or last of 0193-0194
+61c695 0 U+0195 beside 0193-0194
+61c696 7 U+0196 first or last of 0196-0198
+61c698 7 U+0198 first or last of 0196-0198
+61c699 0 U+0199 beside 0196-0198
+61c69c 7 U+019C first or last of 019C-019D
+61c69d 7 U+019D first or last of 019C-019D
+61c69b 0 U+019B beside 019C-019D
+61c69e 0 U+019E beside 019C-019D
+61c69f 7 U+019F first or last of 019F-01A0
+61c6a0 7 U+01A0 first or last of 019F-01A0
+61c6a1 0 U+01A1 beside 019F-01A0
+61c6a2 7 U+01A2 first or last of 01A2-01A2
+61c6a3 0 U+01A3 beside 01A2-01A2
+61c6a4 7 U+01A4 first or last of 01A4-01A4
+61c6a5 0 U+01A5 beside 01A4-01A4
+61c6a6 7 U+01A6 first or last of 01A6-01A7
+61c6a7 7 U+01A7 first or last of 01A6-01A7
+61c6a8 0 U+01A8 beside 01A6-01A7
+61c6a9 7 U+01A9 first or last of 01A9-01A9
+61c6aa 0 U+01AA beside 01A9-01A9
+61c6ac 7 U+01AC first or last of 01AC-01AC
+61c6ab 0 U+01AB beside 01AC-01AC
+61c6ad 0 U+01AD beside 01AC-01AC
+61c6ae 7 U+01AE first or last of 01AE-01AF
+61c6af 7 U+01AF first or last of 01AE-01AF
+61c6b0 0 U+01B0 beside 01AE-01AF
+61c6b1 7 U+01B1 first or last of 01B1-01B3
+61c6b3 7 U+01B3 first or last of 01B1-01B3
+61c6b4 0 U+01B4 beside 01B1-01B3
+61c6b5 7 U+01B5 first or last of 01B5-01B5
+61c6b6 0 U+01B6 beside 01B5-01B5
+61c6b7 7 U+01B7 first or last of 01B7-01B8
+61c6b8 7 U+01B8 first or last of 01B7-01B8
+61c6b9 0 U+01B9 beside 01B7-01B8
+61c6bc 7 U+01BC first or last of 01BC-01BC
+61c6bb 0 U+01BB beside 01BC-01BC
+61c6bd 0 U+01BD beside 01BC-01BC
+61c784 7 U+01C4 first or last of 01C4-01CD
+61c78d 7 U+01CD first or last of 01C4-01CD
+61c783 0 U+01C3 beside 01C4-01CD
+61c78e 0 U+01CE beside 01C4-01CD
+61c78f 7 U+01CF first or last of 01CF-01CF
+61c790 0 U+01D0 beside 01CF-01CF
+61c791 7 U+01D1 first or last of 01D1-01D1
+61c792 0 U+01D2 beside 01D1-01D1
+61c793 7 U+01D3 first or last of 01D3-01D3
+61c794 0 U+01D4 beside 01D3-01D3
+61c795 7 U+01D5 first or last of 01D5-01D5
+61c796 0 U+01D6 beside 01D5-01D5
+61c797 7 U+01D7 first or last of 01D7-01D7
+61c798 0 U+01D8 beside 01D7-01D7
+61c799 7 U+01D9 first or last of 01D9-01D9
+61c79a 0 U+01DA beside 01D9-01D9
+61c79b 7 U+01DB first or last of 01DB-01DB
+61c79c 0 U+01DC beside 01DB-01DB
+61c79e 7 U+01DE first or last of 01DE-01DE
+61c79d 0 U+01DD beside 01DE-01DE
+61c79f 0 U+01DF beside 01DE-01DE
+61c7a0 7 U+01E0 first or last of 01E0-01E0
+61c7a1 0 U+01E1 beside 01E0-01E0
+61c7a2 7 U+01E2 first or last of 01E2-01E2
+61c7a3 0 U+01E3 beside 01E2-01E2
+61c7a4 7 U+01E4 first or last of 01E4-01E4
+61c7a5 0 U+01E5 beside 01E4-01E4
+61c7a6 7 U+01E6 first or last of 01E6-01E6
+61c7a7 0 U+01E7 beside 01E6-01E6
+61c7a8 7 U+01E8 first or last of 01E8-01E8
+61c7a9 0 U+01E9 beside 01E8-01E8
+61c7aa 7 U+01EA first or last of 01EA-01EA
+61c7ab 0 U+01EB beside 01EA-01EA
+61c7ac 7 U+01EC first or last of 01EC-01EC
+61c7ad 0 U+01ED beside 01EC-01EC
+61c7ae 7 U+01EE first or last of 01EE-01EE
+61c7af 0 U+01EF beside 01EE-01EE
+61c7b1 7 U+01F1 first or last of 01F1-01F4
+61c7b4 7 U+01F4 first or last of 01F1-01F4
+61c7b0 0 U+01F0 beside 01F1-01F4
+61c7b5 0 U+01F5 beside 01F1-01F4
+61c7b6 7 U+01F6 first or last of 01F6-01F8
+61c7b8 7 U+01F8 first or last of 01F6-01F8
+61c7b9 0 U+01F9 beside 01F6-01F8
+61c7ba 7 U+01FA first or last of 01FA-01FA
+61c7bb 0 U+01FB beside 01FA-01FA
+61c7bc 7 U+01FC first or last of 01FC-01FC
+61c7bd 0 U+01FD beside 01FC-01FC
+61c7be 7 U+01FE first or last of 01FE-01FE
+61c7bf 0 U+01FF beside 01FE-01FE
+61c880 7 U+0200 first or last of 0200-0200
+61c881 0 U+0201 beside 0200-0200
+61c882 7 U+0202 first or last of 0202-0202
+61c883 0 U+0203 beside 0202-0202
+61c884 7 U+0204 first or last of 0204-0204
+61c885 0 U+0205 beside 0204-0204
+61c886 7 U+0206 first or last of 0206-0206
+61c887 0 U+0207 beside 0206-0206
+61c888 7 U+0208 first or last of 0208-0208
+61c889 0 U+0209 beside 0208-0208
+61c88a 7 U+020A first or last of 020A-020A
+61c88b 0 U+020B beside 020A-020A
+61c88c 7 U+020C first or last of 020C-020C
+61c88d 0 U+020D beside 020C-020C
+61c88e 7 U+020E first or last of 020E-020E
+61c88f 0 U+020F beside 020E-020E
+61c890 7 U+0210 first or last of 0210-0210
+61c891 0 U+0211 beside 0210-0210
+61c892 7 U+0212 first or last of 0212-0212
+61c893 0 U+0213 beside 0212-0212
+61c894 7 U+0214 first or last of 0214-0214
+61c895 0 U+0215 beside 0214-0214
+61c896 7 U+0216 first or last of 0216-0216
+61c897 0 U+0217 beside 0216-0216
+61c898 7 U+0218 first or last of 0218-0218
+61c899 0 U+0219 beside 0218-0218
+61c89a 7 U+021A first or last of 021A-021A
+61c89b 0 U+021B beside 021A-021A
+61c89c 7 U+021C first or last of 021C-021C
+61c89d 0 U+021D beside 021C-021C
+61c89e 7 U+021E first or last of 021E-021E
+61c89f 0 U+021F beside 021E-021E
+61c8a0 7 U+0220 first or last of 0220-0220
+61c8a1 0 U+0221 beside 0220-0220
+61c8a2 7 U+0222 first or last of 0222-0222
+61c8a3 0 U+0223 beside 0222-0222
+61c8a4 7 U+0224 first or last of 0224-0224
+61c8a5 0 U+0225 beside 0224-0224
+61c8a6 7 U+0226 first or last of 0226-0226
+61c8a7 0 U+0227 beside 0226-0226
+61c8a8 7 U+0228 first or last of 0228-0228
+61c8a9 0 U+0229 beside 0228-0228
+61c8aa 7 U+022A first or last of 022A-022A
+61c8ab 0 U+022B beside 022A-022A
+61c8ac 7 U+022C first or last of 022C-022C
+61c8ad 0 U+022D beside 022C-022C
+61c8ae 7 U+022E first or last of 022E-022E
+61c8af 0 U+022F beside 022E-022E
+61c8b0 7 U+0230 first or last of 0230-0230
+61c8b1 0 U+0231 beside 0230-0230
+61c8b2 7 U+0232 first or last of 0232-0232
+61c8b3 0 U+0233 beside 0232-0232
+61c8ba 7 U+023A first or last of 023A-023B
+61c8bb 7 U+023B first or last of 023A-023B
+61c8b9 0 U+0239 beside 023A-023B
+61c8bc 0 U+023C beside 023A-023B
+61c8bd 7 U+023D first or last of 023D-023E
+61c8be 7 U+023E first or last of 023D-023E
+61c8bf 0 U+023F beside 023D-023E
+61c981 7 U+0241 first or last of 0241-0241
+61c980 0 U+0240 beside 0241-0241
+61c982 0 U+0242 beside 0241-0241
+61c983 7 U+0243 first or last of 0243-0246
+61c986 7 U+0246 first or last of 0243-0246
+61c987 0 U+0247 beside 0243-0246
+61c988 7 U+0248 first or last of 0248-0248
+61c989 0 U+0249 beside 0248-0248
+61c98a 7 U+024A first or last of 024A-024A
+61c98b 0 U+024B beside 024A-024A
+61c98c 7 U+024C first or last of 024C-024C
+61c98d 0 U+024D beside 024C-024C
+61c98e 7 U+024E first or last of 024E-024E
+61c98f 0 U+024F beside 024E-024E
+61cab0 7 U+02B0 first or last of 02B0-02B8
+61cab8 7 U+02B8 first or last of 02B0-02B8
+61caaf 0 U+02AF beside 02B0-02B8
+61cab9 0 U+02B9 beside 02B0-02B8
+61cb82 7 U+02C2 first or last of 02C2-02C5
+61cb85 7 U+02C5 first or last of 02C2-02C5
+61cb81 0 U+02C1 beside 02C2-02C5
+61cb86 0 U+02C6 beside 02C2-02C5
+61cb92 7 U+02D2 first or last of 02D2-02EB
+61cbab 7 U+02EB first or last of 02D2-02EB
+61cb91 0 U+02D1 beside 02D2-02EB
+61cbac 0 U+02EC beside 02D2-02EB
+61cbad 7 U+02ED first or last of 02ED-02ED
+61cbae 0 U+02EE beside 02ED-02ED
+61cbaf 7 U+02EF first or last of 02EF-02FF
+61cbbf 7 U+02FF first or last of 02EF-02FF
+61cc80 0 U+0300 beside 02EF-02FF
+61ccb7 7 U+0337 first or last of 0337-0338
+61ccb8 7 U+0338 first or last of 0337-0338
+61ccb6 0 U+0336 beside 0337-0338
+61ccb9 0 U+0339 beside 0337-0338
+61cd80 7 U+0340 first or last of 0340-0341
+61cd81 7 U+0341 first or last of 0340-0341
+61ccbf 0 U+033F beside 0340-0341
+61cd82 0 U+0342 beside 0340-0341
+61cd83 7 U+0343 first or last of 0343-0345
+61cd85 7 U+0345 first or last of 0343-0345
+61cd86 0 U+0346 beside 0343-0345
+61cd8f 7 U+034F first or last of 034F-034F
+61cd8e 0 U+034E beside 034F-034F
+61cd90 0 U+0350 beside 034F-034F
+61cdb0 7 U+0370 first or last of 0370-0370
+61cdaf 0 U+036F beside 0370-0370
+61cdb1 0 U+0371 beside 0370-0370
+61cdb2 7 U+0372 first or last of 0372-0372
+61cdb3 0 U+0373 beside 0372-0372
+61cdb4 7 U+0374 first or last of 0374-0376
+61cdb6 7 U+0376 first or last of 0374-0376
+61cdb7 0 U+0377 beside 0374-0376
+61cdba 7 U+037A first or last of 037A-037A
+61cdb9 0 U+0379 beside 037A-037A
+61cdbb 0 U+037B beside 037A-037A
+61cdbe 7 U+037E first or last of 037E-037F
+61cdbf 7 U+037F first or last of 037E-037F
+61cdbd 0 U+037D beside 037E-037F
+61ce80 0 U+0380 beside 037E-037F
+61ce84 7 U+0384 first or last of 0384-038A
+61ce8a 7 U+038A first or last of 0384-038A
+61ce83 0 U+0383 beside 0384-038A
+61ce8b 0 U+038B beside 0384-038A
+61ce8c 7 U+038C first or last of 038C-038C
+61ce8d 0 U+038D beside 038C-038C
+61ce8e 7 U+038E first or last of 038E-038F
+61ce8f 7 U+038F first or last of 038E-038F
+61ce90 0 U+0390 beside 038E-038F
+61ce91 7 U+0391 first or last of 0391-03A1
+61cea1 7 U+03A1 first or last of 0391-03A1
+61cea2 0 U+03A2 beside 0391-03A1
+61cea3 7 U+03A3 first or last of 03A3-03AB
+61ceab 7 U+03AB first or last of 03A3-03AB
+61ceac 0 U+03AC beside 03A3-03AB
+61cf82 7 U+03C2 first or last of 03C2-03C2
+61cf81 0 U+03C1 beside 03C2-03C2
+61cf83 0 U+03C3 beside 03C2-03C2
+61cf8f 7 U+03CF first or last of 03CF-03D6
+61cf96 7 U+03D6 first or last of 03CF-03D6
+61cf8e 0 U+03CE beside 03CF-03D6
+61cf97 0 U+03D7 beside 03CF-03D6
+61cf98 7 U+03D8 first or last of 03D8-03D8
+61cf99 0 U+03D9 beside 03D8-03D8
+61cf9a 7 U+03DA first or last of 03DA-03DA
+61cf9b 0 U+03DB beside 03DA-03DA
+61cf9c 7 U+03DC first or last of 03DC-03DC
+61cf9d 0 U+03DD beside 03DC-03DC
+61cf9e 7 U+03DE first or last of 03DE-03DE
+61cf9f 0 U+03DF beside 03DE-03DE
+61cfa0 7 U+03E0 first or last of 03E0-03E0
+61cfa1 0 U+03E1 beside 03E0-03E0
+61cfa2 7 U+03E2 first or last of 03E2-03E2
+61cfa3 0 U+03E3 beside 03E2-03E2
+61cfa4 7 U+03E4 first or last of 03E4-03E4
+61cfa5 0 U+03E5 beside 03E4-03E4
+61cfa6 7 U+03E6 first or last of 03E6-03E6
+61cfa7 0 U+03E7 beside 03E6-03E6
+61cfa8 7 U+03E8 first or last of 03E8-03E8
+61cfa9 0 U+03E9 beside 03E8-03E8
+61cfaa 7 U+03EA first or last of 03EA-03EA
+61cfab 0 U+03EB beside 03EA-03EA
+61cfac 7 U+03EC first or last of 03EC-03EC
+61cfad 0 U+03ED beside 03EC-03EC
+61cfae 7 U+03EE first or last of 03EE-03EE
+61cfaf 0 U+03EF beside 03EE-03EE
+61cfb0 7 U+03F0 first or last of 03F0-03F2
+61cfb2 7 U+03F2 first or last of 03F0-03F2
+61cfb3 0 U+03F3 beside 03F0-03F2
+61cfb4 7 U+03F4 first or last of 03F4-03F7
+61cfb7 7 U+03F7 first or last of 03F4-03F7
+61cfb8 0 U+03F8 beside 03F4-03F7
+61cfb9 7 U+03F9 first or last of 03F9-03FA
+61cfba 7 U+03FA first or last of 03F9-03FA
+61cfbb 0 U+03FB beside 03F9-03FA
+61cfbd 7 U+03FD first or last of 03FD-042F
+61d0af 7 U+042F first or last of 03FD-042F
+61cfbc 0 U+03FC beside 03FD-042F
+61d0b0 0 U+0430 beside 03FD-042F
+61d1a0 7 U+0460 first or last of 0460-0460
+61d19f 0 U+045F beside 0460-0460
+61d1a1 0 U+0461 beside 0460-0460
+61d1a2 7 U+0462 first or last of 0462-0462
+61d1a3 0 U+0463 beside 0462-0462
+61d1a4 7 U+0464 first or last of 0464-0464
+61d1a5 0 U+0465 beside 0464-0464
+61d1a6 7 U+0466 first or last of 0466-0466
+61d1a7 0 U+0467 beside 0466-0466
+61d1a8 7 U+0468 first or last of 0468-0468
+61d1a9 0 U+0469 beside 0468-0468
+61d1aa 7 U+046A first or last of 046A-046A
+61d1ab 0 U+046B beside 046A-046A
+61d1ac 7 U+046C first or last of 046C-046C
+61d1ad 0 U+046D beside 046C-046C
+61d1ae 7 U+046E first or last of 046E-046E
+61d1af 0 U+046F beside 046E-046E
+61d1b0 7 U+0470 first or last of 0470-0470
+61d1b1 0 U+0471 beside 0470-0470
+61d1b2 7 U+0472 first or last of 0472-0472
+61d1b3 0 U+0473 beside 0472-0472
+61d1b4 7 U+0474 first or last of 0474-0474
+61d1b5 0 U+0475 beside 0474-0474
+61d1b6 7 U+0476 first or last of 0476-0476
+61d1b7 0 U+0477 beside 0476-0476
+61d1b8 7 U+0478 first or last of 0478-0478
+61d1b9 0 U+0479 beside 0478-0478
+61d1ba 7 U+047A first or last of 047A-047A
+61d1bb 0 U+047B beside 047A-047A
+61d1bc 7 U+047C first or last of 047C-047C
+61d1bd 0 U+047D beside 047C-047C
+61d1be 7 U+047E first or last of 047E-047E
+61d1bf 0 U+047F beside 047E-047E
+61d280 7 U+0480 first or last of 0480-0480
+61d281 0 U+0481 beside 0480-0480
+61d282 7 U+0482 first or last of 0482-0482
+61d283 0 U+0483 beside 0482-0482
+61d28a 7 U+048A first or last of 048A-048A
+61d289 0 U+0489 beside 048A-048A
+61d28b 0 U+048B beside 048A-048A
+61d28c 7 U+048C first or last of 048C-048C
+61d28d 0 U+048D beside 048C-048C
+61d28e 7 U+048E first or last of 048E-048E
+61d28f 0 U+048F beside 048E-048E
+61d290 7 U+0490 first or last of 0490-0490
+61d291 0 U+0491 beside 0490-0490
+61d292 7 U+0492 first or last of 0492-0492
+61d293 0 U+0493 beside 0492-0492
+61d294 7 U+0494 first or last of 0494-0494
+61d295 0 U+0495 beside 0494-0494
+61d296 7 U+0496 first or last of 0496-0496
+61d297 0 U+0497 beside 0496-0496
+61d298 7 U+0498 first or last of 0498-0498
+61d299 0 U+0499 beside 0498-0498
+61d29a 7 U+049A first or last of 049A-049A
+61d29b 0 U+049B beside 049A-049A
+61d29c 7 U+049C first or last of 049C-049C
+61d29d 0 U+049D beside 049C-049C
+61d29e 7 U+049E first or last of 049E-049E
+61d29f 0 U+049F beside 049E-049E
+61d2a0 7 U+04A0 first or last of 04A0-04A0
+61d2a1 0 U+04A1 beside 04A0-04A0
+61d2a2 7 U+04A2 first or last of 04A2-04A2
+61d2a3 0 U+04A3 beside 04A2-04A2
+61d2a4 7 U+04A4 first or last of 04A4-04A4
+61d2a5 0 U+04A5 beside 04A4-04A4
+61d2a6 7 U+04A6 first or last of 04A6-04A6
+61d2a7 0 U+04A7 beside 04A6-04A6
+61d2a8 7 U+04A8 first or last of 04A8-04A8
+61d2a9 0 U+04A9 beside 04A8-04A8
+61d2aa 7 U+04AA first or last of 04AA-04AA
+61d2ab 0 U+04AB beside 04AA-04AA
+61d2ac 7 U+04AC first or last of 04AC-04AC
+61d2ad 0 U+04AD beside 04AC-04AC
+61d2ae 7 U+04AE first or last of 04AE-04AE
+61d2af 0 U+04AF beside 04AE-04AE
+61d2b0 7 U+04B0 first or last of 04B0-04B0
+61d2b1 0 U+04B1 beside 04B0-04B0
+61d2b2 7 U+04B2 first or last of 04B2-04B2
+61d2b3 0 U+04B3 beside 04B2-04B2
+61d2b4 7 U+04B4 first or last of 04B4-04B4
+61d2b5 0 U+04B5 beside 04B4-04B4
+61d2b6 7 U+04B6 first or last of 04B6-04B6
+61d2b7 0 U+04B7 beside 04B6-04B6
+61d2b8 7 U+04B8 first or last of 04B8-04B8
+61d2b9 0 U+04B9 beside 04B8-04B8
+61d2ba 7 U+04BA first or last of 04BA-04BA
+61d2bb 0 U+04BB beside 04BA-04BA
+61d2bc 7 U+04BC first or last of 04BC-04BC
+61d2bd 0 U+04BD beside 04BC-04BC
+61d2be 7 U+04BE first or last of 04BE-04BE
+61d2bf 0 U+04BF beside 04BE-04BE
+61d380 7 U+04C0 first or last of 04C0-04C1
+61d381 7 U+04C1 first or last of 04C0-04C1
+61d382 0 U+04C2 beside 04C0-04C1
+61d383 7 U+04C3 first or last of 04C3-04C3
+61d384 0 U+04C4 beside 04C3-04C3
+61d385 7 U+04C5 first or last of 04C5-04C5
+61d386 0 U+04C6 beside 04C5-04C5
+61d387 7 U+04C7 first or last of 04C7-04C7
+61d388 0 U+04C8 beside 04C7-04C7
+61d389 7 U+04C9 first or last of 04C9-04C9
+61d38a 0 U+04CA beside 04C9-04C9
+61d38b 7 U+04CB first or last of 04CB-04CB
+61d38c 0 U+04CC beside 04CB-04CB
+61d38d 7 U+04CD first or last of 04CD-04CD
+61d38e 0 U+04CE beside 04CD-04CD
+61d390 7 U+04D0 first or last of 04D0-04D0
+61d38f 0 U+04CF beside 04D0-04D0
+61d391 0 U+04D1 beside 04D0-04D0
+61d392 7 U+04D2 first or last of 04D2-04D2
+61d393 0 U+04D3 beside 04D2-04D2
+61d394 7 U+04D4 first or last of 04D4-04D4
+61d395 0 U+04D5 beside 04D4-04D4
+61d396 7 U+04D6 first or last of 04D6-04D6
+61d397 0 U+04D7 beside 04D6-04D6
+61d398 7 U+04D8 first or last of 04D8-04D8
+61d399 0 U+04D9 beside 04D8-04D8
+61d39a 7 U+04DA first or last of 04DA-04DA
+61d39b 0 U+04DB beside 04DA-04DA
+61d39c 7 U+04DC first or last of 04DC-04DC
+61d39d 0 U+04DD beside 04DC-04DC
+61d39e 7 U+04DE first or last of 04DE-04DE
+61d39f 0 U+04DF beside 04DE-04DE
+61d3a0 7 U+04E0 first or last of 04E0-04E0
+61d3a1 0 U+04E1 beside 04E0-04E0
+61d3a2 7 U+04E2 first or last of 04E2-04E2
+61d3a3 0 U+04E3 beside 04E2-04E2
+61d3a4 7 U+04E4 first or last of 04E4-04E4
+61d3a5 0 U+04E5 beside 04E4-04E4
+61d3a6 7 U+04E6 first or last of 04E6-04E6
+61d3a7 0 U+04E7 beside 04E6-04E6
+61d3a8 7 U+04E8 first or last of 04E8-04E8
+61d3a9 0 U+04E9 beside 04E8-04E8
+61d3aa 7 U+04EA first or last of 04EA-04EA
+61d3ab 0 U+04EB beside 04EA-04EA
+61d3ac 7 U+04EC first or last of 04EC-04EC
+61d3ad 0 U+04ED beside 04EC-04EC
+61d3ae 7 U+04EE first or last of 04EE-04EE
+61d3af 0 U+04EF beside 04EE-04EE
+61d3b0 7 U+04F0 first or last of 04F0-04F0
+61d3b1 0 U+04F1 beside 04F0-04F0
+61d3b2 7 U+04F2 first or last of 04F2-04F2
+61d3b3 0 U+04F3 beside 04F2-04F2
+61d3b4 7 U+04F4 first or last of 04F4-04F4
+61d3b5 0 U+04F5 beside 04F4-04F4
+61d3b6 7 U+04F6 first or last of 04F6-04F6
+61d3b7 0 U+04F7 beside 04F6-04F6
+61d3b8 7 U+04F8 first or last of 04F8-04F8
+61d3b9 0 U+04F9 beside 04F8-04F8
+61d3ba 7 U+04FA first or last of 04FA-04FA
+61d3bb 0 U+04FB beside 04FA-04FA
+61d3bc 7 U+04FC first or last of 04FC-04FC
+61d3bd 0 U+04FD beside 04FC-04FC
+61d3be 7 U+04FE first or last of 04FE-04FE
+61d3bf 0 U+04FF beside 04FE-04FE
+61d480 7 U+0500 first or last of 0500-0500
+61d481 0 U+0501 beside 0500-0500
+61d482 7 U+0502 first or last of 0502-0502
+61d483 0 U+0503 beside 0502-0502
+61d484 7 U+0504 first or last of 0504-0504
+61d485 0 U+0505 beside 0504-0504
+61d486 7 U+0506 first or last of 0506-0506
+61d487 0 U+0507 beside 0506-0506
+61d488 7 U+0508 first or last of 0508-0508
+61d489 0 U+0509 beside 0508-0508
+61d48a 7 U+050A first or last of 050A-050A
+61d48b 0 U+050B beside 050A-050A
+61d48c 7 U+050C first or last of 050C-050C
+61d48d 0 U+050D beside 050C-050C
+61d48e 7 U+050E first or last of 050E-050E
+61d48f 0 U+050F beside 050E-050E
+61d490 7 U+0510 first or last of 0510-0510
+61d491 0 U+0511 beside 0510-0510
+61d492 7 U+0512 first or last of 0512-0512
+61d493 0 U+0513 beside 0512-0512
+61d494 7 U+0514 first or last of 0514-0514
+61d495 0 U+0515 beside 0514-0514
+61d496 7 U+0516 first or last of 0516-0516
+61d497 0 U+0517 beside 0516-0516
+61d498 7 U+0518 first or last of 0518-0518
+61d499 0 U+0519 beside 0518-0518
+61d49a 7 U+051A first or last of 051A-051A
+61d49b 0 U+051B beside 051A-051A
+61d49c 7 U+051C first or last of 051C-051C
+61d49d 0 U+051D beside 051C-051C
+61d49e 7 U+051E first or last of 051E-051E
+61d49f 0 U+051F beside 051E-051E
+61d4a0 7 U+0520 first or last of 0520-0520
+61d4a1 0 U+0521 beside 0520-0520
+61d4a2 7 U+0522 first or last of 0522-0522
+61d4a3 0 U+0523 beside 0522-0522
+61d4a4 7 U+0524 first or last of 0524-0524
+61d4a5 0 U+0525 beside 0524-0524
+61d4a6 7 U+0526 first or last of 0526-0526
+61d4a7 0 U+0527 beside 0526-0526
+61d4a8 7 U+0528 first or last of 0528-0528
+61d4a9 0 U+0529 beside 0528-0528
+61d4aa 7 U+052A first or last of 052A-052A
+61d4ab 0 U+052B beside 052A-052A
+61d4ac 7 U+052C first or last of 052C-052C
+61d4ad 0 U+052D beside 052C-052C
+61d4ae 7 U+052E first or last of 052E-052E
+61d4af 0 U+052F beside 052E-052E
+61d4b1 7 U+0531 first or last of 0531-0556
+61d596 7 U+0556 first or last of 0531-0556
+61d4b0 0 U+0530 beside 0531-0556
+61d597 0 U+0557 beside 0531-0556
+61d598 7 U+0558 first or last of 0558-0558
+61d599 0 U+0559 beside 0558-0558
+61d59a 7 U+055A first or last of 055A-055F
+61d59f 7 U+055F first or last of 055A-055F
+61d5a0 0 U+0560 beside 055A-055F
+61d687 7 U+0587 first or last of 0587-0587
+61d686 0 U+0586 beside 0587-0587
+61d688 0 U+0588 beside 0587-0587
+61d689 7 U+0589 first or last of 0589-058F
+61d68f 7 U+058F first or last of 0589-058F
+61d690 0 U+0590 beside 0589-058F
+61d6be 7 U+05BE first or last of 05BE-05BE
+61d6bd 0 U+05BD beside 05BE-05BE
+61d6bf 0 U+05BF beside 05BE-05BE
+61d780 7 U+05C0 first or last of 05C0-05C0
+61d781 0 U+05C1 beside 05C0-05C0
+61d783 7 U+05C3 first or last of 05C3-05C3
+61d782 0 U+05C2 beside 05C3-05C3
+61d784 0 U+05C4 beside 05C3-05C3
+61d786 7 U+05C6 first or last of 05C6-05C6
+61d785 0 U+05C5 beside 05C6-05C6
+61d787 0 U+05C7 beside 05C6-05C6
+61d880 7 U+0600 first or last of 0600-060F
+61d88f 7 U+060F first or last of 0600-060F
+61d7bf 0 U+05FF beside 0600-060F
+61d890 0 U+0610 beside 0600-060F
+61d89b 7 U+061B first or last of 061B-061F
+61d89f 7 U+061F first or last of 061B-061F
+61d89a 0 U+061A beside 061B-061F
+61d8a0 0 U+0620 beside 061B-061F
+61d980 7 U+0640 first or last of 0640-0640
+61d8bf 0 U+063F beside 0640-0640
+61d981 0 U+0641 beside 0640-0640
+61d9aa 7 U+066A first or last of 066A-066D
+61d9ad 7 U+066D first or last of 066A-066D
+61d9a9 0 U+0669 beside 066A-066D
+61d9ae 0 U+066E beside 066A-066D
+61d9b5 7 U+0675 first or last of 0675-0678
+61d9b8 7 U+0678 first or last of 0675-0678
+61d9b4 0 U+0674 beside 0675-0678
+61d9b9 0 U+0679 beside 0675-0678
+61db94 7 U+06D4 first or last of 06D4-06D4
+61db93 0 U+06D3 beside 06D4-06D4
+61db95 0 U+06D5 beside 06D4-06D4
+61db9d 7 U+06DD first or last of 06DD-06DE
+61db9e 7 U+06DE first or last of 06DD-06DE
+61db9c 0 U+06DC beside 06DD-06DE
+61db9f 0 U+06DF beside 06DD-06DE
+61dba9 7 U+06E9 first or last of 06E9-06E9
+61dba8 0 U+06E8 beside 06E9-06E9
+61dbaa 0 U+06EA beside 06E9-06E9
+61dbbd 7 U+06FD first or last of 06FD-06FE
+61dbbe 7 U+06FE first or last of 06FD-06FE
+61dbbc 0 U+06FC beside 06FD-06FE
+61dbbf 0 U+06FF beside 06FD-06FE
+61dc8f 7 U+070F first or last of 070F-070F
+61dc8e 0 U+070E beside 070F-070F
+61dc90 0 U+0710 beside 070F-070F
+61dfb6 7 U+07F6 first or last of 07F6-07FA
+61dfba 7 U+07FA first or last of 07F6-07FA
+61dfb5 0 U+07F5 beside 07F6-07FA
+61dfbb 0 U+07FB beside 07F6-07FA
+61dfbe 7 U+07FE first or last of 07FE-07FF
+61dfbf 7 U+07FF first or last of 07FE-07FF
+61dfbd 0 U+07FD beside 07FE-07FF
+61e0a080 0 U+0800 beside 07FE-07FF
+61e0a0b0 7 U+0830 first or last of 0830-083E
+61e0a0be 7 U+083E first or last of 0830-083E
+61e0a0af 0 U+082F beside 0830-083E
+61e0a0bf 0 U+083F beside 0830-083E
+61e0a19e 7 U+085E first or last of 085E-085E
+61e0a19d 0 U+085D beside 085E-085E
+61e0a19f 0 U+085F beside 085E-085E
+61e0a288 7 U+0888 first or last of 0888-0888
+61e0a287 0 U+0887 beside 0888-0888
+61e0a289 0 U+0889 beside 0888-0888
+61e0a290 7 U+0890 first or last of 0890-0891
+61e0a291 7 U+0891 first or last of 0890-0891
+61e0a28f 0 U+088F beside 0890-0891
+61e0a292 0 U+0892 beside 0890-0891
+61e0a3a2 7 U+08E2 first or last of 08E2-08E2
+61e0a3a1 0 U+08E1 beside 08E2-08E2
+61e0a3a3 0 U+08E3 beside 08E2-08E2
+61e0a598 7 U+0958 first or last of 0958-095F
+61e0a59f 7 U+095F first or last of 0958-095F
+61e0a597 0 U+0957 beside 0958-095F
+61e0a5a0 0 U+0960 beside 0958-095F
+61e0a5a4 7 U+0964 first or last of 0964-0965
+61e0a5a5 7 U+0965 first or last of 0964-0965
+61e0a5a3 0 U+0963 beside 0964-0965
+61e0a5a6 0 U+0966 beside 0964-0965
+61e0a5b0 7 U+0970 first or last of 0970-0970
+61e0a5af 0 U+096F beside 0970-0970
+61e0a5b1 0 U+0971 beside 0970-0970
+61e0a79c 7 U+09DC first or last of 09DC-09DD
+61e0a79d 7 U+09DD first or last of 09DC-09DD
+61e0a79b 0 U+09DB beside 09DC-09DD
+61e0a79e 0 U+09DE beside 09DC-09DD
+61e0a79f 7 U+09DF first or last of 09DF-09DF
+61e0a7a0 0 U+09E0 beside 09DF-09DF
+61e0a7bb 7 U+09FB first or last of 09FB-09FB
+61e0a7ba 0 U+09FA beside 09FB-09FB
+61e0a7bc 0 U+09FC beside 09FB-09FB
+61e0a7bd 7 U+09FD first or last of 09FD-09FD
+61e0a7be 0 U+09FE beside 09FD-09FD
+61e0a8b3 7 U+0A33 first or last of 0A33-0A33
+61e0a8b2 0 U+0A32 beside 0A33-0A33
+61e0a8b4 0 U+0A34 beside 0A33-0A33
+61e0a8b6 7 U+0A36 first or last of 0A36-0A36
+61e0a8b5 0 U+0A35 beside 0A36-0A36
+61e0a8b7 0 U+0A37 beside 0A36-0A36
+61e0a999 7 U+0A59 first or last of 0A59-0A5B
+61e0a99b 7 U+0A5B first or last of 0A59-0A5B
+61e0a998 0 U+0A58 beside 0A59-0A5B
+61e0a99c 0 U+0A5C beside 0A59-0A5B
+61e0a99e 7 U+0A5E first or last of 0A5E-0A5E
+61e0a99d 0 U+0A5D beside 0A5E-0A5E
+61e0a99f 0 U+0A5F beside 0A5E-0A5E
+61e0a9b6 7 U+0A76 first or last of 0A76-0A76
+61e0a9b5 0 U+0A75 beside 0A76-0A76
+61e0a9b7 0 U+0A77 beside 0A76-0A76
+61e0abb1 7 U+0AF1 first or last of 0AF1-0AF1
+61e0abb0 0 U+0AF0 beside 0AF1-0AF1
+61e0abb2 0 U+0AF2 beside 0AF1-0AF1
+61e0ad9c 7 U+0B5C first or last of 0B5C-0B5D
+61e0ad9d 7 U+0B5D first or last of 0B5C-0B5D
+61e0ad9b 0 U+0B5B beside 0B5C-0B5D
+61e0ad9e 0 U+0B5E beside 0B5C-0B5D
+61e0adb0 7 U+0B70 first or last of 0B70-0B70
+61e0adaf 0 U+0B6F beside 0B70-0B70
+61e0adb1 0 U+0B71 beside 0B70-0B70
+61e0afb3 7 U+0BF3 first or last of 0BF3-0BFA
+61e0afba 7 U+0BFA first or last of 0BF3-0BFA
+61e0afb2 0 U+0BF2 beside 0BF3-0BFA
+61e0afbb 0 U+0BFB beside 0BF3-0BFA
+61e0b1b7 7 U+0C77 first or last of 0C77-0C77
+61e0b1b6 0 U+0C76 beside 0C77-0C77
+61e0b1b8 0 U+0C78 beside 0C77-0C77
+61e0b1bf 7 U+0C7F first or last of 0C7F-0C7F
+61e0b1be 0 U+0C7E beside 0C7F-0C7F
+61e0b280 0 U+0C80 beside 0C7F-0C7F
+61e0b284 7 U+0C84 first or last of 0C84-0C84
+61e0b283 0 U+0C83 beside 0C84-0C84
+61e0b285 0 U+0C85 beside 0C84-0C84
+61e0b58f 7 U+0D4F first or last of 0D4F-0D4F
+61e0b58e 0 U+0D4E beside 0D4F-0D4F
+61e0b590 0 U+0D50 beside 0D4F-0D4F
+61e0b5b9 7 U+0D79 first or last of 0D79-0D79
+61e0b5b8 0 U+0D78 beside 0D79-0D79
+61e0b5ba 0 U+0D7A beside 0D79-0D79
+61e0b7b4 7 U+0DF4 first or last of 0DF4-0DF4
+61e0b7b3 0 U+0DF3 beside 0DF4-0DF4
+61e0b7b5 0 U+0DF5 beside 0DF4-0DF4
+61e0b8b3 7 U+0E33 first or last of 0E33-0E33
+61e0b8b2 0 U+0E32 beside 0E33-0E33
+61e0b8b4 0 U+0E34 beside 0E33-0E33
+61e0b8bf 7 U+0E3F first or last of 0E3F-0E3F
+61e0b8be 0 U+0E3E beside 0E3F-0E3F
+61e0b980 0 U+0E40 beside 0E3F-0E3F
+61e0b98f 7 U+0E4F first or last of 0E4F-0E4F
+61e0b98e 0 U+0E4E beside 0E4F-0E4F
+61e0b990 0 U+0E50 beside 0E4F-0E4F
+61e0b99a 7 U+0E5A first or last of 0E5A-0E5B
+61e0b99b 7 U+0E5B first or last of 0E5A-0E5B
+61e0b999 0 U+0E59 beside 0E5A-0E5B
+61e0b99c 0 U+0E5C beside 0E5A-0E5B
+61e0bab3 7 U+0EB3 first or last of 0EB3-0EB3
+61e0bab2 0 U+0EB2 beside 0EB3-0EB3
+61e0bab4 0 U+0EB4 beside 0EB3-0EB3
+61e0bb9c 7 U+0EDC first or last of 0EDC-0EDD
+61e0bb9d 7 U+0EDD first or last of 0EDC-0EDD
+61e0bb9b 0 U+0EDB beside 0EDC-0EDD
+61e0bb9e 0 U+0EDE beside 0EDC-0EDD
+61e0bc81 7 U+0F01 first or last of 0F01-0F0A
+61e0bc8a 7 U+0F0A first or last of 0F01-0F0A
+61e0bc80 0 U+0F00 beside 0F01-0F0A
+61e0bc8b 0 U+0F0B beside 0F01-0F0A
+61e0bc8c 7 U+0F0C first or last of 0F0C-0F17
+61e0bc97 7 U+0F17 first or last of 0F0C-0F17
+61e0bc98 0 U+0F18 beside 0F0C-0F17
+61e0bc9a 7 U+0F1A first or last of 0F1A-0F1F
+61e0bc9f 7 U+0F1F first or last of 0F1A-0F1F
+61e0bc99 0 U+0F19 beside 0F1A-0F1F
+61e0bca0 0 U+0F20 beside 0F1A-0F1F
+61e0bcb4 7 U+0F34 first or last of 0F34-0F34
+61e0bcb3 0 U+0F33 beside 0F34-0F34
+61e0bcb5 0 U+0F35 beside 0F34-0F34
+61e0bcb6 7 U+0F36 first or last of 0F36-0F36
+61e0bcb7 0 U+0F37 beside 0F36-0F36
+61e0bcb8 7 U+0F38 first or last of 0F38-0F38
+61e0bcb9 0 U+0F39 beside 0F38-0F38
+61e0bcba 7 U+0F3A first or last of 0F3A-0F3D
+61e0bcbd 7 U+0F3D first or last of 0F3A-0F3D
+61e0bcbe 0 U+0F3E beside 0F3A-0F3D
+61e0bd83 7 U+0F43 first or last of 0F43-0F43
+61e0bd82 0 U+0F42 beside 0F43-0F43
+61e0bd84 0 U+0F44 beside 0F43-0F43
+61e0bd8d 7 U+0F4D first or last of 0F4D-0F4D
+61e0bd8c 0 U+0F4C beside 0F4D-0F4D
+61e0bd8e 0 U+0F4E beside 0F4D-0F4D
+61e0bd92 7 U+0F52 first or last of 0F52-0F52
+61e0bd91 0 U+0F51 beside 0F52-0F52
+61e0bd93 0 U+0F53 beside 0F52-0F52
+61e0bd97 7 U+0F57 first or last of 0F57-0F57
+61e0bd96 0 U+0F56 beside 0F57-0F57
+61e0bd98 0 U+0F58 beside 0F57-0F57
+61e0bd9c 7 U+0F5C first or last of 0F5C-0F5C
+61e0bd9b 0 U+0F5B beside 0F5C-0F5C
+61e0bd9d 0 U+0F5D beside 0F5C-0F5C
+61e0bda9 7 U+0F69 first or last of 0F69-0F69
+61e0bda8 0 U+0F68 beside 0F69-0F69
+61e0bdaa 0 U+0F6A beside 0F69-0F69
+61e0bdb3 7 U+0F73 first or last of 0F73-0F73
+61e0bdb2 0 U+0F72 beside 0F73-0F73
+61e0bdb4 0 U+0F74 beside 0F73-0F73
+61e0bdb5 7 U+0F75 first or last of 0F75-0F79
+61e0bdb9 7 U+0F79 first or last of 0F75-0F79
+61e0bdba 0 U+0F7A beside 0F75-0F79
+61e0be81 7 U+0F81 first or last of 0F81-0F81
+61e0be80 0 U+0F80 beside 0F81-0F81
+61e0be82 0 U+0F82 beside 0F81-0F81
+61e0be85 7 U+0F85 first or last of 0F85-0F85
+61e0be84 0 U+0F84 beside 0F85-0F85
+61e0be86 0 U+0F86 beside 0F85-0F85
+61e0be93 7 U+0F93 first or last of 0F93-0F93
+61e0be92 0 U+0F92 beside 0F93-0F93
+61e0be94 0 U+0F94 beside 0F93-0F93
+61e0be9d 7 U+0F9D first or last of 0F9D-0F9D
+61e0be9c 0 U+0F9C beside 0F9D-0F9D
+61e0be9e 0 U+0F9E beside 0F9D-0F9D
+61e0bea2 7 U+0FA2 first or last of 0FA2-0FA2
+61e0bea1 0 U+0FA1 beside 0FA2-0FA2
+61e0bea3 0 U+0FA3 beside 0FA2-0FA2
+61e0bea7 7 U+0FA7 first or last of 0FA7-0FA7
+61e0bea6 0 U+0FA6 beside 0FA7-0FA7
+61e0bea8 0 U+0FA8 beside 0FA7-0FA7
+61e0beac 7 U+0FAC first or last of 0FAC-0FAC
+61e0beab 0 U+0FAB beside 0FAC-0FAC
+61e0bead 0 U+0FAD beside 0FAC-0FAC
+61e0beb9 7 U+0FB9 first or last of 0FB9-0FB9
+61e0beb8 0 U+0FB8 beside 0FB9-0FB9
+61e0beba 0 U+0FBA beside 0FB9-0FB9
+61e0bebe 7 U+0FBE first or last of 0FBE-0FC5
+61e0bf85 7 U+0FC5 first or last of 0FBE-0FC5
+61e0bebd 0 U+0FBD beside 0FBE-0FC5
+61e0bf86 0 U+0FC6 beside 0FBE-0FC5
+61e0bf87 7 U+0FC7 first or last of 0FC7-0FCC
+61e0bf8c 7 U+0FCC first or last of 0FC7-0FCC
+61e0bf8d 0 U+0FCD beside 0FC7-0FCC
+61e0bf8e 7 U+0FCE first or last of 0FCE-0FDA
+61e0bf9a 7 U+0FDA first or last of 0FCE-0FDA
+61e0bf9b 0 U+0FDB beside 0FCE-0FDA
+61e1818a 7 U+104A first or last of 104A-104E
+61e1818e 7 U+104E first or last of 104A-104E
+61e18189 0 U+1049 beside 104A-104E
+61e1818f 0 U+104F beside 104A-104E
+61e182a0 7 U+10A0 first or last of 10A0-10C5
+61e18385 7 U+10C5 first or last of 10A0-10C5
+61e1829f 0 U+109F beside 10A0-10C5
+61e18386 0 U+10C6 beside 10A0-10C5
+61e18387 7 U+10C7 first or last of 10C7-10C7
+61e18388 0 U+10C8 beside 10C7-10C7
+61e1838d 7 U+10CD first or last of 10CD-10CD
+61e1838c 0 U+10CC beside 10CD-10CD
+61e1838e 0 U+10CE beside 10CD-10CD
+61e183bb 7 U+10FB first or last of 10FB-10FC
+61e183bc 7 U+10FC first or last of 10FB-10FC
+61e183ba 0 U+10FA beside 10FB-10FC
+61e183bd 0 U+10FD beside 10FB-10FC
+61e1859f 7 U+115F first or last of 115F-1160
+61e185a0 7 U+1160 first or last of 115F-1160
+61e1859e 0 U+115E beside 115F-1160
+61e185a1 0 U+1161 beside 115F-1160
+61e18da0 7 U+1360 first or last of 1360-1368
+61e18da8 7 U+1368 first or last of 1360-1368
+61e18d9f 0 U+135F beside 1360-1368
+61e18da9 0 U+1369 beside 1360-1368
+61e18fb8 7 U+13F8 first or last of 13F8-13FD
+61e18fbd 7 U+13FD first or last of 13F8-13FD
+61e18fb7 0 U+13F7 beside 13F8-13FD
+61e18fbe 0 U+13FE beside 13F8-13FD
+61e19080 7 U+1400 first or last of 1400-1400
+61e18fbf 0 U+13FF beside 1400-1400
+61e19081 0 U+1401 beside 1400-1400
+61e199ad 7 U+166D first or last of 166D-166E
+61e199ae 7 U+166E first or last of 166D-166E
+61e199ac 0 U+166C beside 166D-166E
+61e199af 0 U+166F beside 166D-166E
+61e19a80 7 U+1680 first or last of 1680-1680
+61e199bf 0 U+167F beside 1680-1680
+61e19a81 0 U+1681 beside 1680-1680
+61e19a9b 7 U+169B first or last of 169B-169C
+61e19a9c 7 U+169C first or last of 169B-169C
+61e19a9a 0 U+169A beside 169B-169C
+61e19a9d 0 U+169D beside 169B-169C
+61e19bab 7 U+16EB first or last of 16EB-16ED
+61e19bad 7 U+16ED first or last of 16EB-16ED
+61e19baa 0 U+16EA beside 16EB-16ED
+61e19bae 0 U+16EE beside 16EB-16ED
+61e19cb5 7 U+1735 first or last of 1735-1736
+61e19cb6 7 U+1736 first or last of 1735-1736
+61e19cb4 0 U+1734 beside 1735-1736
+61e19cb7 0 U+1737 beside 1735-1736
+61e19eb4 7 U+17B4 first or last of 17B4-17B5
+61e19eb5 7 U+17B5 first or last of 17B4-17B5
+61e19eb3 0 U+17B3 beside 17B4-17B5
+61e19eb6 0 U+17B6 beside 17B4-17B5
+61e19f94 7 U+17D4 first or last of 17D4-17D6
+61e19f96 7 U+17D6 first or last of 17D4-17D6
+61e19f93 0 U+17D3 beside 17D4-17D6
+61e19f97 0 U+17D7 beside 17D4-17D6
+61e19f98 7 U+17D8 first or last of 17D8-17DB
+61e19f9b 7 U+17DB first or last of 17D8-17DB
+61e19f9c 0 U+17DC beside 17D8-17DB
+61e1a080 7 U+1800 first or last of 1800-180F
+61e1a08f 7 U+180F first or last of 1800-180F
+61e19fbf 0 U+17FF beside 1800-180F
+61e1a090 0 U+1810 beside 1800-180F
+61e1a580 7 U+1940 first or last of 1940-1940
+61e1a4bf 0 U+193F beside 1940-1940
+61e1a581 0 U+1941 beside 1940-1940
+61e1a584 7 U+1944 first or last of 1944-1945
+61e1a585 7 U+1945 first or last of 1944-1945
+61e1a583 0 U+1943 beside 1944-1945
+61e1a586 0 U+1946 beside 1944-1945
+61e1a79e 7 U+19DE first or last of 19DE-19FF
+61e1a7bf 7 U+19FF first or last of 19DE-19FF
+61e1a79d 0 U+19DD beside 19DE-19FF
+61e1a880 0 U+1A00 beside 19DE-19FF
+61e1a89e 7 U+1A1E first or last of 1A1E-1A1F
+61e1a89f 7 U+1A1F first or last of 1A1E-1A1F
+61e1a89d 0 U+1A1D beside 1A1E-1A1F
+61e1a8a0 0 U+1A20 beside 1A1E-1A1F
+61e1aaa0 7 U+1AA0 first or last of 1AA0-1AA6
+61e1aaa6 7 U+1AA6 first or last of 1AA0-1AA6
+61e1aa9f 0 U+1A9F beside 1AA0-1AA6
+61e1aaa7 0 U+1AA7 beside 1AA0-1AA6
+61e1aaa8 7 U+1AA8 first or last of 1AA8-1AAD
+61e1aaad 7 U+1AAD first or last of 1AA8-1AAD
+61e1aaae 0 U+1AAE beside 1AA8-1AAD
+61e1ad8e 7 U+1B4E first or last of 1B4E-1B4F
+61e1ad8f 7 U+1B4F first or last of 1B4E-1B4F
+61e1ad8d 0 U+1B4D beside 1B4E-1B4F
+61e1ad90 0 U+1B50 beside 1B4E-1B4F
+61e1ad9a 7 U+1B5A first or last of 1B5A-1B6A
+61e1adaa 7 U+1B6A first or last of 1B5A-1B6A
+61e1ad99 0 U+1B59 beside 1B5A-1B6A
+61e1adab 0 U+1B6B beside 1B5A-1B6A
+61e1adb4 7 U+1B74 first or last of 1B74-1B7F
+61e1adbf 7 U+1B7F first or last of 1B74-1B7F
+61e1adb3 0 U+1B73 beside 1B74-1B7F
+61e1ae80 0 U+1B80 beside 1B74-1B7F
+61e1afbc 7 U+1BFC first or last of 1BFC-1BFF
+61e1afbf 7 U+1BFF first or last of 1BFC-1BFF
+61e1afbb 0 U+1BFB beside 1BFC-1BFF
+61e1b080 0 U+1C00 beside 1BFC-1BFF
+61e1b0bb 7 U+1C3B first or last of 1C3B-1C3F
+61e1b0bf 7 U+1C3F first or last of 1C3B-1C3F
+61e1b0ba 0 U+1C3A beside 1C3B-1C3F
+61e1b180 0 U+1C40 beside 1C3B-1C3F
+61e1b1be 7 U+1C7E first or last of 1C7E-1C89
+61e1b289 7 U+1C89 first or last of 1C7E-1C89
+61e1b1bd 0 U+1C7D beside 1C7E-1C89
+61e1b28a 0 U+1C8A beside 1C7E-1C89
+61e1b290 7 U+1C90 first or last of 1C90-1CBA
+61e1b2ba 7 U+1CBA first or last of 1C90-1CBA
+61e1b28f 0 U+1C8F beside 1C90-1CBA
+61e1b2bb 0 U+1CBB beside 1C90-1CBA
+61e1b2bd 7 U+1CBD first or last of 1CBD-1CC7
+61e1b387 7 U+1CC7 first or last of 1CBD-1CC7
+61e1b2bc 0 U+1CBC beside 1CBD-1CC7
+61e1b388 0 U+1CC8 beside 1CBD-1CC7
+61e1b393 7 U+1CD3 first or last of 1CD3-1CD3
+61e1b392 0 U+1CD2 beside 1CD3-1CD3
+61e1b394 0 U+1CD4 beside 1CD3-1CD3
+61e1b4ac 7 U+1D2C first or last of 1D2C-1D2E
+61e1b4ae 7 U+1D2E first or last of 1D2C-1D2E
+61e1b4ab 0 U+1D2B beside 1D2C-1D2E
+61e1b4af 0 U+1D2F beside 1D2C-1D2E
+61e1b4b0 7 U+1D30 first or last of 1D30-1D3A
+61e1b4ba 7 U+1D3A first or last of 1D30-1D3A
+61e1b4bb 0 U+1D3B beside 1D30-1D3A
+61e1b4bc 7 U+1D3C first or last of 1D3C-1D4D
+61e1b58d 7 U+1D4D first or last of 1D3C-1D4D
+61e1b58e 0 U+1D4E beside 1D3C-1D4D
+61e1b58f 7 U+1D4F first or last of 1D4F-1D6A
+61e1b5aa 7 U+1D6A first or last of 1D4F-1D6A
+61e1b5ab 0 U+1D6B beside 1D4F-1D6A
+61e1b5b8 7 U+1D78 first or last of 1D78-1D78
+61e1b5b7 0 U+1D77 beside 1D78-1D78
+61e1b5b9 0 U+1D79 beside 1D78-1D78
+61e1b69b 7 U+1D9B first or last of 1D9B-1DBF
+61e1b6bf 7 U+1DBF first or last of 1D9B-1DBF
+61e1b69a 0 U+1D9A beside 1D9B-1DBF
+61e1b780 0 U+1DC0 beside 1D9B-1DBF
+61e1b880 7 U+1E00 first or last of 1E00-1E00
+61e1b7bf 0 U+1DFF beside 1E00-1E00
+61e1b881 0 U+1E01 beside 1E00-1E00
+61e1b882 7 U+1E02 first or last of 1E02-1E02
+61e1b883 0 U+1E03 beside 1E02-1E02
+61e1b884 7 U+1E04 first or last of 1E04-1E04
+61e1b885 0 U+1E05 beside 1E04-1E04
+61e1b886 7 U+1E06 first or last of 1E06-1E06
+61e1b887 0 U+1E07 beside 1E06-1E06
+61e1b888 7 U+1E08 first or last of 1E08-1E08
+61e1b889 0 U+1E09 beside 1E08-1E08
+61e1b88a 7 U+1E0A first or last of 1E0A-1E0A
+61e1b88b 0 U+1E0B beside 1E0A-1E0A
+61e1b88c 7 U+1E0C first or last of 1E0C-1E0C
+61e1b88d 0 U+1E0D beside 1E0C-1E0C
+61e1b88e 7 U+1E0E first or last of 1E0E-1E0E
+61e1b88f 0 U+1E0F beside 1E0E-1E0E
+61e1b890 7 U+1E10 first or last of 1E10-1E10
+61e1b891 0 U+1E11 beside 1E10-1E10
+61e1b892 7 U+1E12 first or last of 1E12-1E12
+61e1b893 0 U+1E13 beside 1E12-1E12
+61e1b894 7 U+1E14 first or last of 1E14-1E14
+61e1b895 0 U+1E15 beside 1E14-1E14
+61e1b896 7 U+1E16 first or last of 1E16-1E16
+61e1b897 0 U+1E17 beside 1E16-1E16
+61e1b898 7 U+1E18 first or last of 1E18-1E18
+61e1b899 0 U+1E19 beside 1E18-1E18
+61e1b89a 7 U+1E1A first or last of 1E1A-1E1A
+61e1b89b 0 U+1E1B beside 1E1A-1E1A
+61e1b89c 7 U+1E1C first or last of 1E1C-1E1C
+61e1b89d 0 U+1E1D beside 1E1C-1E1C
+61e1b89e 7 U+1E1E first or last of 1E1E-1E1E
+61e1b89f 0 U+1E1F beside 1E1E-1E1E
+61e1b8a0 7 U+1E20 first or last of 1E20-1E20
+61e1b8a1 0 U+1E21 beside 1E20-1E20
+61e1b8a2 7 U+1E22 first or last of 1E22-1E22
+61e1b8a3 0 U+1E23 beside 1E22-1E22
+61e1b8a4 7 U+1E24 first or last of 1E24-1E24
+61e1b8a5 0 U+1E25 beside 1E24-1E24
+61e1b8a6 7 U+1E26 first or last of 1E26-1E26
+61e1b8a7 0 U+1E27 beside 1E26-1E26
+61e1b8a8 7 U+1E28 first or last of 1E28-1E28
+61e1b8a9 0 U+1E29 beside 1E28-1E28
+61e1b8aa 7 U+1E2A first or last of 1E2A-1E2A
+61e1b8ab 0 U+1E2B beside 1E2A-1E2A
+61e1b8ac 7 U+1E2C first or last of 1E2C-1E2C
+61e1b8ad 0 U+1E2D beside 1E2C-1E2C
+61e1b8ae 7 U+1E2E first or last of 1E2E-1E2E
+61e1b8af 0 U+1E2F beside 1E2E-1E2E
+61e1b8b0 7 U+1E30 first or last of 1E30-1E30
+61e1b8b1 0 U+1E31 beside 1E30-1E30
+61e1b8b2 7 U+1E32 first or last of 1E32-1E32
+61e1b8b3 0 U+1E33 beside 1E32-1E32
+61e1b8b4 7 U+1E34 first or last of 1E34-1E34
+61e1b8b5 0 U+1E35 beside 1E34-1E34
+61e1b8b6 7 U+1E36 first or last of 1E36-1E36
+61e1b8b7 0 U+1E37 beside 1E36-1E36
+61e1b8b8 7 U+1E38 first or last of 1E38-1E38
+61e1b8b9 0 U+1E39 beside 1E38-1E38
+61e1b8ba 7 U+1E3A first or last of 1E3A-1E3A
+61e1b8bb 0 U+1E3B beside 1E3A-1E3A
+61e1b8bc 7 U+1E3C first or last of 1E3C-1E3C
+61e1b8bd 0 U+1E3D beside 1E3C-1E3C
+61e1b8be 7 U+1E3E first or last of 1E3E-1E3E
+61e1b8bf 0 U+1E3F beside 1E3E-1E3E
+61e1b980 7 U+1E40 first or last of 1E40-1E40
+61e1b981 0 U+1E41 beside 1E40-1E40
+61e1b982 7 U+1E42 first or last of 1E42-1E42
+61e1b983 0 U+1E43 beside 1E42-1E42
+61e1b984 7 U+1E44 first or last of 1E44-1E44
+61e1b985 0 U+1E45 beside 1E44-1E44
+61e1b986 7 U+1E46 first or last of 1E46-1E46
+61e1b987 0 U+1E47 beside 1E46-1E46
+61e1b988 7 U+1E48 first or last of 1E48-1E48
+61e1b989 0 U+1E49 beside 1E48-1E48
+61e1b98a 7 U+1E4A first or last of 1E4A-1E4A
+61e1b98b 0 U+1E4B beside 1E4A-1E4A
+61e1b98c 7 U+1E4C first or last of 1E4C-1E4C
+61e1b98d 0 U+1E4D beside 1E4C-1E4C
+61e1b98e 7 U+1E4E first or last of 1E4E-1E4E
+61e1b98f 0 U+1E4F beside 1E4E-1E4E
+61e1b990 7 U+1E50 first or last of 1E50-1E50
+61e1b991 0 U+1E51 beside 1E50-1E50
+61e1b992 7 U+1E52 first or last of 1E52-1E52
+61e1b993 0 U+1E53 beside 1E52-1E52
+61e1b994 7 U+1E54 first or last of 1E54-1E54
+61e1b995 0 U+1E55 beside 1E54-1E54
+61e1b996 7 U+1E56 first or last of 1E56-1E56
+61e1b997 0 U+1E57 beside 1E56-1E56
+61e1b998 7 U+1E58 first or last of 1E58-1E58
+61e1b999 0 U+1E59 beside 1E58-1E58
+61e1b99a 7 U+1E5A first or last of 1E5A-1E5A
+61e1b99b 0 U+1E5B beside 1E5A-1E5A
+61e1b99c 7 U+1E5C first or last of 1E5C-1E5C
+61e1b99d 0 U+1E5D beside 1E5C-1E5C
+61e1b99e 7 U+1E5E first or last of 1E5E-1E5E
+61e1b99f 0 U+1E5F beside 1E5E-1E5E
+61e1b9a0 7 U+1E60 first or last of 1E60-1E60
+61e1b9a1 0 U+1E61 beside 1E60-1E60
+61e1b9a2 7 U+1E62 first or last of 1E62-1E62
+61e1b9a3 0 U+1E63 beside 1E62-1E62
+61e1b9a4 7 U+1E64 first or last of 1E64-1E64
+61e1b9a5 0 U+1E65 beside 1E64-1E64
+61e1b9a6 7 U+1E66 first or last of 1E66-1E66
+61e1b9a7 0 U+1E67 beside 1E66-1E66
+61e1b9a8 7 U+1E68 first or last of 1E68-1E68
+61e1b9a9 0 U+1E69 beside 1E68-1E68
+61e1b9aa 7 U+1E6A first or last of 1E6A-1E6A
+61e1b9ab 0 U+1E6B beside 1E6A-1E6A
+61e1b9ac 7 U+1E6C first or last of 1E6C-1E6C
+61e1b9ad 0 U+1E6D beside 1E6C-1E6C
+61e1b9ae 7 U+1E6E first or last of 1E6E-1E6E
+61e1b9af 0 U+1E6F beside 1E6E-1E6E
+61e1b9b0 7 U+1E70 first or last of 1E70-1E70
+61e1b9b1 0 U+1E71 beside 1E70-1E70
+61e1b9b2 7 U+1E72 first or last of 1E72-1E72
+61e1b9b3 0 U+1E73 beside 1E72-1E72
+61e1b9b4 7 U+1E74 first or last of 1E74-1E74
+61e1b9b5 0 U+1E75 beside 1E74-1E74
+61e1b9b6 7 U+1E76 first or last of 1E76-1E76
+61e1b9b7 0 U+1E77 beside 1E76-1E76
+61e1b9b8 7 U+1E78 first or last of 1E78-1E78
+61e1b9b9 0 U+1E79 beside 1E78-1E78
+61e1b9ba 7 U+1E7A first or last of 1E7A-1E7A
+61e1b9bb 0 U+1E7B beside 1E7A-1E7A
+61e1b9bc 7 U+1E7C first or last of 1E7C-1E7C
+61e1b9bd 0 U+1E7D beside 1E7C-1E7C
+61e1b9be 7 U+1E7E first or last of 1E7E-1E7E
+61e1b9bf 0 U+1E7F beside 1E7E-1E7E
+61e1ba80 7 U+1E80 first or last of 1E80-1E80
+61e1ba81 0 U+1E81 beside 1E80-1E80
+61e1ba82 7 U+1E82 first or last of 1E82-1E82
+61e1ba83 0 U+1E83 beside 1E82-1E82
+61e1ba84 7 U+1E84 first or last of 1E84-1E84
+61e1ba85 0 U+1E85 beside 1E84-1E84
+61e1ba86 7 U+1E86 first or last of 1E86-1E86
+61e1ba87 0 U+1E87 beside 1E86-1E86
+61e1ba88 7 U+1E88 first or last of 1E88-1E88
+61e1ba89 0 U+1E89 beside 1E88-1E88
+61e1ba8a 7 U+1E8A first or last of 1E8A-1E8A
+61e1ba8b 0 U+1E8B beside 1E8A-1E8A
+61e1ba8c 7 U+1E8C first or last of 1E8C-1E8C
+61e1ba8d 0 U+1E8D beside 1E8C-1E8C
+61e1ba8e 7 U+1E8E first or last of 1E8E-1E8E
+61e1ba8f 0 U+1E8F beside 1E8E-1E8E
+61e1ba90 7 U+1E90 first or last of 1E90-1E90
+61e1ba91 0 U+1E91 beside 1E90-1E90
+61e1ba92 7 U+1E92 first or last of 1E92-1E92
+61e1ba93 0 U+1E93 beside 1E92-1E92
+61e1ba94 7 U+1E94 first or last of 1E94-1E94
+61e1ba95 0 U+1E95 beside 1E94-1E94
+61e1ba9a 7 U+1E9A first or last of 1E9A-1E9B
+61e1ba9b 7 U+1E9B first or last of 1E9A-1E9B
+61e1ba99 0 U+1E99 beside 1E9A-1E9B
+61e1ba9c 0 U+1E9C beside 1E9A-1E9B
+61e1ba9e 7 U+1E9E first or last of 1E9E-1E9E
+61e1ba9d 0 U+1E9D beside 1E9E-1E9E
+61e1ba9f 0 U+1E9F beside 1E9E-1E9E
+61e1baa0 7 U+1EA0 first or last of 1EA0-1EA0
+61e1baa1 0 U+1EA1 beside 1EA0-1EA0
+61e1baa2 7 U+1EA2 first or last of 1EA2-1EA2
+61e1baa3 0 U+1EA3 beside 1EA2-1EA2
+61e1baa4 7 U+1EA4 first or last of 1EA4-1EA4
+61e1baa5 0 U+1EA5 beside 1EA4-1EA4
+61e1baa6 7 U+1EA6 first or last of 1EA6-1EA6
+61e1baa7 0 U+1EA7 beside 1EA6-1EA6
+61e1baa8 7 U+1EA8 first or last of 1EA8-1EA8
+61e1baa9 0 U+1EA9 beside 1EA8-1EA8
+61e1baaa 7 U+1EAA first or last of 1EAA-1EAA
+61e1baab 0 U+1EAB beside 1EAA-1EAA
+61e1baac 7 U+1EAC first or last of 1EAC-1EAC
+61e1baad 0 U+1EAD beside 1EAC-1EAC
+61e1baae 7 U+1EAE first or last of 1EAE-1EAE
+61e1baaf 0 U+1EAF beside 1EAE-1EAE
+61e1bab0 7 U+1EB0 first or last of 1EB0-1EB0
+61e1bab1 0 U+1EB1 beside 1EB0-1EB0
+61e1bab2 7 U+1EB2 first or last of 1EB2-1EB2
+61e1bab3 0 U+1EB3 beside 1EB2-1EB2
+61e1bab4 7 U+1EB4 first or last of 1EB4-1EB4
+61e1bab5 0 U+1EB5 beside 1EB4-1EB4
+61e1bab6 7 U+1EB6 first or last of 1EB6-1EB6
+61e1bab7 0 U+1EB7 beside 1EB6-1EB6
+61e1bab8 7 U+1EB8 first or last of 1EB8-1EB8
+61e1bab9 0 U+1EB9 beside 1EB8-1EB8
+61e1baba 7 U+1EBA first or last of 1EBA-1EBA
+61e1babb 0 U+1EBB beside 1EBA-1EBA
+61e1babc 7 U+1EBC first or last of 1EBC-1EBC
+61e1babd 0 U+1EBD beside 1EBC-1EBC
+61e1babe 7 U+1EBE first or last of 1EBE-1EBE
+61e1babf 0 U+1EBF beside 1EBE-1EBE
+61e1bb80 7 U+1EC0 first or last of 1EC0-1EC0
+61e1bb81 0 U+1EC1 beside 1EC0-1EC0
+61e1bb82 7 U+1EC2 first or last of 1EC2-1EC2
+61e1bb83 0 U+1EC3 beside 1EC2-1EC2
+61e1bb84 7 U+1EC4 first or last of 1EC4-1EC4
+61e1bb85 0 U+1EC5 beside 1EC4-1EC4
+61e1bb86 7 U+1EC6 first or last of 1EC6-1EC6
+61e1bb87 0 U+1EC7 beside 1EC6-1EC6
+61e1bb88 7 U+1EC8 first or last of 1EC8-1EC8
+61e1bb89 0 U+1EC9 beside 1EC8-1EC8
+61e1bb8a 7 U+1ECA first or last of 1ECA-1ECA
+61e1bb8b 0 U+1ECB beside 1ECA-1ECA
+61e1bb8c 7 U+1ECC first or last of 1ECC-1ECC
+61e1bb8d 0 U+1ECD beside 1ECC-1ECC
+61e1bb8e 7 U+1ECE first or last of 1ECE-1ECE
+61e1bb8f 0 U+1ECF beside 1ECE-1ECE
+61e1bb90 7 U+1ED0 first or last of 1ED0-1ED0
+61e1bb91 0 U+1ED1 beside 1ED0-1ED0
+61e1bb92 7 U+1ED2 first or last of 1ED2-1ED2
+61e1bb93 0 U+1ED3 beside 1ED2-1ED2
+61e1bb94 7 U+1ED4 first or last of 1ED4-1ED4
+61e1bb95 0 U+1ED5 beside 1ED4-1ED4
+61e1bb96 7 U+1ED6 first or last of 1ED6-1ED6
+61e1bb97 0 U+1ED7 beside 1ED6-1ED6
+61e1bb98 7 U+1ED8 first or last of 1ED8-1ED8
+61e1bb99 0 U+1ED9 beside 1ED8-1ED8
+61e1bb9a 7 U+1EDA first or last of 1EDA-1EDA
+61e1bb9b 0 U+1EDB beside 1EDA-1EDA
+61e1bb9c 7 U+1EDC first or last of 1EDC-1EDC
+61e1bb9d 0 U+1EDD beside 1EDC-1EDC
+61e1bb9e 7 U+1EDE first or last of 1EDE-1EDE
+61e1bb9f 0 U+1EDF beside 1EDE-1EDE
+61e1bba0 7 U+1EE0 first or last of 1EE0-1EE0
+61e1bba1 0 U+1EE1 beside 1EE0-1EE0
+61e1bba2 7 U+1EE2 first or last of 1EE2-1EE2
+61e1bba3 0 U+1EE3 beside 1EE2-1EE2
+61e1bba4 7 U+1EE4 first or last of 1EE4-1EE4
+61e1bba5 0 U+1EE5 beside 1EE4-1EE4
+61e1bba6 7 U+1EE6 first or last of 1EE6-1EE6
+61e1bba7 0 U+1EE7 beside 1EE6-1EE6
+61e1bba8 7 U+1EE8 first or last of 1EE8-1EE8
+61e1bba9 0 U+1EE9 beside 1EE8-1EE8
+61e1bbaa 7 U+1EEA first or last of 1EEA-1EEA
+61e1bbab 0 U+1EEB beside 1EEA-1EEA
+61e1bbac 7 U+1EEC first or last of 1EEC-1EEC
+61e1bbad 0 U+1EED beside 1EEC-1EEC
+61e1bbae 7 U+1EEE first or last of 1EEE-1EEE
+61e1bbaf 0 U+1EEF beside 1EEE-1EEE
+61e1bbb0 7 U+1EF0 first or last of 1EF0-1EF0
+61e1bbb1 0 U+1EF1 beside 1EF0-1EF0
+61e1bbb2 7 U+1EF2 first or last of 1EF2-1EF2
+61e1bbb3 0 U+1EF3 beside 1EF2-1EF2
+61e1bbb4 7 U+1EF4 first or last of 1EF4-1EF4
+61e1bbb5 0 U+1EF5 beside 1EF4-1EF4
+61e1bbb6 7 U+1EF6 first or last of 1EF6-1EF6
+61e1bbb7 0 U+1EF7 beside 1EF6-1EF6
+61e1bbb8 7 U+1EF8 first or last of 1EF8-1EF8
+61e1bbb9 0 U+1EF9 beside 1EF8-1EF8
+61e1bbba 7 U+1EFA first or last of 1EFA-1EFA
+61e1bbbb 0 U+1EFB beside 1EFA-1EFA
+61e1bbbc 7 U+1EFC first or last of 1EFC-1EFC
+61e1bbbd 0 U+1EFD beside 1EFC-1EFC
+61e1bbbe 7 U+1EFE first or last of 1EFE-1EFE
+61e1bbbf 0 U+1EFF beside 1EFE-1EFE
+61e1bc88 7 U+1F08 first or last of 1F08-1F0F
+61e1bc8f 7 U+1F0F first or last of 1F08-1F0F
+61e1bc87 0 U+1F07 beside 1F08-1F0F
+61e1bc90 0 U+1F10 beside 1F08-1F0F
+61e1bc98 7 U+1F18 first or last of 1F18-1F1D
+61e1bc9d 7 U+1F1D first or last of 1F18-1F1D
+61e1bc97 0 U+1F17 beside 1F18-1F1D
+61e1bc9e 0 U+1F1E beside 1F18-1F1D
+61e1bca8 7 U+1F28 first or last of 1F28-1F2F
+61e1bcaf 7 U+1F2F first or last of 1F28-1F2F
+61e1bca7 0 U+1F27 beside 1F28-1F2F
+61e1bcb0 0 U+1F30 beside 1F28-1F2F
+61e1bcb8 7 U+1F38 first or last of 1F38-1F3F
+61e1bcbf 7 U+1F3F first or last of 1F38-1F3F
+61e1bcb7 0 U+1F37 beside 1F38-1F3F
+61e1bd80 0 U+1F40 beside 1F38-1F3F
+61e1bd88 7 U+1F48 first or last of 1F48-1F4D
+61e1bd8d 7 U+1F4D first or last of 1F48-1F4D
+61e1bd87 0 U+1F47 beside 1F48-1F4D
+61e1bd8e 0 U+1F4E beside 1F48-1F4D
+61e1bd99 7 U+1F59 first or last of 1F59-1F59
+61e1bd98 0 U+1F58 beside 1F59-1F59
+61e1bd9a 0 U+1F5A beside 1F59-1F59
+61e1bd9b 7 U+1F5B first or last of 1F5B-1F5B
+61e1bd9c 0 U+1F5C beside 1F5B-1F5B
+61e1bd9d 7 U+1F5D first or last of 1F5D-1F5D
+61e1bd9e 0 U+1F5E beside 1F5D-1F5D
+61e1bd9f 7 U+1F5F first or last of 1F5F-1F5F
+61e1bda0 0 U+1F60 beside 1F5F-1F5F
+61e1bda8 7 U+1F68 first or last of 1F68-1F6F
+61e1bdaf 7 U+1F6F first or last of 1F68-1F6F
+61e1bda7 0 U+1F67 beside 1F68-1F6F
+61e1bdb0 0 U+1F70 beside 1F68-1F6F
+61e1bdb1 7 U+1F71 first or last of 1F71-1F71
+61e1bdb2 0 U+1F72 beside 1F71-1F71
+61e1bdb3 7 U+1F73 first or last of 1F73-1F73
+61e1bdb4 0 U+1F74 beside 1F73-1F73
+61e1bdb5 7 U+1F75 first or last of 1F75-1F75
+61e1bdb6 0 U+1F76 beside 1F75-1F75
+61e1bdb7 7 U+1F77 first or last of 1F77-1F77
+61e1bdb8 0 U+1F78 beside 1F77-1F77
+61e1bdb9 7 U+1F79 first or last of 1F79-1F79
+61e1bdba 0 U+1F7A beside 1F79-1F79
+61e1bdbb 7 U+1F7B first or last of 1F7B-1F7B
+61e1bdbc 0 U+1F7C beside 1F7B-1F7B
+61e1bdbd 7 U+1F7D first or last of 1F7D-1F7D
+61e1bdbe 0 U+1F7E beside 1F7D-1F7D
+61e1be80 7 U+1F80 first or last of 1F80-1FAF
+61e1beaf 7 U+1FAF first or last of 1F80-1FAF
+61e1bdbf 0 U+1F7F beside 1F80-1FAF
+61e1beb0 0 U+1FB0 beside 1F80-1FAF
+61e1beb2 7 U+1FB2 first or last of 1FB2-1FB4
+61e1beb4 7 U+1FB4 first or last of 1FB2-1FB4
+61e1beb1 0 U+1FB1 beside 1FB2-1FB4
+61e1beb5 0 U+1FB5 beside 1FB2-1FB4
+61e1beb7 7 U+1FB7 first or last of 1FB7-1FC4
+61e1bf84 7 U+1FC4 first or last of 1FB7-1FC4
+61e1beb6 0 U+1FB6 beside 1FB7-1FC4
+61e1bf85 0 U+1FC5 beside 1FB7-1FC4
+61e1bf87 7 U+1FC7 first or last of 1FC7-1FCF
+61e1bf8f 7 U+1FCF first or last of 1FC7-1FCF
+61e1bf86 0 U+1FC6 beside 1FC7-1FCF
+61e1bf90 0 U+1FD0 beside 1FC7-1FCF
+61e1bf93 7 U+1FD3 first or last of 1FD3-1FD3
+61e1bf92 0 U+1FD2 beside 1FD3-1FD3
+61e1bf94 0 U+1FD4 beside 1FD3-1FD3
+61e1bf98 7 U+1FD8 first or last of 1FD8-1FDB
+61e1bf9b 7 U+1FDB first or last of 1FD8-1FDB
+61e1bf97 0 U+1FD7 beside 1FD8-1FDB
+61e1bf9c 0 U+1FDC beside 1FD8-1FDB
+61e1bf9d 7 U+1FDD first or last of 1FDD-1FDF
+61e1bf9f 7 U+1FDF first or last of 1FDD-1FDF
+61e1bfa0 0 U+1FE0 beside 1FDD-1FDF
+61e1bfa3 7 U+1FE3 first or last of 1FE3-1FE3
+61e1bfa2 0 U+1FE2 beside 1FE3-1FE3
+61e1bfa4 0 U+1FE4 beside 1FE3-1FE3
+61e1bfa8 7 U+1FE8 first or last of 1FE8-1FEF
+61e1bfaf 7 U+1FEF first or last of 1FE8-1FEF
+61e1bfa7 0 U+1FE7 beside 1FE8-1FEF
+61e1bfb0 0 U+1FF0 beside 1FE8-1FEF
+61e1bfb2 7 U+1FF2 first or last of 1FF2-1FF4
+61e1bfb4 7 U+1FF4 first or last of 1FF2-1FF4
+61e1bfb1 0 U+1FF1 beside 1FF2-1FF4
+61e1bfb5 0 U+1FF5 beside 1FF2-1FF4
+61e1bfb7 7 U+1FF7 first or last of 1FF7-1FFE
+61e1bfbe 7 U+1FFE first or last of 1FF7-1FFE
+61e1bfb6 0 U+1FF6 beside 1FF7-1FFE
+61e1bfbf 0 U+1FFF beside 1FF7-1FFE
+61e28080 7 U+2000 first or last of 2000-2026
+61e280a6 7 U+2026 first or last of 2000-2026
+61e280a7 0 U+2027 beside 2000-2026
+61e280a8 7 U+2028 first or last of 2028-2071
+61e281b1 7 U+2071 first or last of 2028-2071
+61e281b2 0 U+2072 beside 2028-2071
+61e281b4 7 U+2074 first or last of 2074-208E
+61e2828e 7 U+208E first or last of 2074-208E
+61e281b3 0 U+2073 beside 2074-208E
+61e2828f 0 U+208F beside 2074-208E
+61e28290 7 U+2090 first or last of 2090-20C4
+61e28384 7 U+20C4 first or last of 2090-20C4
+61e28385 0 U+20C5 beside 2090-20C4
+61e28392 7 U+20D2 first or last of 20D2-20D3
+61e28393 7 U+20D3 first or last of 20D2-20D3
+61e28391 0 U+20D1 beside 20D2-20D3
+61e28394 0 U+20D4 beside 20D2-20D3
+61e283a5 7 U+20E5 first or last of 20E5-20E6
+61e283a6 7 U+20E6 first or last of 20E5-20E6
+61e283a4 0 U+20E4 beside 20E5-20E6
+61e283a7 0 U+20E7 beside 20E5-20E6
+61e283ab 7 U+20EB first or last of 20EB-20EB
+61e283aa 0 U+20EA beside 20EB-20EB
+61e283ac 0 U+20EC beside 20EB-20EB
+61e28480 7 U+2100 first or last of 2100-214D
+61e2858d 7 U+214D first or last of 2100-214D
+61e283bf 0 U+20FF beside 2100-214D
+61e2858e 0 U+214E beside 2100-214D
+61e2858f 7 U+214F first or last of 214F-217F
+61e285bf 7 U+217F first or last of 214F-217F
+61e28680 0 U+2180 beside 214F-217F
+61e28683 7 U+2183 first or last of 2183-2183
+61e28682 0 U+2182 beside 2183-2183
+61e28684 0 U+2184 beside 2183-2183
+61e28689 7 U+2189 first or last of 2189-218B
+61e2868b 7 U+218B first or last of 2189-218B
+61e28688 0 U+2188 beside 2189-218B
+61e2868c 0 U+218C beside 2189-218B
+61e28690 7 U+2190 first or last of 2190-2194
+61e28694 7 U+2194 first or last of 2190-2194
+61e2868f 0 U+218F beside 2190-2194
+61e28695 0 U+2195 beside 2190-2194
+61e2869a 7 U+219A first or last of 219A-21A8
+61e286a8 7 U+21A8 first or last of 219A-21A8
+61e28699 0 U+2199 beside 219A-21A8
+61e286a9 0 U+21A9 beside 219A-21A8
+61e286ab 7 U+21AB first or last of 21AB-22C4
+61e28b84 7 U+22C4 first or last of 21AB-22C4
+61e286aa 0 U+21AA beside 21AB-22C4
+61e28b85 0 U+22C5 beside 21AB-22C4
+61e28b86 7 U+22C6 first or last of 22C6-2319
+61e28c99 7 U+2319 first or last of 22C6-2319
+61e28c9a 0 U+231A beside 22C6-2319
+61e28c9c 7 U+231C first or last of 231C-2327
+61e28ca7 7 U+2327 first or last of 231C-2327
+61e28c9b 0 U+231B beside 231C-2327
+61e28ca8 0 U+2328 beside 231C-2327
+61e28ca9 7 U+2329 first or last of 2329-23CE
+61e28f8e 7 U+23CE first or last of 2329-23CE
+61e28f8f 0 U+23CF beside 2329-23CE
+61e28f90 7 U+23D0 first or last of 23D0-23E8
+61e28fa8 7 U+23E8 first or last of 23D0-23E8
+61e28fa9 0 U+23E9 beside 23D0-23E8
+61e28fb4 7 U+23F4 first or last of 23F4-23F7
+61e28fb7 7 U+23F7 first or last of 23F4-23F7
+61e28fb3 0 U+23F3 beside 23F4-23F7
+61e28fb8 0 U+23F8 beside 23F4-23F7
+61e28fbb 7 U+23FB first or last of 23FB-2429
+61e290a9 7 U+2429 first or last of 23FB-2429
+61e28fba 0 U+23FA beside 23FB-2429
+61e290aa 0 U+242A beside 23FB-2429
+61e29180 7 U+2440 first or last of 2440-244A
+61e2918a 7 U+244A first or last of 2440-244A
+61e290bf 0 U+243F beside 2440-244A
+61e2918b 0 U+244B beside 2440-244A
+61e291a0 7 U+2460 first or last of 2460-24EA
+61e293aa 7 U+24EA first or last of 2460-24EA
+61e2919f 0 U+245F beside 2460-24EA
+61e293ab 0 U+24EB beside 2460-24EA
+61e29480 7 U+2500 first or last of 2500-25A9
+61e296a9 7 U+25A9 first or last of 2500-25A9
+61e293bf 0 U+24FF beside 2500-25A9
+61e296aa 0 U+25AA beside 2500-25A9
+61e296ac 7 U+25AC first or last of 25AC-25B5
+61e296b5 7 U+25B5 first or last of 25AC-25B5
+61e296ab 0 U+25AB beside 25AC-25B5
+61e296b6 0 U+25B6 beside 25AC-25B5
+61e296b7 7 U+25B7 first or last of 25B7-25BF
+61e296bf 7 U+25BF first or last of 25B7-25BF
+61e29780 0 U+25C0 beside 25B7-25BF
+61e29781 7 U+25C1 first or last of 25C1-25FF
+61e297bf 7 U+25FF first or last of 25C1-25FF
+61e29880 0 U+2600 beside 25C1-25FF
+61e29885 7 U+2605 first or last of 2605-260D
+61e2988d 7 U+260D first or last of 2605-260D
+61e29884 0 U+2604 beside 2605-260D
+61e2988e 0 U+260E beside 2605-260D
+61e2988f 7 U+260F first or last of 260F-2610
+61e29890 7 U+2610 first or last of 260F-2610
+61e29891 0 U+2611 beside 260F-2610
+61e29892 7 U+2612 first or last of 2612-2613
+61e29893 7 U+2613 first or last of 2612-2613
+61e29894 0 U+2614 beside 2612-2613
+61e29896 7 U+2616 first or last of 2616-2617
+61e29897 7 U+2617 first or last of 2616-2617
+61e29895 0 U+2615 beside 2616-2617
+61e29898 0 U+2618 beside 2616-2617
+61e29899 7 U+2619 first or last of 2619-261C
+61e2989c 7 U+261C first or last of 2619-261C
+61e2989d 0 U+261D beside 2619-261C
+61e2989e 7 U+261E first or last of 261E-261F
+61e2989f 7 U+261F first or last of 261E-261F
+61e298a0 0 U+2620 beside 261E-261F
+61e298a1 7 U+2621 first or last of 2621-2621
+61e298a2 0 U+2622 beside 2621-2621
+61e298a4 7 U+2624 first or last of 2624-2625
+61e298a5 7 U+2625 first or last of 2624-2625
+61e298a3 0 U+2623 beside 2624-2625
+61e298a6 0 U+2626 beside 2624-2625
+61e298a7 7 U+2627 first or last of 2627-2629
+61e298a9 7 U+2629 first or last of 2627-2629
+61e298aa 0 U+262A beside 2627-2629
+61e298ab 7 U+262B first or last of 262B-262D
+61e298ad 7 U+262D first or last of 262B-262D
+61e298ae 0 U+262E beside 262B-262D
+61e298b0 7 U+2630 first or last of 2630-2637
+61e298b7 7 U+2637 first or last of 2630-2637
+61e298af 0 U+262F beside 2630-2637
+61e298b8 0 U+2638 beside 2630-2637
+61e298bb 7 U+263B first or last of 263B-263F
+61e298bf 7 U+263F first or last of 263B-263F
+61e298ba 0 U+263A beside 263B-263F
+61e29980 0 U+2640 beside 263B-263F
+61e29981 7 U+2641 first or last of 2641-2641
+61e29982 0 U+2642 beside 2641-2641
+61e29983 7 U+2643 first or last of 2643-2647
+61e29987 7 U+2647 first or last of 2643-2647
+61e29988 0 U+2648 beside 2643-2647
+61e29994 7 U+2654 first or last of 2654-265E
+61e2999e 7 U+265E first or last of 2654-265E
+61e29993 0 U+2653 beside 2654-265E
+61e2999f 0 U+265F beside 2654-265E
+61e299a1 7 U+2661 first or last of 2661-2662
+61e299a2 7 U+2662 first or last of 2661-2662
+61e299a0 0 U+2660 beside 2661-2662
+61e299a3 0 U+2663 beside 2661-2662
+61e299a4 7 U+2664 first or last of 2664-2664
+61e299a5 0 U+2665 beside 2664-2664
+61e299a7 7 U+2667 first or last of 2667-2667
+61e299a6 0 U+2666 beside 2667-2667
+61e299a8 0 U+2668 beside 2667-2667
+61e299a9 7 U+2669 first or last of 2669-267A
+61e299ba 7 U+267A first or last of 2669-267A
+61e299bb 0 U+267B beside 2669-267A
+61e299bc 7 U+267C first or last of 267C-267D
+61e299bd 7 U+267D first or last of 267C-267D
+61e299be 0 U+267E beside 267C-267D
+61e29a80 7 U+2680 first or last of 2680-2691
+61e29a91 7 U+2691 first or last of 2680-2691
+61e299bf 0 U+267F beside 2680-2691
+61e29a92 0 U+2692 beside 2680-2691
+61e29a98 7 U+2698 first or last of 2698-2698
+61e29a97 0 U+2697 beside 2698-2698
+61e29a99 0 U+2699 beside 2698-2698
+61e29a9a 7 U+269A first or last of 269A-269A
+61e29a9b 0 U+269B beside 269A-269A
+61e29a9d 7 U+269D first or last of 269D-269F
+61e29a9f 7 U+269F first or last of 269D-269F
+61e29a9c 0 U+269C beside 269D-269F
+61e29aa0 0 U+26A0 beside 269D-269F
+61e29aa2 7 U+26A2 first or last of 26A2-26A6
+61e29aa6 7 U+26A6 first or last of 26A2-26A6
+61e29aa1 0 U+26A1 beside 26A2-26A6
+61e29aa7 0 U+26A7 beside 26A2-26A6
+61e29aa8 7 U+26A8 first or last of 26A8-26A9
+61e29aa9 7 U+26A9 first or last of 26A8-26A9
+61e29aaa 0 U+26AA beside 26A8-26A9
+61e29aac 7 U+26AC first or last of 26AC-26AF
+61e29aaf 7 U+26AF first or last of 26AC-26AF
+61e29aab 0 U+26AB beside 26AC-26AF
+61e29ab0 0 U+26B0 beside 26AC-26AF
+61e29ab2 7 U+26B2 first or last of 26B2-26BC
+61e29abc 7 U+26BC first or last of 26B2-26BC
+61e29ab1 0 U+26B1 beside 26B2-26BC
+61e29abd 0 U+26BD beside 26B2-26BC
+61e29abf 7 U+26BF first or last of 26BF-26C3
+61e29b83 7 U+26C3 first or last of 26BF-26C3
+61e29abe 0 U+26BE beside 26BF-26C3
+61e29b84 0 U+26C4 beside 26BF-26C3
+61e29b86 7 U+26C6 first or last of 26C6-26C7
+61e29b87 7 U+26C7 first or last of 26C6-26C7
+61e29b85 0 U+26C5 beside 26C6-26C7
+61e29b88 0 U+26C8 beside 26C6-26C7
+61e29b89 7 U+26C9 first or last of 26C9-26CD
+61e29b8d 7 U+26CD first or last of 26C9-26CD
+61e29b8e 0 U+26CE beside 26C9-26CD
+61e29b90 7 U+26D0 first or last of 26D0-26D0
+61e29b8f 0 U+26CF beside 26D0-26D0
+61e29b91 0 U+26D1 beside 26D0-26D0
+61e29b92 7 U+26D2 first or last of 26D2-26D2
+61e29b93 0 U+26D3 beside 26D2-26D2
+61e29b95 7 U+26D5 first or last of 26D5-26E8
+61e29ba8 7 U+26E8 first or last of 26D5-26E8
+61e29b94 0 U+26D4 beside 26D5-26E8
+61e29ba9 0 U+26E9 beside 26D5-26E8
+61e29bab 7 U+26EB first or last of 26EB-26EF
+61e29baf 7 U+26EF first or last of 26EB-26EF
+61e29baa 0 U+26EA beside 26EB-26EF
+61e29bb0 0 U+26F0 beside 26EB-26EF
+61e29bb6 7 U+26F6 first or last of 26F6-26F6
+61e29bb5 0 U+26F5 beside 26F6-26F6
+61e29bb7 0 U+26F7 beside 26F6-26F6
+61e29bbb 7 U+26FB first or last of 26FB-26FC
+61e29bbc 7 U+26FC first or last of 26FB-26FC
+61e29bba 0 U+26FA beside 26FB-26FC
+61e29bbd 0 U+26FD beside 26FB-26FC
+61e29bbe 7 U+26FE first or last of 26FE-2701
+61e29c81 7 U+2701 first or last of 26FE-2701
+61e29c82 0 U+2702 beside 26FE-2701
+61e29c83 7 U+2703 first or last of 2703-2704
+61e29c84 7 U+2704 first or last of 2703-2704
+61e29c85 0 U+2705 beside 2703-2704
+61e29c86 7 U+2706 first or last of 2706-2707
+61e29c87 7 U+2707 first or last of 2706-2707
+61e29c88 0 U+2708 beside 2706-2707
+61e29c8e 7 U+270E first or last of 270E-270E
+61e29c8d 0 U+270D beside 270E-270E
+61e29c8f 0 U+270F beside 270E-270E
+61e29c90 7 U+2710 first or last of 2710-2711
+61e29c91 7 U+2711 first or last of 2710-2711
+61e29c92 0 U+2712 beside 2710-2711
+61e29c93 7 U+2713 first or last of 2713-2713
+61e29c94 0 U+2714 beside 2713-2713
+61e29c95 7 U+2715 first or last of 2715-2715
+61e29c96 0 U+2716 beside 2715-2715
+61e29c97 7 U+2717 first or last of 2717-271C
+61e29c9c 7 U+271C first or last of 2717-271C
+61e29c9d 0 U+271D beside 2717-271C
+61e29c9e 7 U+271E first or last of 271E-2720
+61e29ca0 7 U+2720 first or last of 271E-2720
+61e29ca1 0 U+2721 beside 271E-2720
+61e29ca2 7 U+2722 first or last of 2722-2727
+61e29ca7 7 U+2727 first or last of 2722-2727
+61e29ca8 0 U+2728 beside 2722-2727
+61e29ca9 7 U+2729 first or last of 2729-2732
+61e29cb2 7 U+2732 first or last of 2729-2732
+61e29cb3 0 U+2733 beside 2729-2732
+61e29cb5 7 U+2735 first or last of 2735-2743
+61e29d83 7 U+2743 first or last of 2735-2743
+61e29cb4 0 U+2734 beside 2735-2743
+61e29d84 0 U+2744 beside 2735-2743
+61e29d85 7 U+2745 first or last of 2745-2746
+61e29d86 7 U+2746 first or last of 2745-2746
+61e29d87 0 U+2747 beside 2745-2746
+61e29d88 7 U+2748 first or last of 2748-274B
+61e29d8b 7 U+274B first or last of 2748-274B
+61e29d8c 0 U+274C beside 2748-274B
+61e29d8d 7 U+274D first or last of 274D-274D
+61e29d8e 0 U+274E beside 274D-274D
+61e29d8f 7 U+274F first or last of 274F-2752
+61e29d92 7 U+2752 first or last of 274F-2752
+61e29d93 0 U+2753 beside 274F-2752
+61e29d96 7 U+2756 first or last of 2756-2756
+61e29d95 0 U+2755 beside 2756-2756
+61e29d97 0 U+2757 beside 2756-2756
+61e29d98 7 U+2758 first or last of 2758-2762
+61e29da2 7 U+2762 first or last of 2758-2762
+61e29da3 0 U+2763 beside 2758-2762
+61e29da5 7 U+2765 first or last of 2765-2775
+61e29db5 7 U+2775 first or last of 2765-2775
+61e29da4 0 U+2764 beside 2765-2775
+61e29db6 0 U+2776 beside 2765-2775
+61e29e94 7 U+2794 first or last of 2794-2794
+61e29e93 0 U+2793 beside 2794-2794
+61e29e95 0 U+2795 beside 2794-2794
+61e29e98 7 U+2798 first or last of 2798-27A0
+61e29ea0 7 U+27A0 first or last of 2798-27A0
+61e29e97 0 U+2797 beside 2798-27A0
+61e29ea1 0 U+27A1 beside 2798-27A0
+61e29ea2 7 U+27A2 first or last of 27A2-27AF
+61e29eaf 7 U+27AF first or last of 27A2-27AF
+61e29eb0 0 U+27B0 beside 27A2-27AF
+61e29eb1 7 U+27B1 first or last of 27B1-27BE
+61e29ebe 7 U+27BE first or last of 27B1-27BE
+61e29ebf 0 U+27BF beside 27B1-27BE
+61e29f80 7 U+27C0 first or last of 27C0-2B04
+61e2ac84 7 U+2B04 first or last of 27C0-2B04
+61e2ac85 0 U+2B05 beside 27C0-2B04
+61e2ac88 7 U+2B08 first or last of 2B08-2B1A
+61e2ac9a 7 U+2B1A first or last of 2B08-2B1A
+61e2ac87 0 U+2B07 beside 2B08-2B1A
+61e2ac9b 0 U+2B1B beside 2B08-2B1A
+61e2ac9d 7 U+2B1D first or last of 2B1D-2B4F
+61e2ad8f 7 U+2B4F first or last of 2B1D-2B4F
+61e2ac9c 0 U+2B1C beside 2B1D-2B4F
+61e2ad90 0 U+2B50 beside 2B1D-2B4F
+61e2ad91 7 U+2B51 first or last of 2B51-2B54
+61e2ad94 7 U+2B54 first or last of 2B51-2B54
+61e2ad95 0 U+2B55 beside 2B51-2B54
+61e2ad96 7 U+2B56 first or last of 2B56-2B73
+61e2adb3 7 U+2B73 first or last of 2B56-2B73
+61e2adb4 0 U+2B74 beside 2B56-2B73
+61e2adb6 7 U+2B76 first or last of 2B76-2C2F
+61e2b0af 7 U+2C2F first or last of 2B76-2C2F
+61e2adb5 0 U+2B75 beside 2B76-2C2F
+61e2b0b0 0 U+2C30 beside 2B76-2C2F
+61e2b1a0 7 U+2C60 first or last of 2C60-2C60
+61e2b19f 0 U+2C5F beside 2C60-2C60
+61e2b1a1 0 U+2C61 beside 2C60-2C60
+61e2b1a2 7 U+2C62 first or last of 2C62-2C64
+61e2b1a4 7 U+2C64 first or last of 2C62-2C64
+61e2b1a5 0 U+2C65 beside 2C62-2C64
+61e2b1a7 7 U+2C67 first or last of 2C67-2C67
+61e2b1a6 0 U+2C66 beside 2C67-2C67
+61e2b1a8 0 U+2C68 beside 2C67-2C67
+61e2b1a9 7 U+2C69 first or last of 2C69-2C69
+61e2b1aa 0 U+2C6A beside 2C69-2C69
+61e2b1ab 7 U+2C6B first or last of 2C6B-2C6B
+61e2b1ac 0 U+2C6C beside 2C6B-2C6B
+61e2b1ad 7 U+2C6D first or last of 2C6D-2C70
+61e2b1b0 7 U+2C70 first or last of 2C6D-2C70
+61e2b1b1 0 U+2C71 beside 2C6D-2C70
+61e2b1b2 7 U+2C72 first or last of 2C72-2C72
+61e2b1b3 0 U+2C73 beside 2C72-2C72
+61e2b1b5 7 U+2C75 first or last of 2C75-2C75
+61e2b1b4 0 U+2C74 beside 2C75-2C75
+61e2b1b6 0 U+2C76 beside 2C75-2C75
+61e2b1bc 7 U+2C7C first or last of 2C7C-2C80
+61e2b280 7 U+2C80 first or last of 2C7C-2C80
+61e2b1bb 0 U+2C7B beside 2C7C-2C80
+61e2b281 0 U+2C81 beside 2C7C-2C80
+61e2b282 7 U+2C82 first or last of 2C82-2C82
+61e2b283 0 U+2C83 beside 2C82-2C82
+61e2b284 7 U+2C84 first or last of 2C84-2C84
+61e2b285 0 U+2C85 beside 2C84-2C84
+61e2b286 7 U+2C86 first or last of 2C86-2C86
+61e2b287 0 U+2C87 beside 2C86-2C86
+61e2b288 7 U+2C88 first or last of 2C88-2C88
+61e2b289 0 U+2C89 beside 2C88-2C88
+61e2b28a 7 U+2C8A first or last of 2C8A-2C8A
+61e2b28b 0 U+2C8B beside 2C8A-2C8A
+61e2b28c 7 U+2C8C first or last of 2C8C-2C8C
+61e2b28d 0 U+2C8D beside 2C8C-2C8C
+61e2b28e 7 U+2C8E first or last of 2C8E-2C8E
+61e2b28f 0 U+2C8F beside 2C8E-2C8E
+61e2b290 7 U+2C90 first or last of 2C90-2C90
+61e2b291 0 U+2C91 beside 2C90-2C90
+61e2b292 7 U+2C92 first or last of 2C92-2C92
+61e2b293 0 U+2C93 beside 2C92-2C92
+61e2b294 7 U+2C94 first or last of 2C94-2C94
+61e2b295 0 U+2C95 beside 2C94-2C94
+61e2b296 7 U+2C96 first or last of 2C96-2C96
+61e2b297 0 U+2C97 beside 2C96-2C96
+61e2b298 7 U+2C98 first or last of 2C98-2C98
+61e2b299 0 U+2C99 beside 2C98-2C98
+61e2b29a 7 U+2C9A first or last of 2C9A-2C9A
+61e2b29b 0 U+2C9B beside 2C9A-2C9A
+61e2b29c 7 U+2C9C first or last of 2C9C-2C9C
+61e2b29d 0 U+2C9D beside 2C9C-2C9C
+61e2b29e 7 U+2C9E first or last of 2C9E-2C9E
+61e2b29f 0 U+2C9F beside 2C9E-2C9E
+61e2b2a0 7 U+2CA0 first or last of 2CA0-2CA0
+61e2b2a1 0 U+2CA1 beside 2CA0-2CA0
+61e2b2a2 7 U+2CA2 first or last of 2CA2-2CA2
+61e2b2a3 0 U+2CA3 beside 2CA2-2CA2
+61e2b2a4 7 U+2CA4 first or last of 2CA4-2CA4
+61e2b2a5 0 U+2CA5 beside 2CA4-2CA4
+61e2b2a6 7 U+2CA6 first or last of 2CA6-2CA6
+61e2b2a7 0 U+2CA7 beside 2CA6-2CA6
+61e2b2a8 7 U+2CA8 first or last of 2CA8-2CA8
+61e2b2a9 0 U+2CA9 beside 2CA8-2CA8
+61e2b2aa 7 U+2CAA first or last of 2CAA-2CAA
+61e2b2ab 0 U+2CAB beside 2CAA-2CAA
+61e2b2ac 7 U+2CAC first or last of 2CAC-2CAC
+61e2b2ad 0 U+2CAD beside 2CAC-2CAC
+61e2b2ae 7 U+2CAE first or last of 2CAE-2CAE
+61e2b2af 0 U+2CAF beside 2CAE-2CAE
+61e2b2b0 7 U+2CB0 first or last of 2CB0-2CB0
+61e2b2b1 0 U+2CB1 beside 2CB0-2CB0
+61e2b2b2 7 U+2CB2 first or last of 2CB2-2CB2
+61e2b2b3 0 U+2CB3 beside 2CB2-2CB2
+61e2b2b4 7 U+2CB4 first or last of 2CB4-2CB4
+61e2b2b5 0 U+2CB5 beside 2CB4-2CB4
+61e2b2b6 7 U+2CB6 first or last of 2CB6-2CB6
+61e2b2b7 0 U+2CB7 beside 2CB6-2CB6
+61e2b2b8 7 U+2CB8 first or last of 2CB8-2CB8
+61e2b2b9 0 U+2CB9 beside 2CB8-2CB8
+61e2b2ba 7 U+2CBA first or last of 2CBA-2CBA
+61e2b2bb 0 U+2CBB beside 2CBA-2CBA
+61e2b2bc 7 U+2CBC first or last of 2CBC-2CBC
+61e2b2bd 0 U+2CBD beside 2CBC-2CBC
+61e2b2be 7 U+2CBE first or last of 2CBE-2CBE
+61e2b2bf 0 U+2CBF beside 2CBE-2CBE
+61e2b380 7 U+2CC0 first or last of 2CC0-2CC0
+61e2b381 0 U+2CC1 beside 2CC0-2CC0
+61e2b382 7 U+2CC2 first or last of 2CC2-2CC2
+61e2b383 0 U+2CC3 beside 2CC2-2CC2
+61e2b384 7 U+2CC4 first or last of 2CC4-2CC4
+61e2b385 0 U+2CC5 beside 2CC4-2CC4
+61e2b386 7 U+2CC6 first or last of 2CC6-2CC6
+61e2b387 0 U+2CC7 beside 2CC6-2CC6
+61e2b388 7 U+2CC8 first or last of 2CC8-2CC8
+61e2b389 0 U+2CC9 beside 2CC8-2CC8
+61e2b38a 7 U+2CCA first or last of 2CCA-2CCA
+61e2b38b 0 U+2CCB beside 2CCA-2CCA
+61e2b38c 7 U+2CCC first or last of 2CCC-2CCC
+61e2b38d 0 U+2CCD beside 2CCC-2CCC
+61e2b38e 7 U+2CCE first or last of 2CCE-2CCE
+61e2b38f 0 U+2CCF beside 2CCE-2CCE
+61e2b390 7 U+2CD0 first or last of 2CD0-2CD0
+61e2b391 0 U+2CD1 beside 2CD0-2CD0
+61e2b392 7 U+2CD2 first or last of 2CD2-2CD2
+61e2b393 0 U+2CD3 beside 2CD2-2CD2
+61e2b394 7 U+2CD4 first or last of 2CD4-2CD4
+61e2b395 0 U+2CD5 beside 2CD4-2CD4
+61e2b396 7 U+2CD6 first or last of 2CD6-2CD6
+61e2b397 0 U+2CD7 beside 2CD6-2CD6
+61e2b398 7 U+2CD8 first or last of 2CD8-2CD8
+61e2b399 0 U+2CD9 beside 2CD8-2CD8
+61e2b39a 7 U+2CDA first or last of 2CDA-2CDA
+61e2b39b 0 U+2CDB beside 2CDA-2CDA
+61e2b39c 7 U+2CDC first or last of 2CDC-2CDC
+61e2b39d 0 U+2CDD beside 2CDC-2CDC
+61e2b39e 7 U+2CDE first or last of 2CDE-2CDE
+61e2b39f 0 U+2CDF beside 2CDE-2CDE
+61e2b3a0 7 U+2CE0 first or last of 2CE0-2CE0
+61e2b3a1 0 U+2CE1 beside 2CE0-2CE0
+61e2b3a2 7 U+2CE2 first or last of 2CE2-2CE2
+61e2b3a3 0 U+2CE3 beside 2CE2-2CE2
+61e2b3a5 7 U+2CE5 first or last of 2CE5-2CEB
+61e2b3ab 7 U+2CEB first or last of 2CE5-2CEB
+61e2b3a4 0 U+2CE4 beside 2CE5-2CEB
+61e2b3ac 0 U+2CEC beside 2CE5-2CEB
+61e2b3ad 7 U+2CED first or last of 2CED-2CED
+61e2b3ae 0 U+2CEE beside 2CED-2CED
+61e2b3b2 7 U+2CF2 first or last of 2CF2-2CF2
+61e2b3b1 0 U+2CF1 beside 2CF2-2CF2
+61e2b3b3 0 U+2CF3 beside 2CF2-2CF2
+61e2b3b9 7 U+2CF9 first or last of 2CF9-2CFC
+61e2b3bc 7 U+2CFC first or last of 2CF9-2CFC
+61e2b3b8 0 U+2CF8 beside 2CF9-2CFC
+61e2b3bd 0 U+2CFD beside 2CF9-2CFC
+61e2b3be 7 U+2CFE first or last of 2CFE-2CFF
+61e2b3bf 7 U+2CFF first or last of 2CFE-2CFF
+61e2b480 0 U+2D00 beside 2CFE-2CFF
+61e2b5af 7 U+2D6F first or last of 2D6F-2D70
+61e2b5b0 7 U+2D70 first or last of 2D6F-2D70
+61e2b5ae 0 U+2D6E beside 2D6F-2D70
+61e2b5b1 0 U+2D71 beside 2D6F-2D70
+61e2b880 7 U+2E00 first or last of 2E00-2E2E
+61e2b8ae 7 U+2E2E first or last of 2E00-2E2E
+61e2b7bf 0 U+2DFF beside 2E00-2E2E
+61e2b8af 0 U+2E2F beside 2E00-2E2E
+61e2b8b0 7 U+2E30 first or last of 2E30-2E5D
+61e2b99d 7 U+2E5D first or last of 2E30-2E5D
+61e2b99e 0 U+2E5E beside 2E30-2E5D
+61e2b9a0 7 U+2E60 first or last of 2E60-2E63
+61e2b9a3 7 U+2E63 first or last of 2E60-2E63
+61e2b99f 0 U+2E5F beside 2E60-2E63
+61e2b9a4 0 U+2E64 beside 2E60-2E63
+61e2ba80 7 U+2E80 first or last of 2E80-2E99
+61e2ba99 7 U+2E99 first or last of 2E80-2E99
+61e2b9bf 0 U+2E7F beside 2E80-2E99
+61e2ba9a 0 U+2E9A beside 2E80-2E99
+61e2ba9b 7 U+2E9B first or last of 2E9B-2EF3
+61e2bbb3 7 U+2EF3 first or last of 2E9B-2EF3
+61e2bbb4 0 U+2EF4 beside 2E9B-2EF3
+61e2bc80 7 U+2F00 first or last of 2F00-2FD5
+61e2bf95 7 U+2FD5 first or last of 2F00-2FD5
+61e2bbbf 0 U+2EFF beside 2F00-2FD5
+61e2bf96 0 U+2FD6 beside 2F00-2FD5
+61e2bfb0 7 U+2FF0 first or last of 2FF0-3004
+61e38084 7 U+3004 first or last of 2FF0-3004
+61e2bfaf 0 U+2FEF beside 2FF0-3004
+61e38085 0 U+3005 beside 2FF0-3004
+61e38088 7 U+3008 first or last of 3008-3020
+61e380a0 7 U+3020 first or last of 3008-3020
+61e38087 0 U+3007 beside 3008-3020
+61e380a1 0 U+3021 beside 3008-3020
+61e380b0 7 U+3030 first or last of 3030-303B
+61e380bb 7 U+303B first or last of 3030-303B
+61e380af 0 U+302F beside 3030-303B
+61e380bc 0 U+303C beside 3030-303B
+61e380bd 7 U+303D first or last of 303D-303F
+61e380bf 7 U+303F first or last of 303D-303F
+61e38180 0 U+3040 beside 303D-303F
+61e3829b 7 U+309B first or last of 309B-309C
+61e3829c 7 U+309C first or last of 309B-309C
+61e3829a 0 U+309A beside 309B-309C
+61e3829d 0 U+309D beside 309B-309C
+61e3829f 7 U+309F first or last of 309F-30A0
+61e382a0 7 U+30A0 first or last of 309F-30A0
+61e3829e 0 U+309E beside 309F-30A0
+61e382a1 0 U+30A1 beside 309F-30A0
+61e383bf 7 U+30FF first or last of 30FF-30FF
+61e383be 0 U+30FE beside 30FF-30FF
+61e38480 0 U+3100 beside 30FF-30FF
+61e384b1 7 U+3131 first or last of 3131-318E
+61e3868e 7 U+318E first or last of 3131-318E
+61e384b0 0 U+3130 beside 3131-318E
+61e3868f 0 U+318F beside 3131-318E
+61e38690 7 U+3190 first or last of 3190-319F
+61e3869f 7 U+319F first or last of 3190-319F
+61e386a0 0 U+31A0 beside 3190-319F
+61e38780 7 U+31C0 first or last of 31C0-31E5
+61e387a5 7 U+31E5 first or last of 31C0-31E5
+61e386bf 0 U+31BF beside 31C0-31E5
+61e387a6 0 U+31E6 beside 31C0-31E5
+61e387af 7 U+31EF first or last of 31EF-31EF
+61e387ae 0 U+31EE beside 31EF-31EF
+61e387b0 0 U+31F0 beside 31EF-31EF
+61e38880 7 U+3200 first or last of 3200-321E
+61e3889e 7 U+321E first or last of 3200-321E
+61e387bf 0 U+31FF beside 3200-321E
+61e3889f 0 U+321F beside 3200-321E
+61e388a0 7 U+3220 first or last of 3220-3247
+61e38987 7 U+3247 first or last of 3220-3247
+61e38988 0 U+3248 beside 3220-3247
+61e38990 7 U+3250 first or last of 3250-33FF
+61e38fbf 7 U+33FF first or last of 3250-33FF
+61e3898f 0 U+324F beside 3250-33FF
+61e39080 0 U+3400 beside 3250-33FF
+61e4b780 7 U+4DC0 first or last of 4DC0-4DFF
+61e4b7bf 7 U+4DFF first or last of 4DC0-4DFF
+61e4b6bf 0 U+4DBF beside 4DC0-4DFF
+61e4b880 0 U+4E00 beside 4DC0-4DFF
+61ea93be 7 U+A4FE first or last of A4FE-A4FF
+61ea93bf 7 U+A4FF first or last of A4FE-A4FF
+61ea93bd 0 U+A4FD beside A4FE-A4FF
+61ea9480 0 U+A500 beside A4FE-A4FF
+61ea988d 7 U+A60D first or last of A60D-A60F
+61ea988f 7 U+A60F first or last of A60D-A60F
+61ea988c 0 U+A60C beside A60D-A60F
+61ea9890 0 U+A610 beside A60D-A60F
+61ea9980 7 U+A640 first or last of A640-A640
+61ea98bf 0 U+A63F beside A640-A640
+61ea9981 0 U+A641 beside A640-A640
+61ea9982 7 U+A642 first or last of A642-A642
+61ea9983 0 U+A643 beside A642-A642
+61ea9984 7 U+A644 first or last of A644-A644
+61ea9985 0 U+A645 beside A644-A644
+61ea9986 7 U+A646 first or last of A646-A646
+61ea9987 0 U+A647 beside A646-A646
+61ea9988 7 U+A648 first or last of A648-A648
+61ea9989 0 U+A649 beside A648-A648
+61ea998a 7 U+A64A first or last of A64A-A64A
+61ea998b 0 U+A64B beside A64A-A64A
+61ea998c 7 U+A64C first or last of A64C-A64C
+61ea998d 0 U+A64D beside A64C-A64C
+61ea998e 7 U+A64E first or last of A64E-A64E
+61ea998f 0 U+A64F beside A64E-A64E
+61ea9990 7 U+A650 first or last of A650-A650
+61ea9991 0 U+A651 beside A650-A650
+61ea9992 7 U+A652 first or last of A652-A652
+61ea9993 0 U+A653 beside A652-A652
+61ea9994 7 U+A654 first or last of A654-A654
+61ea9995 0 U+A655 beside A654-A654
+61ea9996 7 U+A656 first or last of A656-A656
+61ea9997 0 U+A657 beside A656-A656
+61ea9998 7 U+A658 first or last of A658-A658
+61ea9999 0 U+A659 beside A658-A658
+61ea999a 7 U+A65A first or last of A65A-A65A
+61ea999b 0 U+A65B beside A65A-A65A
+61ea999c 7 U+A65C first or last of A65C-A65C
+61ea999d 0 U+A65D beside A65C-A65C
+61ea999e 7 U+A65E first or last of A65E-A65E
+61ea999f 0 U+A65F beside A65E-A65E
+61ea99a0 7 U+A660 first or last of A660-A660
+61ea99a1 0 U+A661 beside A660-A660
+61ea99a2 7 U+A662 first or last of A662-A662
+61ea99a3 0 U+A663 beside A662-A662
+61ea99a4 7 U+A664 first or last of A664-A664
+61ea99a5 0 U+A665 beside A664-A664
+61ea99a6 7 U+A666 first or last of A666-A666
+61ea99a7 0 U+A667 beside A666-A666
+61ea99a8 7 U+A668 first or last of A668-A668
+61ea99a9 0 U+A669 beside A668-A668
+61ea99aa 7 U+A66A first or last of A66A-A66A
+61ea99ab 0 U+A66B beside A66A-A66A
+61ea99ac 7 U+A66C first or last of A66C-A66C
+61ea99ad 0 U+A66D beside A66C-A66C
+61ea99b3 7 U+A673 first or last of A673-A673
+61ea99b2 0 U+A672 beside A673-A673
+61ea99b4 0 U+A674 beside A673-A673
+61ea99be 7 U+A67E first or last of A67E-A67E
+61ea99bd 0 U+A67D beside A67E-A67E
+61ea99bf 0 U+A67F beside A67E-A67E
+61ea9a80 7 U+A680 first or last of A680-A680
+61ea9a81 0 U+A681 beside A680-A680
+61ea9a82 7 U+A682 first or last of A682-A682
+61ea9a83 0 U+A683 beside A682-A682
+61ea9a84 7 U+A684 first or last of A684-A684
+61ea9a85 0 U+A685 beside A684-A684
+61ea9a86 7 U+A686 first or last of A686-A686
+61ea9a87 0 U+A687 beside A686-A686
+61ea9a88 7 U+A688 first or last of A688-A688
+61ea9a89 0 U+A689 beside A688-A688
+61ea9a8a 7 U+A68A first or last of A68A-A68A
+61ea9a8b 0 U+A68B beside A68A-A68A
+61ea9a8c 7 U+A68C first or last of A68C-A68C
+61ea9a8d 0 U+A68D beside A68C-A68C
+61ea9a8e 7 U+A68E first or last of A68E-A68E
+61ea9a8f 0 U+A68F beside A68E-A68E
+61ea9a90 7 U+A690 first or last of A690-A690
+61ea9a91 0 U+A691 beside A690-A690
+61ea9a92 7 U+A692 first or last of A692-A692
+61ea9a93 0 U+A693 beside A692-A692
+61ea9a94 7 U+A694 first or last of A694-A694
+61ea9a95 0 U+A695 beside A694-A694
+61ea9a96 7 U+A696 first or last of A696-A696
+61ea9a97 0 U+A697 beside A696-A696
+61ea9a98 7 U+A698 first or last of A698-A698
+61ea9a99 0 U+A699 beside A698-A698
+61ea9a9a 7 U+A69A first or last of A69A-A69A
+61ea9a9b 0 U+A69B beside A69A-A69A
+61ea9a9c 7 U+A69C first or last of A69C-A69D
+61ea9a9d 7 U+A69D first or last of A69C-A69D
+61ea9a9e 0 U+A69E beside A69C-A69D
+61ea9bb2 7 U+A6F2 first or last of A6F2-A6F7
+61ea9bb7 7 U+A6F7 first or last of A6F2-A6F7
+61ea9bb1 0 U+A6F1 beside A6F2-A6F7
+61ea9bb8 0 U+A6F8 beside A6F2-A6F7
+61ea9c80 7 U+A700 first or last of A700-A716
+61ea9c96 7 U+A716 first or last of A700-A716
+61ea9bbf 0 U+A6FF beside A700-A716
+61ea9c97 0 U+A717 beside A700-A716
+61ea9ca0 7 U+A720 first or last of A720-A722
+61ea9ca2 7 U+A722 first or last of A720-A722
+61ea9c9f 0 U+A71F beside A720-A722
+61ea9ca3 0 U+A723 beside A720-A722
+61ea9ca4 7 U+A724 first or last of A724-A724
+61ea9ca5 0 U+A725 beside A724-A724
+61ea9ca6 7 U+A726 first or last of A726-A726
+61ea9ca7 0 U+A727 beside A726-A726
+61ea9ca8 7 U+A728 first or last of A728-A728
+61ea9ca9 0 U+A729 beside A728-A728
+61ea9caa 7 U+A72A first or last of A72A-A72A
+61ea9cab 0 U+A72B beside A72A-A72A
+61ea9cac 7 U+A72C first or last of A72C-A72C
+61ea9cad 0 U+A72D beside A72C-A72C
+61ea9cae 7 U+A72E first or last of A72E-A72E
+61ea9caf 0 U+A72F beside A72E-A72E
+61ea9cb2 7 U+A732 first or last of A732-A732
+61ea9cb1 0 U+A731 beside A732-A732
+61ea9cb3 0 U+A733 beside A732-A732
+61ea9cb4 7 U+A734 first or last of A734-A734
+61ea9cb5 0 U+A735 beside A734-A734
+61ea9cb6 7 U+A736 first or last of A736-A736
+61ea9cb7 0 U+A737 beside A736-A736
+61ea9cb8 7 U+A738 first or last of A738-A738
+61ea9cb9 0 U+A739 beside A738-A738
+61ea9cba 7 U+A73A first or last of A73A-A73A
+61ea9cbb 0 U+A73B beside A73A-A73A
+61ea9cbc 7 U+A73C first or last of A73C-A73C
+61ea9cbd 0 U+A73D beside A73C-A73C
+61ea9cbe 7 U+A73E first or last of A73E-A73E
+61ea9cbf 0 U+A73F beside A73E-A73E
+61ea9d80 7 U+A740 first or last of A740-A740
+61ea9d81 0 U+A741 beside A740-A740
+61ea9d82 7 U+A742 first or last of A742-A742
+61ea9d83 0 U+A743 beside A742-A742
+61ea9d84 7 U+A744 first or last of A744-A744
+61ea9d85 0 U+A745 beside A744-A744
+61ea9d86 7 U+A746 first or last of A746-A746
+61ea9d87 0 U+A747 beside A746-A746
+61ea9d88 7 U+A748 first or last of A748-A748
+61ea9d89 0 U+A749 beside A748-A748
+61ea9d8a 7 U+A74A first or last of A74A-A74A
+61ea9d8b 0 U+A74B beside A74A-A74A
+61ea9d8c 7 U+A74C first or last of A74C-A74C
+61ea9d8d 0 U+A74D beside A74C-A74C
+61ea9d8e 7 U+A74E first or last of A74E-A74E
+61ea9d8f 0 U+A74F beside A74E-A74E
+61ea9d90 7 U+A750 first or last of A750-A750
+61ea9d91 0 U+A751 beside A750-A750
+61ea9d92 7 U+A752 first or last of A752-A752
+61ea9d93 0 U+A753 beside A752-A752
+61ea9d94 7 U+A754 first or last of A754-A754
+61ea9d95 0 U+A755 beside A754-A754
+61ea9d96 7 U+A756 first or last of A756-A756
+61ea9d97 0 U+A757 beside A756-A756
+61ea9d98 7 U+A758 first or last of A758-A758
+61ea9d99 0 U+A759 beside A758-A758
+61ea9d9a 7 U+A75A first or last of A75A-A75A
+61ea9d9b 0 U+A75B beside A75A-A75A
+61ea9d9c 7 U+A75C first or last of A75C-A75C
+61ea9d9d 0 U+A75D beside A75C-A75C
+61ea9d9e 7 U+A75E first or last of A75E-A75E
+61ea9d9f 0 U+A75F beside A75E-A75E
+61ea9da0 7 U+A760 first or last of A760-A760
+61ea9da1 0 U+A761 beside A760-A760
+61ea9da2 7 U+A762 first or last of A762-A762
+61ea9da3 0 U+A763 beside A762-A762
+61ea9da4 7 U+A764 first or last of A764-A764
+61ea9da5 0 U+A765 beside A764-A764
+61ea9da6 7 U+A766 first or last of A766-A766
+61ea9da7 0 U+A767 beside A766-A766
+61ea9da8 7 U+A768 first or last of A768-A768
+61ea9da9 0 U+A769 beside A768-A768
+61ea9daa 7 U+A76A first or last of A76A-A76A
+61ea9dab 0 U+A76B beside A76A-A76A
+61ea9dac 7 U+A76C first or last of A76C-A76C
+61ea9dad 0 U+A76D beside A76C-A76C
+61ea9dae 7 U+A76E first or last of A76E-A76E
+61ea9daf 0 U+A76F beside A76E-A76E
+61ea9db0 7 U+A770 first or last of A770-A770
+61ea9db1 0 U+A771 beside A770-A770
+61ea9db9 7 U+A779 first or last of A779-A779
+61ea9db8 0 U+A778 beside A779-A779
+61ea9dba 0 U+A77A beside A779-A779
+61ea9dbb 7 U+A77B first or last of A77B-A77B
+61ea9dbc 0 U+A77C beside A77B-A77B
+61ea9dbd 7 U+A77D first or last of A77D-A77E
+61ea9dbe 7 U+A77E first or last of A77D-A77E
+61ea9dbf 0 U+A77F beside A77D-A77E
+61ea9e80 7 U+A780 first or last of A780-A780
+61ea9e81 0 U+A781 beside A780-A780
+61ea9e82 7 U+A782 first or last of A782-A782
+61ea9e83 0 U+A783 beside A782-A782
+61ea9e84 7 U+A784 first or last of A784-A784
+61ea9e85 0 U+A785 beside A784-A784
+61ea9e86 7 U+A786 first or last of A786-A786
+61ea9e87 0 U+A787 beside A786-A786
+61ea9e89 7 U+A789 first or last of A789-A78B
+61ea9e8b 7 U+A78B first or last of A789-A78B
+61ea9e88 0 U+A788 beside A789-A78B
+61ea9e8c 0 U+A78C beside A789-A78B
+61ea9e8d 7 U+A78D first or last of A78D-A78D
+61ea9e8e 0 U+A78E beside A78D-A78D
+61ea9e90 7 U+A790 first or last of A790-A790
+61ea9e8f 0 U+A78F beside A790-A790
+61ea9e91 0 U+A791 beside A790-A790
+61ea9e92 7 U+A792 first or last of A792-A792
+61ea9e93 0 U+A793 beside A792-A792
+61ea9e96 7 U+A796 first or last of A796-A796
+61ea9e95 0 U+A795 beside A796-A796
+61ea9e97 0 U+A797 beside A796-A796
+61ea9e98 7 U+A798 first or last of A798-A798
+61ea9e99 0 U+A799 beside A798-A798
+61ea9e9a 7 U+A79A first or last of A79A-A79A
+61ea9e9b 0 U+A79B beside A79A-A79A
+61ea9e9c 7 U+A79C first or last of A79C-A79C
+61ea9e9d 0 U+A79D beside A79C-A79C
+61ea9e9e 7 U+A79E first or last of A79E-A79E
+61ea9e9f 0 U+A79F beside A79E-A79E
+61ea9ea0 7 U+A7A0 first or last of A7A0-A7A0
+61ea9ea1 0 U+A7A1 beside A7A0-A7A0
+61ea9ea2 7 U+A7A2 first or last of A7A2-A7A2
+61ea9ea3 0 U+A7A3 beside A7A2-A7A2
+61ea9ea4 7 U+A7A4 first or last of A7A4-A7A4
+61ea9ea5 0 U+A7A5 beside A7A4-A7A4
+61ea9ea6 7 U+A7A6 first or last of A7A6-A7A6
+61ea9ea7 0 U+A7A7 beside A7A6-A7A6
+61ea9ea8 7 U+A7A8 first or last of A7A8-A7A8
+61ea9ea9 0 U+A7A9 beside A7A8-A7A8
+61ea9eaa 7 U+A7AA first or last of A7AA-A7AE
+61ea9eae 7 U+A7AE first or last of A7AA-A7AE
+61ea9eaf 0 U+A7AF beside A7AA-A7AE
+61ea9eb0 7 U+A7B0 first or last of A7B0-A7B4
+61ea9eb4 7 U+A7B4 first or last of A7B0-A7B4
+61ea9eb5 0 U+A7B5 beside A7B0-A7B4
+61ea9eb6 7 U+A7B6 first or last of A7B6-A7B6
+61ea9eb7 0 U+A7B7 beside A7B6-A7B6
+61ea9eb8 7 U+A7B8 first or last of A7B8-A7B8
+61ea9eb9 0 U+A7B9 beside A7B8-A7B8
+61ea9eba 7 U+A7BA first or last of A7BA-A7BA
+61ea9ebb 0 U+A7BB beside A7BA-A7BA
+61ea9ebc 7 U+A7BC first or last of A7BC-A7BC
+61ea9ebd 0 U+A7BD beside A7BC-A7BC
+61ea9ebe 7 U+A7BE first or last of A7BE-A7BE
+61ea9ebf 0 U+A7BF beside A7BE-A7BE
+61ea9f80 7 U+A7C0 first or last of A7C0-A7C0
+61ea9f81 0 U+A7C1 beside A7C0-A7C0
+61ea9f82 7 U+A7C2 first or last of A7C2-A7C2
+61ea9f83 0 U+A7C3 beside A7C2-A7C2
+61ea9f84 7 U+A7C4 first or last of A7C4-A7C7
+61ea9f87 7 U+A7C7 first or last of A7C4-A7C7
+61ea9f88 0 U+A7C8 beside A7C4-A7C7
+61ea9f89 7 U+A7C9 first or last of A7C9-A7C9
+61ea9f8a 0 U+A7CA beside A7C9-A7C9
+61ea9f8b 7 U+A7CB first or last of A7CB-A7CC
+61ea9f8c 7 U+A7CC first or last of A7CB-A7CC
+61ea9f8d 0 U+A7CD beside A7CB-A7CC
+61ea9f8e 7 U+A7CE first or last of A7CE-A7CE
+61ea9f8f 0 U+A7CF beside A7CE-A7CE
+61ea9f90 7 U+A7D0 first or last of A7D0-A7D0
+61ea9f91 0 U+A7D1 beside A7D0-A7D0
+61ea9f92 7 U+A7D2 first or last of A7D2-A7D2
+61ea9f93 0 U+A7D3 beside A7D2-A7D2
+61ea9f94 7 U+A7D4 first or last of A7D4-A7D4
+61ea9f95 0 U+A7D5 beside A7D4-A7D4
+61ea9f96 7 U+A7D6 first or last of A7D6-A7D6
+61ea9f97 0 U+A7D7 beside A7D6-A7D6
+61ea9f98 7 U+A7D8 first or last of A7D8-A7D8
+61ea9f99 0 U+A7D9 beside A7D8-A7D8
+61ea9f9a 7 U+A7DA first or last of A7DA-A7DA
+61ea9f9b 0 U+A7DB beside A7DA-A7DA
+61ea9f9c 7 U+A7DC first or last of A7DC-A7DD
+61ea9f9d 7 U+A7DD first or last of A7DC-A7DD
+61ea9f9e 0 U+A7DE beside A7DC-A7DD
+61ea9fa2 7 U+A7E2 first or last of A7E2-A7E2
+61ea9fa1 0 U+A7E1 beside A7E2-A7E2
+61ea9fa3 0 U+A7E3 beside A7E2-A7E2
+61ea9fb1 7 U+A7F1 first or last of A7F1-A7F5
+61ea9fb5 7 U+A7F5 first or last of A7F1-A7F5
+61ea9fb0 0 U+A7F0 beside A7F1-A7F5
+61ea9fb6 0 U+A7F6 beside A7F1-A7F5
+61ea9fb8 7 U+A7F8 first or last of A7F8-A7F9
+61ea9fb9 7 U+A7F9 first or last of A7F8-A7F9
+61ea9fb7 0 U+A7F7 beside A7F8-A7F9
+61ea9fba 0 U+A7FA beside A7F8-A7F9
+61eaa0a8 7 U+A828 first or last of A828-A82B
+61eaa0ab 7 U+A82B first or last of A828-A82B
+61eaa0a7 0 U+A827 beside A828-A82B
+61eaa0ac 0 U+A82C beside A828-A82B
+61eaa0b6 7 U+A836 first or last of A836-A839
+61eaa0b9 7 U+A839 first or last of A836-A839
+61eaa0b5 0 U+A835 beside A836-A839
+61eaa0ba 0 U+A83A beside A836-A839
+61eaa1b4 7 U+A874 first or last of A874-A877
+61eaa1b7 7 U+A877 first or last of A874-A877
+61eaa1b3 0 U+A873 beside A874-A877
+61eaa1b8 0 U+A878 beside A874-A877
+61eaa38e 7 U+A8CE first or last of A8CE-A8CF
+61eaa38f 7 U+A8CF first or last of A8CE-A8CF
+61eaa38d 0 U+A8CD beside A8CE-A8CF
+61eaa390 0 U+A8D0 beside A8CE-A8CF
+61eaa3b8 7 U+A8F8 first or last of A8F8-A8FA
+61eaa3ba 7 U+A8FA first or last of A8F8-A8FA
+61eaa3b7 0 U+A8F7 beside A8F8-A8FA
+61eaa3bb 0 U+A8FB beside A8F8-A8FA
+61eaa3bc 7 U+A8FC first or last of A8FC-A8FC
+61eaa3bd 0 U+A8FD beside A8FC-A8FC
+61eaa4ae 7 U+A92E first or last of A92E-A92F
+61eaa4af 7 U+A92F first or last of A92E-A92F
+61eaa4ad 0 U+A92D beside A92E-A92F
+61eaa4b0 0 U+A930 beside A92E-A92F
+61eaa59f 7 U+A95F first or last of A95F-A95F
+61eaa59e 0 U+A95E beside A95F-A95F
+61eaa5a0 0 U+A960 beside A95F-A95F
+61eaa781 7 U+A9C1 first or last of A9C1-A9CD
+61eaa78d 7 U+A9CD first or last of A9C1-A9CD
+61eaa780 0 U+A9C0 beside A9C1-A9CD
+61eaa78e 0 U+A9CE beside A9C1-A9CD
+61eaa79e 7 U+A9DE first or last of A9DE-A9DF
+61eaa79f 7 U+A9DF first or last of A9DE-A9DF
+61eaa79d 0 U+A9DD beside A9DE-A9DF
+61eaa7a0 0 U+A9E0 beside A9DE-A9DF
+61eaa99c 7 U+AA5C first or last of AA5C-AA5F
+61eaa99f 7 U+AA5F first or last of AA5C-AA5F
+61eaa99b 0 U+AA5B beside AA5C-AA5F
+61eaa9a0 0 U+AA60 beside AA5C-AA5F
+61eaa9b7 7 U+AA77 first or last of AA77-AA79
+61eaa9b9 7 U+AA79 first or last of AA77-AA79
+61eaa9b6 0 U+AA76 beside AA77-AA79
+61eaa9ba 0 U+AA7A beside AA77-AA79
+61eaab9e 7 U+AADE first or last of AADE-AADF
+61eaab9f 7 U+AADF first or last of AADE-AADF
+61eaab9d 0 U+AADD beside AADE-AADF
+61eaaba0 0 U+AAE0 beside AADE-AADF
+61eaabb0 7 U+AAF0 first or last of AAF0-AAF1
+61eaabb1 7 U+AAF1 first or last of AAF0-AAF1
+61eaabaf 0 U+AAEF beside AAF0-AAF1
+61eaabb2 0 U+AAF2 beside AAF0-AAF1
+61eaad9b 7 U+AB5B first or last of AB5B-AB5F
+61eaad9f 7 U+AB5F first or last of AB5B-AB5F
+61eaad9a 0 U+AB5A beside AB5B-AB5F
+61eaada0 0 U+AB60 beside AB5B-AB5F
+61eaada9 7 U+AB69 first or last of AB69-AB6D
+61eaadad 7 U+AB6D first or last of AB69-AB6D
+61eaada8 0 U+AB68 beside AB69-AB6D
+61eaadae 0 U+AB6E beside AB69-AB6D
+61eaadb0 7 U+AB70 first or last of AB70-ABBF
+61eaaebf 7 U+ABBF first or last of AB70-ABBF
+61eaadaf 0 U+AB6F beside AB70-ABBF
+61eaaf80 0 U+ABC0 beside AB70-ABBF
+61eaafab 7 U+ABEB first or last of ABEB-ABEB
+61eaafaa 0 U+ABEA beside ABEB-ABEB
+61eaafac 0 U+ABEC beside ABEB-ABEB
+61ee8080 7 U+E000 first or last of D800-FA0D
+61efa88d 7 U+FA0D first or last of D800-FA0D
+61ed9fbf 0 U+D7FF beside D800-FA0D
+61efa88e 0 U+FA0E beside D800-FA0D
+61efa890 7 U+FA10 first or last of FA10-FA10
+61efa88f 0 U+FA0F beside FA10-FA10
+61efa891 0 U+FA11 beside FA10-FA10
+61efa892 7 U+FA12 first or last of FA12-FA12
+61efa893 0 U+FA13 beside FA12-FA12
+61efa895 7 U+FA15 first or last of FA15-FA1E
+61efa89e 7 U+FA1E first or last of FA15-FA1E
+61efa894 0 U+FA14 beside FA15-FA1E
+61efa89f 0 U+FA1F beside FA15-FA1E
+61efa8a0 7 U+FA20 first or last of FA20-FA20
+61efa8a1 0 U+FA21 beside FA20-FA20
+61efa8a2 7 U+FA22 first or last of FA22-FA22
+61efa8a3 0 U+FA23 beside FA22-FA22
+61efa8a5 7 U+FA25 first or last of FA25-FA26
+61efa8a6 7 U+FA26 first or last of FA25-FA26
+61efa8a4 0 U+FA24 beside FA25-FA26
+61efa8a7 0 U+FA27 beside FA25-FA26
+61efa8aa 7 U+FA2A first or last of FA2A-FA6D
+61efa9ad 7 U+FA6D first or last of FA2A-FA6D
+61efa8a9 0 U+FA29 beside FA2A-FA6D
+61efa9ae 0 U+FA6E beside FA2A-FA6D
+61efa9b0 7 U+FA70 first or last of FA70-FAD9
+61efab99 7 U+FAD9 first or last of FA70-FAD9
+61efa9af 0 U+FA6F beside FA70-FAD9
+61efab9a 0 U+FADA beside FA70-FAD9
+61efac80 7 U+FB00 first or last of FB00-FB06
+61efac86 7 U+FB06 first or last of FB00-FB06
+61efabbf 0 U+FAFF beside FB00-FB06
+61efac87 0 U+FB07 beside FB00-FB06
+61efac93 7 U+FB13 first or last of FB13-FB17
+61efac97 7 U+FB17 first or last of FB13-FB17
+61efac92 0 U+FB12 beside FB13-FB17
+61efac98 0 U+FB18 beside FB13-FB17
+61efac9d 7 U+FB1D first or last of FB1D-FB1D
+61efac9c 0 U+FB1C beside FB1D-FB1D
+61efac9e 0 U+FB1E beside FB1D-FB1D
+61efac9f 7 U+FB1F first or last of FB1F-FB36
+61efacb6 7 U+FB36 first or last of FB1F-FB36
+61efacb7 0 U+FB37 beside FB1F-FB36
+61efacb8 7 U+FB38 first or last of FB38-FB3C
+61efacbc 7 U+FB3C first or last of FB38-FB3C
+61efacbd 0 U+FB3D beside FB38-FB3C
+61efacbe 7 U+FB3E first or last of FB3E-FB3E
+61efacbf 0 U+FB3F beside FB3E-FB3E
+61efad80 7 U+FB40 first or last of FB40-FB41
+61efad81 7 U+FB41 first or last of FB40-FB41
+61efad82 0 U+FB42 beside FB40-FB41
+61efad83 7 U+FB43 first or last of FB43-FB44
+61efad84 7 U+FB44 first or last of FB43-FB44
+61efad85 0 U+FB45 beside FB43-FB44
+61efad86 7 U+FB46 first or last of FB46-FE19
+61efb899 7 U+FE19 first or last of FB46-FE19
+61efb89a 0 U+FE1A beside FB46-FE19
+61efb8b0 7 U+FE30 first or last of FE30-FE52
+61efb992 7 U+FE52 first or last of FE30-FE52
+61efb8af 0 U+FE2F beside FE30-FE52
+61efb993 0 U+FE53 beside FE30-FE52
+61efb994 7 U+FE54 first or last of FE54-FE66
+61efb9a6 7 U+FE66 first or last of FE54-FE66
+61efb9a7 0 U+FE67 beside FE54-FE66
+61efb9a8 7 U+FE68 first or last of FE68-FE6B
+61efb9ab 7 U+FE6B first or last of FE68-FE6B
+61efb9ac 0 U+FE6C beside FE68-FE6B
+61efb9b0 7 U+FE70 first or last of FE70-FE72
+61efb9b2 7 U+FE72 first or last of FE70-FE72
+61efb9af 0 U+FE6F beside FE70-FE72
+61efb9b3 0 U+FE73 beside FE70-FE72
+61efb9b4 7 U+FE74 first or last of FE74-FE74
+61efb9b5 0 U+FE75 beside FE74-FE74
+61efb9b6 7 U+FE76 first or last of FE76-FEFC
+61efbbbc 7 U+FEFC first or last of FE76-FEFC
+61efbbbd 0 U+FEFD beside FE76-FEFC
+61efbbbf 7 U+FEFF first or last of FEFF-FEFF
+61efbbbe 0 U+FEFE beside FEFF-FEFF
+61efbc80 0 U+FF00 beside FEFF-FEFF
+61efbc81 7 U+FF01 first or last of FF01-FFBE
+61efbebe 7 U+FFBE first or last of FF01-FFBE
+61efbebf 0 U+FFBF beside FF01-FFBE
+61efbf82 7 U+FFC2 first or last of FFC2-FFC7
+61efbf87 7 U+FFC7 first or last of FFC2-FFC7
+61efbf81 0 U+FFC1 beside FFC2-FFC7
+61efbf88 0 U+FFC8 beside FFC2-FFC7
+61efbf8a 7 U+FFCA first or last of FFCA-FFCF
+61efbf8f 7 U+FFCF first or last of FFCA-FFCF
+61efbf89 0 U+FFC9 beside FFCA-FFCF
+61efbf90 0 U+FFD0 beside FFCA-FFCF
+61efbf92 7 U+FFD2 first or last of FFD2-FFD7
+61efbf97 7 U+FFD7 first or last of FFD2-FFD7
+61efbf91 0 U+FFD1 beside FFD2-FFD7
+61efbf98 0 U+FFD8 beside FFD2-FFD7
+61efbf9a 7 U+FFDA first or last of FFDA-FFDC
+61efbf9c 7 U+FFDC first or last of FFDA-FFDC
+61efbf99 0 U+FFD9 beside FFDA-FFDC
+61efbf9d 0 U+FFDD beside FFDA-FFDC
+61efbfa0 7 U+FFE0 first or last of FFE0-FFE6
+61efbfa6 7 U+FFE6 first or last of FFE0-FFE6
+61efbf9f 0 U+FFDF beside FFE0-FFE6
+61efbfa7 0 U+FFE7 beside FFE0-FFE6
+61efbfa8 7 U+FFE8 first or last of FFE8-FFEE
+61efbfae 7 U+FFEE first or last of FFE8-FFEE
+61efbfaf 0 U+FFEF beside FFE8-FFEE
+61efbfb0 7 U+FFF0 first or last of FFF0-FFFF
+61efbfbf 7 U+FFFF first or last of FFF0-FFFF
+61f0908080 0 U+10000 beside FFF0-FFFF
+61f0908480 7 U+10100 first or last of 10100-10102
+61f0908482 7 U+10102 first or last of 10100-10102
+61f09083bf 0 U+100FF beside 10100-10102
+61f0908483 0 U+10103 beside 10100-10102
+61f09084b7 7 U+10137 first or last of 10137-1013F
+61f09084bf 7 U+1013F first or last of 10137-1013F
+61f09084b6 0 U+10136 beside 10137-1013F
+61f0908580 0 U+10140 beside 10137-1013F
+61f09085b9 7 U+10179 first or last of 10179-10189
+61f0908689 7 U+10189 first or last of 10179-10189
+61f09085b8 0 U+10178 beside 10179-10189
+61f090868a 0 U+1018A beside 10179-10189
+61f090868c 7 U+1018C first or last of 1018C-1018E
+61f090868e 7 U+1018E first or last of 1018C-1018E
+61f090868b 0 U+1018B beside 1018C-1018E
+61f090868f 0 U+1018F beside 1018C-1018E
+61f0908690 7 U+10190 first or last of 10190-1019C
+61f090869c 7 U+1019C first or last of 10190-1019C
+61f090869d 0 U+1019D beside 10190-1019C
+61f09086a0 7 U+101A0 first or last of 101A0-101A0
+61f090869f 0 U+1019F beside 101A0-101A0
+61f09086a1 0 U+101A1 beside 101A0-101A0
+61f0908790 7 U+101D0 first or last of 101D0-101FC
+61f09087bc 7 U+101FC first or last of 101D0-101FC
+61f090878f 0 U+101CF beside 101D0-101FC
+61f09087bd 0 U+101FD beside 101D0-101FC
+61f0908e9f 7 U+1039F first or last of 1039F-1039F
+61f0908e9e 0 U+1039E beside 1039F-1039F
+61f0908ea0 0 U+103A0 beside 1039F-1039F
+61f0908f90 7 U+103D0 first or last of 103D0-103D0
+61f0908f8f 0 U+103CF beside 103D0-103D0
+61f0908f91 0 U+103D1 beside 103D0-103D0
+61f0909080 7 U+10400 first or last of 10400-10427
+61f09090a7 7 U+10427 first or last of 10400-10427
+61f0908fbf 0 U+103FF beside 10400-10427
+61f09090a8 0 U+10428 beside 10400-10427
+61f09092b0 7 U+104B0 first or last of 104B0-104D3
+61f0909393 7 U+104D3 first or last of 104B0-104D3
+61f09092af 0 U+104AF beside 104B0-104D3
+61f0909394 0 U+104D4 beside 104B0-104D3
+61f09095af 7 U+1056F first or last of 1056F-1057A
+61f09095ba 7 U+1057A first or last of 1056F-1057A
+61f09095ae 0 U+1056E beside 1056F-1057A
+61f09095bb 0 U+1057B beside 1056F-1057A
+61f09095bc 7 U+1057C first or last of 1057C-1058A
+61f090968a 7 U+1058A first or last of 1057C-1058A
+61f090968b 0 U+1058B beside 1057C-1058A
+61f090968c 7 U+1058C first or last of 1058C-10592
+61f0909692 7 U+10592 first or last of 1058C-10592
+61f0909693 0 U+10593 beside 1058C-10592
+61f0909694 7 U+10594 first or last of 10594-10595
+61f0909695 7 U+10595 first or last of 10594-10595
+61f0909696 0 U+10596 beside 10594-10595
+61f0909e81 7 U+10781 first or last of 10781-10785
+61f0909e85 7 U+10785 first or last of 10781-10785
+61f0909e80 0 U+10780 beside 10781-10785
+61f0909e86 0 U+10786 beside 10781-10785
+61f0909e87 7 U+10787 first or last of 10787-107B0
+61f0909eb0 7 U+107B0 first or last of 10787-107B0
+61f0909eb1 0 U+107B1 beside 10787-107B0
+61f0909eb2 7 U+107B2 first or last of 107B2-107BF
+61f0909ebf 7 U+107BF first or last of 107B2-107BF
+61f0909f80 0 U+107C0 beside 107B2-107BF
+61f090a197 7 U+10857 first or last of 10857-10857
+61f090a196 0 U+10856 beside 10857-10857
+61f090a198 0 U+10858 beside 10857-10857
+61f090a1b7 7 U+10877 first or last of 10877-10878
+61f090a1b8 7 U+10878 first or last of 10877-10878
+61f090a1b6 0 U+10876 beside 10877-10878
+61f090a1b9 0 U+10879 beside 10877-10878
+61f090a49f 7 U+1091F first or last of 1091F-1091F
+61f090a49e 0 U+1091E beside 1091F-1091F
+61f090a4a0 0 U+10920 beside 1091F-1091F
+61f090a4bf 7 U+1093F first or last of 1093F-1093F
+61f090a4be 0 U+1093E beside 1093F-1093F
+61f090a580 0 U+10940 beside 1093F-1093F
+61f090a990 7 U+10A50 first or last of 10A50-10A58
+61f090a998 7 U+10A58 first or last of 10A50-10A58
+61f090a98f 0 U+10A4F beside 10A50-10A58
+61f090a999 0 U+10A59 beside 10A50-10A58
+61f090a9bf 7 U+10A7F first or last of 10A7F-10A7F
+61f090a9be 0 U+10A7E beside 10A7F-10A7F
+61f090aa80 0 U+10A80 beside 10A7F-10A7F
+61f090ab88 7 U+10AC8 first or last of 10AC8-10AC8
+61f090ab87 0 U+10AC7 beside 10AC8-10AC8
+61f090ab89 0 U+10AC9 beside 10AC8-10AC8
+61f090abb0 7 U+10AF0 first or last of 10AF0-10AF6
+61f090abb6 7 U+10AF6 first or last of 10AF0-10AF6
+61f090abaf 0 U+10AEF beside 10AF0-10AF6
+61f090abb7 0 U+10AF7 beside 10AF0-10AF6
+61f090acb9 7 U+10B39 first or last of 10B39-10B3F
+61f090acbf 7 U+10B3F first or last of 10B39-10B3F
+61f090acb8 0 U+10B38 beside 10B39-10B3F
+61f090ad80 0 U+10B40 beside 10B39-10B3F
+61f090ae99 7 U+10B99 first or last of 10B99-10B9C
+61f090ae9c 7 U+10B9C first or last of 10B99-10B9C
+61f090ae98 0 U+10B98 beside 10B99-10B9C
+61f090ae9d 0 U+10B9D beside 10B99-10B9C
+61f090b280 7 U+10C80 first or last of 10C80-10CB2
+61f090b2b2 7 U+10CB2 first or last of 10C80-10CB2
+61f090b1bf 0 U+10C7F beside 10C80-10CB2
+61f090b2b3 0 U+10CB3 beside 10C80-10CB2
+61f090b590 7 U+10D50 first or last of 10D50-10D65
+61f090b5a5 7 U+10D65 first or last of 10D50-10D65
+61f090b58f 0 U+10D4F beside 10D50-10D65
+61f090b5a6 0 U+10D66 beside 10D50-10D65
+61f090b5ae 7 U+10D6E first or last of 10D6E-10D6E
+61f090b5ad 0 U+10D6D beside 10D6E-10D6E
+61f090b5af 0 U+10D6F beside 10D6E-10D6E
+61f090b68e 7 U+10D8E first or last of 10D8E-10D8F
+61f090b68f 7 U+10D8F first or last of 10D8E-10D8F
+61f090b68d 0 U+10D8D beside 10D8E-10D8F
+61f090b690 0 U+10D90 beside 10D8E-10D8F
+61f090baad 7 U+10EAD first or last of 10EAD-10EAD
+61f090baac 0 U+10EAC beside 10EAD-10EAD
+61f090baae 0 U+10EAE beside 10EAD-10EAD
+61f090bb89 7 U+10EC9 first or last of 10EC9-10ECA
+61f090bb8a 7 U+10ECA first or last of 10EC9-10ECA
+61f090bb88 0 U+10EC8 beside 10EC9-10ECA
+61f090bb8b 0 U+10ECB beside 10EC9-10ECA
+61f090bb90 7 U+10ED0 first or last of 10ED0-10ED8
+61f090bb98 7 U+10ED8 first or last of 10ED0-10ED8
+61f090bb8f 0 U+10ECF beside 10ED0-10ED8
+61f090bb99 0 U+10ED9 beside 10ED0-10ED8
+61f090bd95 7 U+10F55 first or last of 10F55-10F59
+61f090bd99 7 U+10F59 first or last of 10F55-10F59
+61f090bd94 0 U+10F54 beside 10F55-10F59
+61f090bd9a 0 U+10F5A beside 10F55-10F59
+61f090be86 7 U+10F86 first or last of 10F86-10F89
+61f090be89 7 U+10F89 first or last of 10F86-10F89
+61f090be85 0 U+10F85 beside 10F86-10F89
+61f090be8a 0 U+10F8A beside 10F86-10F89
+61f0918187 7 U+11047 first or last of 11047-1104D
+61f091818d 7 U+1104D first or last of 11047-1104D
+61f0918186 0 U+11046 beside 11047-1104D
+61f091818e 0 U+1104E beside 11047-1104D
+61f09182bb 7 U+110BB first or last of 110BB-110C1
+61f0918381 7 U+110C1 first or last of 110BB-110C1
+61f09182ba 0 U+110BA beside 110BB-110C1
+61f0918382 0 U+110C2 beside 110BB-110C1
+61f091838d 7 U+110CD first or last of 110CD-110CD
+61f091838c 0 U+110CC beside 110CD-110CD
+61f091838e 0 U+110CE beside 110CD-110CD
+61f0918580 7 U+11140 first or last of 11140-11143
+61f0918583 7 U+11143 first or last of 11140-11143
+61f09184bf 0 U+1113F beside 11140-11143
+61f0918584 0 U+11144 beside 11140-11143
+61f09185b4 7 U+11174 first or last of 11174-11175
+61f09185b5 7 U+11175 first or last of 11174-11175
+61f09185b3 0 U+11173 beside 11174-11175
+61f09185b6 0 U+11176 beside 11174-11175
+61f0918785 7 U+111C5 first or last of 111C5-111C8
+61f0918788 7 U+111C8 first or last of 111C5-111C8
+61f0918784 0 U+111C4 beside 111C5-111C8
+61f0918789 0 U+111C9 beside 111C5-111C8
+61f091878d 7 U+111CD first or last of 111CD-111CD
+61f091878c 0 U+111CC beside 111CD-111CD
+61f091878e 0 U+111CE beside 111CD-111CD
+61f091879b 7 U+111DB first or last of 111DB-111DB
+61f091879a 0 U+111DA beside 111DB-111DB
+61f091879c 0 U+111DC beside 111DB-111DB
+61f091879d 7 U+111DD first or last of 111DD-111DF
+61f091879f 7 U+111DF first or last of 111DD-111DF
+61f09187a0 0 U+111E0 beside 111DD-111DF
+61f09188b8 7 U+11238 first or last of 11238-1123D
+61f09188bd 7 U+1123D first or last of 11238-1123D
+61f09188b7 0 U+11237 beside 11238-1123D
+61f09188be 0 U+1123E beside 11238-1123D
+61f0918aa9 7 U+112A9 first or last of 112A9-112A9
+61f0918aa8 0 U+112A8 beside 112A9-112A9
+61f0918aaa 0 U+112AA beside 112A9-112A9
+61f0918f94 7 U+113D4 first or last of 113D4-113D5
+61f0918f95 7 U+113D5 first or last of 113D4-113D5
+61f0918f93 0 U+113D3 beside 113D4-113D5
+61f0918f96 0 U+113D6 beside 113D4-113D5
+61f0918f97 7 U+113D7 first or last of 113D7-113D8
+61f0918f98 7 U+113D8 first or last of 113D7-113D8
+61f0918f99 0 U+113D9 beside 113D7-113D8
+61f091918b 7 U+1144B first or last of 1144B-1144F
+61f091918f 7 U+1144F first or last of 1144B-1144F
+61f091918a 0 U+1144A beside 1144B-1144F
+61f0919190 0 U+11450 beside 1144B-1144F
+61f091919a 7 U+1145A first or last of 1145A-1145B
+61f091919b 7 U+1145B first or last of 1145A-1145B
+61f0919199 0 U+11459 beside 1145A-1145B
+61f091919c 0 U+1145C beside 1145A-1145B
+61f091919d 7 U+1145D first or last of 1145D-1145D
+61f091919e 0 U+1145E beside 1145D-1145D
+61f0919386 7 U+114C6 first or last of 114C6-114C6
+61f0919385 0 U+114C5 beside 114C6-114C6
+61f0919387 0 U+114C7 beside 114C6-114C6
+61f0919781 7 U+115C1 first or last of 115C1-115D7
+61f0919797 7 U+115D7 first or last of 115C1-115D7
+61f0919780 0 U+115C0 beside 115C1-115D7
+61f0919798 0 U+115D8 beside 115C1-115D7
+61f0919981 7 U+11641 first or last of 11641-11643
+61f0919983 7 U+11643 first or last of 11641-11643
+61f0919980 0 U+11640 beside 11641-11643
+61f0919984 0 U+11644 beside 11641-11643
+61f09199a0 7 U+11660 first or last of 11660-1166C
+61f09199ac 7 U+1166C first or last of 11660-1166C
+61f091999f 0 U+1165F beside 11660-1166C
+61f09199ad 0 U+1166D beside 11660-1166C
+61f0919ab9 7 U+116B9 first or last of 116B9-116B9
+61f0919ab8 0 U+116B8 beside 116B9-116B9
+61f0919aba 0 U+116BA beside 116B9-116B9
+61f0919cbc 7 U+1173C first or last of 1173C-1173F
+61f0919cbf 7 U+1173F first or last of 1173C-1173F
+61f0919cbb 0 U+1173B beside 1173C-1173F
+61f0919d80 0 U+11740 beside 1173C-1173F
+61f091a0bb 7 U+1183B first or last of 1183B-1183B
+61f091a0ba 0 U+1183A beside 1183B-1183B
+61f091a0bc 0 U+1183C beside 1183B-1183B
+61f091a2a0 7 U+118A0 first or last of 118A0-118BF
+61f091a2bf 7 U+118BF first or last of 118A0-118BF
+61f091a29f 0 U+1189F beside 118A0-118BF
+61f091a380 0 U+118C0 beside 118A0-118BF
+61f091a584 7 U+11944 first or last of 11944-11946
+61f091a586 7 U+11946 first or last of 11944-11946
+61f091a583 0 U+11943 beside 11944-11946
+61f091a587 0 U+11947 beside 11944-11946
+61f091a7a2 7 U+119E2 first or last of 119E2-119E2
+61f091a7a1 0 U+119E1 beside 119E2-119E2
+61f091a7a3 0 U+119E3 beside 119E2-119E2
+61f091a8bf 7 U+11A3F first or last of 11A3F-11A46
+61f091a986 7 U+11A46 first or last of 11A3F-11A46
+61f091a8be 0 U+11A3E beside 11A3F-11A46
+61f091a987 0 U+11A47 beside 11A3F-11A46
+61f091aa9a 7 U+11A9A first or last of 11A9A-11A9C
+61f091aa9c 7 U+11A9C first or last of 11A9A-11A9C
+61f091aa99 0 U+11A99 beside 11A9A-11A9C
+61f091aa9d 0 U+11A9D beside 11A9A-11A9C
+61f091aa9e 7 U+11A9E first or last of 11A9E-11AA2
+61f091aaa2 7 U+11AA2 first or last of 11A9E-11AA2
+61f091aaa3 0 U+11AA3 beside 11A9E-11AA2
+61f091ac80 7 U+11B00 first or last of 11B00-11B09
+61f091ac89 7 U+11B09 first or last of 11B00-11B09
+61f091abbf 0 U+11AFF beside 11B00-11B09
+61f091ac8a 0 U+11B0A beside 11B00-11B09
+61f091afa1 7 U+11BE1 first or last of 11BE1-11BE1
+61f091afa0 0 U+11BE0 beside 11BE1-11BE1
+61f091afa2 0 U+11BE2 beside 11BE1-11BE1
+61f091b181 7 U+11C41 first or last of 11C41-11C45
+61f091b185 7 U+11C45 first or last of 11C41-11C45
+61f091b180 0 U+11C40 beside 11C41-11C45
+61f091b186 0 U+11C46 beside 11C41-11C45
+61f091b1b0 7 U+11C70 first or last of 11C70-11C71
+61f091b1b1 7 U+11C71 first or last of 11C70-11C71
+61f091b1af 0 U+11C6F beside 11C70-11C71
+61f091b1b2 0 U+11C72 beside 11C70-11C71
+61f091bbb7 7 U+11EF7 first or last of 11EF7-11EF8
+61f091bbb8 7 U+11EF8 first or last of 11EF7-11EF8
+61f091bbb6 0 U+11EF6 beside 11EF7-11EF8
+61f091bbb9 0 U+11EF9 beside 11EF7-11EF8
+61f091bd83 7 U+11F43 first or last of 11F43-11F4F
+61f091bd8f 7 U+11F4F first or last of 11F43-11F4F
+61f091bd82 0 U+11F42 beside 11F43-11F4F
+61f091bd90 0 U+11F50 beside 11F43-11F4F
+61f091bf95 7 U+11FD5 first or last of 11FD5-11FF1
+61f091bfb1 7 U+11FF1 first or last of 11FD5-11FF1
+61f091bf94 0 U+11FD4 beside 11FD5-11FF1
+61f091bfb2 0 U+11FF2 beside 11FD5-11FF1
+61f091bfbf 7 U+11FFF first or last of 11FFF-11FFF
+61f091bfbe 0 U+11FFE beside 11FFF-11FFF
+61f0928080 0 U+12000 beside 11FFF-11FFF
+61f09291b0 7 U+12470 first or last of 12470-12474
+61f09291b4 7 U+12474 first or last of 12470-12474
+61f09291af 0 U+1246F beside 12470-12474
+61f09291b5 0 U+12475 beside 12470-12474
+61f092bfb1 7 U+12FF1 first or last of 12FF1-12FF2
+61f092bfb2 7 U+12FF2 first or last of 12FF1-12FF2
+61f092bfb0 0 U+12FF0 beside 12FF1-12FF2
+61f092bfb3 0 U+12FF3 beside 12FF1-12FF2
+61f09390b0 7 U+13430 first or last of 13430-1343F
+61f09390bf 7 U+1343F first or last of 13430-1343F
+61f09390af 0 U+1342F beside 13430-1343F
+61f0939180 0 U+13440 beside 13430-1343F
+61f096a9ae 7 U+16A6E first or last of 16A6E-16A6F
+61f096a9af 7 U+16A6F first or last of 16A6E-16A6F
+61f096a9ad 0 U+16A6D beside 16A6E-16A6F
+61f096a9b0 0 U+16A70 beside 16A6E-16A6F
+61f096abb5 7 U+16AF5 first or last of 16AF5-16AF5
+61f096abb4 0 U+16AF4 beside 16AF5-16AF5
+61f096abb6 0 U+16AF6 beside 16AF5-16AF5
+61f096acb7 7 U+16B37 first or last of 16B37-16B3F
+61f096acbf 7 U+16B3F first or last of 16B37-16B3F
+61f096acb6 0 U+16B36 beside 16B37-16B3F
+61f096ad80 0 U+16B40 beside 16B37-16B3F
+61f096ad84 7 U+16B44 first or last of 16B44-16B45
+61f096ad85 7 U+16B45 first or last of 16B44-16B45
+61f096ad83 0 U+16B43 beside 16B44-16B45
+61f096ad86 0 U+16B46 beside 16B44-16B45
+61f096b5ad 7 U+16D6D first or last of 16D6D-16D6F
+61f096b5af 7 U+16D6F first or last of 16D6D-16D6F
+61f096b5ac 0 U+16D6C beside 16D6D-16D6F
+61f096b5b0 0 U+16D70 beside 16D6D-16D6F
+61f096b980 7 U+16E40 first or last of 16E40-16E5F
+61f096b99f 7 U+16E5F first or last of 16E40-16E5F
+61f096b8bf 0 U+16E3F beside 16E40-16E5F
+61f096b9a0 0 U+16E60 beside 16E40-16E5F
+61f096ba97 7 U+16E97 first or last of 16E97-16E9A
+61f096ba9a 7 U+16E9A first or last of 16E97-16E9A
+61f096ba96 0 U+16E96 beside 16E97-16E9A
+61f096ba9b 0 U+16E9B beside 16E97-16E9A
+61f096baa0 7 U+16EA0 first or last of 16EA0-16EB8
+61f096bab8 7 U+16EB8 first or last of 16EA0-16EB8
+61f096ba9f 0 U+16E9F beside 16EA0-16EB8
+61f096bab9 0 U+16EB9 beside 16EA0-16EB8
+61f096bfa2 7 U+16FE2 first or last of 16FE2-16FE2
+61f096bfa1 0 U+16FE1 beside 16FE2-16FE2
+61f096bfa3 0 U+16FE3 beside 16FE2-16FE2
+61f09b84a3 7 U+1B123 first or last of 1B123-1B126
+61f09b84a6 7 U+1B126 first or last of 1B123-1B126
+61f09b84a2 0 U+1B122 beside 1B123-1B126
+61f09b84a7 0 U+1B127 beside 1B123-1B126
+61f09bb29c 7 U+1BC9C first or last of 1BC9C-1BC9C
+61f09bb29b 0 U+1BC9B beside 1BC9C-1BC9C
+61f09bb29d 0 U+1BC9D beside 1BC9C-1BC9C
+61f09bb29f 7 U+1BC9F first or last of 1BC9F-1BCA3
+61f09bb2a3 7 U+1BCA3 first or last of 1BC9F-1BCA3
+61f09bb29e 0 U+1BC9E beside 1BC9F-1BCA3
+61f09bb2a4 0 U+1BCA4 beside 1BC9F-1BCA3
+61f09cb080 7 U+1CC00 first or last of 1CC00-1CCFC
+61f09cb3bc 7 U+1CCFC first or last of 1CC00-1CCFC
+61f09cafbf 0 U+1CBFF beside 1CC00-1CCFC
+61f09cb3bd 0 U+1CCFD beside 1CC00-1CCFC
+61f09cb480 7 U+1CD00 first or last of 1CD00-1CEB3
+61f09cbab3 7 U+1CEB3 first or last of 1CD00-1CEB3
+61f09cb3bf 0 U+1CCFF beside 1CD00-1CEB3
+61f09cbab4 0 U+1CEB4 beside 1CD00-1CEB3
+61f09cbaba 7 U+1CEBA first or last of 1CEBA-1CED0
+61f09cbb90 7 U+1CED0 first or last of 1CEBA-1CED0
+61f09cbab9 0 U+1CEB9 beside 1CEBA-1CED0
+61f09cbb91 0 U+1CED1 beside 1CEBA-1CED0
+61f09cbb92 7 U+1CED2 first or last of 1CED2-1CED4
+61f09cbb94 7 U+1CED4 first or last of 1CED2-1CED4
+61f09cbb95 0 U+1CED5 beside 1CED2-1CED4
+61f09cbb9d 7 U+1CEDD first or last of 1CEDD-1CEFD
+61f09cbbbd 7 U+1CEFD first or last of 1CEDD-1CEFD
+61f09cbb9c 0 U+1CEDC beside 1CEDD-1CEFD
+61f09cbbbe 0 U+1CEFE beside 1CEDD-1CEFD
+61f09cbd90 7 U+1CF50 first or last of 1CF50-1CFC3
+61f09cbf83 7 U+1CFC3 first or last of 1CF50-1CFC3
+61f09cbd8f 0 U+1CF4F beside 1CF50-1CFC3
+61f09cbf84 0 U+1CFC4 beside 1CF50-1CFC3
+61f09d8080 7 U+1D000 first or last of 1D000-1D0F5
+61f09d83b5 7 U+1D0F5 first or last of 1D000-1D0F5
+61f09cbfbf 0 U+1CFFF beside 1D000-1D0F5
+61f09d83b6 0 U+1D0F6 beside 1D000-1D0F5
+61f09d8480 7 U+1D100 first or last of 1D100-1D126
+61f09d84a6 7 U+1D126 first or last of 1D100-1D126
+61f09d83bf 0 U+1D0FF beside 1D100-1D126
+61f09d84a7 0 U+1D127 beside 1D100-1D126
+61f09d84a9 7 U+1D129 first or last of 1D129-1D164
+61f09d85a4 7 U+1D164 first or last of 1D129-1D164
+61f09d84a8 0 U+1D128 beside 1D129-1D164
+61f09d85a5 0 U+1D165 beside 1D129-1D164
+61f09d85aa 7 U+1D16A first or last of 1D16A-1D16C
+61f09d85ac 7 U+1D16C first or last of 1D16A-1D16C
+61f09d85a9 0 U+1D169 beside 1D16A-1D16C
+61f09d85ad 0 U+1D16D beside 1D16A-1D16C
+61f09d85b3 7 U+1D173 first or last of 1D173-1D17A
+61f09d85ba 7 U+1D17A first or last of 1D173-1D17A
+61f09d85b2 0 U+1D172 beside 1D173-1D17A
+61f09d85bb 0 U+1D17B beside 1D173-1D17A
+61f09d8683 7 U+1D183 first or last of 1D183-1D184
+61f09d8684 7 U+1D184 first or last of 1D183-1D184
+61f09d8682 0 U+1D182 beside 1D183-1D184
+61f09d8685 0 U+1D185 beside 1D183-1D184
+61f09d868c 7 U+1D18C first or last of 1D18C-1D1A9
+61f09d86a9 7 U+1D1A9 first or last of 1D18C-1D1A9
+61f09d868b 0 U+1D18B beside 1D18C-1D1A9
+61f09d86aa 0 U+1D1AA beside 1D18C-1D1A9
+61f09d86ae 7 U+1D1AE first or last of 1D1AE-1D241
+61f09d8981 7 U+1D241 first or last of 1D1AE-1D241
+61f09d86ad 0 U+1D1AD beside 1D1AE-1D241
+61f09d8982 0 U+1D242 beside 1D1AE-1D241
+61f09d8985 7 U+1D245 first or last of 1D245-1D245
+61f09d8984 0 U+1D244 beside 1D245-1D245
+61f09d8986 0 U+1D246 beside 1D245-1D245
+61f09d8993 7 U+1D253 first or last of 1D253-1D25A
+61f09d899a 7 U+1D25A first or last of 1D253-1D25A
+61f09d8992 0 U+1D252 beside 1D253-1D25A
+61f09d899b 0 U+1D25B beside 1D253-1D25A
+61f09d899d 7 U+1D25D first or last of 1D25D-1D25E
+61f09d899e 7 U+1D25E first or last of 1D25D-1D25E
+61f09d899c 0 U+1D25C beside 1D25D-1D25E
+61f09d899f 0 U+1D25F beside 1D25D-1D25E
+61f09d89a0 7 U+1D260 first or last of 1D260-1D27F
+61f09d89bf 7 U+1D27F first or last of 1D260-1D27F
+61f09d8a80 0 U+1D280 beside 1D260-1D27F
+61f09d8c80 7 U+1D300 first or last of 1D300-1D356
+61f09d8d96 7 U+1D356 first or last of 1D300-1D356
+61f09d8bbf 0 U+1D2FF beside 1D300-1D356
+61f09d8d97 0 U+1D357 beside 1D300-1D356
+61f09d9080 7 U+1D400 first or last of 1D400-1D454
+61f09d9194 7 U+1D454 first or last of 1D400-1D454
+61f09d8fbf 0 U+1D3FF beside 1D400-1D454
+61f09d9195 0 U+1D455 beside 1D400-1D454
+61f09d9196 7 U+1D456 first or last of 1D456-1D49C
+61f09d929c 7 U+1D49C first or last of 1D456-1D49C
+61f09d929d 0 U+1D49D beside 1D456-1D49C
+61f09d929e 7 U+1D49E first or last of 1D49E-1D49F
+61f09d929f 7 U+1D49F first or last of 1D49E-1D49F
+61f09d92a0 0 U+1D4A0 beside 1D49E-1D49F
+61f09d92a2 7 U+1D4A2 first or last of 1D4A2-1D4A2
+61f09d92a1 0 U+1D4A1 beside 1D4A2-1D4A2
+61f09d92a3 0 U+1D4A3 beside 1D4A2-1D4A2
+61f09d92a5 7 U+1D4A5 first or last of 1D4A5-1D4A6
+61f09d92a6 7 U+1D4A6 first or last of 1D4A5-1D4A6
+61f09d92a4 0 U+1D4A4 beside 1D4A5-1D4A6
+61f09d92a7 0 U+1D4A7 beside 1D4A5-1D4A6
+61f09d92a9 7 U+1D4A9 first or last of 1D4A9-1D4AC
+61f09d92ac 7 U+1D4AC first or last of 1D4A9-1D4AC
+61f09d92a8 0 U+1D4A8 beside 1D4A9-1D4AC
+61f09d92ad 0 U+1D4AD beside 1D4A9-1D4AC
+61f09d92ae 7 U+1D4AE first or last of 1D4AE-1D4B9
+61f09d92b9 7 U+1D4B9 first or last of 1D4AE-1D4B9
+61f09d92ba 0 U+1D4BA beside 1D4AE-1D4B9
+61f09d92bb 7 U+1D4BB first or last of 1D4BB-1D4BB
+61f09d92bc 0 U+1D4BC beside 1D4BB-1D4BB
+61f09d92bd 7 U+1D4BD first or last of 1D4BD-1D4C3
+61f09d9383 7 U+1D4C3 first or last of 1D4BD-1D4C3
+61f09d9384 0 U+1D4C4 beside 1D4BD-1D4C3
+61f09d9385 7 U+1D4C5 first or last of 1D4C5-1D505
+61f09d9485 7 U+1D505 first or last of 1D4C5-1D505
+61f09d9486 0 U+1D506 beside 1D4C5-1D505
+61f09d9487 7 U+1D507 first or last of 1D507-1D50A
+61f09d948a 7 U+1D50A first or last of 1D507-1D50A
+61f09d948b 0 U+1D50B beside 1D507-1D50A
+61f09d948d 7 U+1D50D first or last of 1D50D-1D514
+61f09d9494 7 U+1D514 first or last of 1D50D-1D514
+61f09d948c 0 U+1D50C beside 1D50D-1D514
+61f09d9495 0 U+1D515 beside 1D50D-1D514
+61f09d9496 7 U+1D516 first or last of 1D516-1D51C
+61f09d949c 7 U+1D51C first or last of 1D516-1D51C
+61f09d949d 0 U+1D51D beside 1D516-1D51C
+61f09d949e 7 U+1D51E first or last of 1D51E-1D539
+61f09d94b9 7 U+1D539 first or last of 1D51E-1D539
+61f09d94ba 0 U+1D53A beside 1D51E-1D539
+61f09d94bb 7 U+1D53B first or last of 1D53B-1D53E
+61f09d94be 7 U+1D53E first or last of 1D53B-1D53E
+61f09d94bf 0 U+1D53F beside 1D53B-1D53E
+61f09d9580 7 U+1D540 first or last of 1D540-1D544
+61f09d9584 7 U+1D544 first or last of 1D540-1D544
+61f09d9585 0 U+1D545 beside 1D540-1D544
+61f09d9586 7 U+1D546 first or last of 1D546-1D546
+61f09d9587 0 U+1D547 beside 1D546-1D546
+61f09d958a 7 U+1D54A first or last of 1D54A-1D550
+61f09d9590 7 U+1D550 first or last of 1D54A-1D550
+61f09d9589 0 U+1D549 beside 1D54A-1D550
+61f09d9591 0 U+1D551 beside 1D54A-1D550
+61f09d9592 7 U+1D552 first or last of 1D552-1D6A6
+61f09d9aa6 7 U+1D6A6 first or last of 1D552-1D6A6
+61f09d9aa7 0 U+1D6A7 beside 1D552-1D6A6
+61f09d9aa8 7 U+1D6A8 first or last of 1D6A8-1D7CB
+61f09d9f8b 7 U+1D7CB first or last of 1D6A8-1D7CB
+61f09d9f8c 0 U+1D7CC beside 1D6A8-1D7CB
+61f09d9f8e 7 U+1D7CE first or last of 1D7CE-1D9FF
+61f09da7bf 7 U+1D9FF first or last of 1D7CE-1D9FF
+61f09d9f8d 0 U+1D7CD beside 1D7CE-1D9FF
+61f09da880 0 U+1DA00 beside 1D7CE-1D9FF
+61f09da8b7 7 U+1DA37 first or last of 1DA37-1DA3A
+61f09da8ba 7 U+1DA3A first or last of 1DA37-1DA3A
+61f09da8b6 0 U+1DA36 beside 1DA37-1DA3A
+61f09da8bb 0 U+1DA3B beside 1DA37-1DA3A
+61f09da9ad 7 U+1DA6D first or last of 1DA6D-1DA74
+61f09da9b4 7 U+1DA74 first or last of 1DA6D-1DA74
+61f09da9ac 0 U+1DA6C beside 1DA6D-1DA74
+61f09da9b5 0 U+1DA75 beside 1DA6D-1DA74
+61f09da9b6 7 U+1DA76 first or last of 1DA76-1DA83
+61f09daa83 7 U+1DA83 first or last of 1DA76-1DA83
+61f09daa84 0 U+1DA84 beside 1DA76-1DA83
+61f09daa85 7 U+1DA85 first or last of 1DA85-1DA8B
+61f09daa8b 7 U+1DA8B first or last of 1DA85-1DA8B
+61f09daa8c 0 U+1DA8C beside 1DA85-1DA8B
+61f09dac80 7 U+1DB00 first or last of 1DB00-1DB1C
+61f09dac9c 7 U+1DB1C first or last of 1DB00-1DB1C
+61f09dabbf 0 U+1DAFF beside 1DB00-1DB1C
+61f09dac9d 0 U+1DB1D beside 1DB00-1DB1C
+61f09dbd80 7 U+1DF40 first or last of 1DF40-1DF40
+61f09dbcbf 0 U+1DF3F beside 1DF40-1DF40
+61f09dbd81 0 U+1DF41 beside 1DF40-1DF40
+61f09dbd88 7 U+1DF48 first or last of 1DF48-1DF48
+61f09dbd87 0 U+1DF47 beside 1DF48-1DF48
+61f09dbd89 0 U+1DF49 beside 1DF48-1DF48
+61f09dbd8a 7 U+1DF4A first or last of 1DF4A-1DF4A
+61f09dbd8b 0 U+1DF4B beside 1DF4A-1DF4A
+61f09dbd8d 7 U+1DF4D first or last of 1DF4D-1DF4D
+61f09dbd8c 0 U+1DF4C beside 1DF4D-1DF4D
+61f09dbd8e 0 U+1DF4E beside 1DF4D-1DF4D
+61f09dbd91 7 U+1DF51 first or last of 1DF51-1DF51
+61f09dbd90 0 U+1DF50 beside 1DF51-1DF51
+61f09dbd92 0 U+1DF52 beside 1DF51-1DF51
+61f09dbda8 7 U+1DF68 first or last of 1DF68-1DF68
+61f09dbda7 0 U+1DF67 beside 1DF68-1DF68
+61f09dbda9 0 U+1DF69 beside 1DF68-1DF68
+61f09dbdaa 7 U+1DF6A first or last of 1DF6A-1DF6A
+61f09dbdab 0 U+1DF6B beside 1DF6A-1DF6A
+61f09dbdac 7 U+1DF6C first or last of 1DF6C-1DF6C
+61f09dbdad 0 U+1DF6D beside 1DF6C-1DF6C
+61f09dbdae 7 U+1DF6E first or last of 1DF6E-1DF6E
+61f09dbdaf 0 U+1DF6F beside 1DF6E-1DF6E
+61f09dbdb2 7 U+1DF72 first or last of 1DF72-1DF72
+61f09dbdb1 0 U+1DF71 beside 1DF72-1DF72
+61f09dbdb3 0 U+1DF73 beside 1DF72-1DF72
+61f09dbdb4 7 U+1DF74 first or last of 1DF74-1DF74
+61f09dbdb5 0 U+1DF75 beside 1DF74-1DF74
+61f09dbdb6 7 U+1DF76 first or last of 1DF76-1DF76
+61f09dbdb7 0 U+1DF77 beside 1DF76-1DF76
+61f09dbdb8 7 U+1DF78 first or last of 1DF78-1DF78
+61f09dbdb9 0 U+1DF79 beside 1DF78-1DF78
+61f09dbdba 7 U+1DF7A first or last of 1DF7A-1DF7A
+61f09dbdbb 0 U+1DF7B beside 1DF7A-1DF7A
+61f09dbdbc 7 U+1DF7C first or last of 1DF7C-1DF7C
+61f09dbdbd 0 U+1DF7D beside 1DF7C-1DF7C
+61f09dbdbe 7 U+1DF7E first or last of 1DF7E-1DF7E
+61f09dbdbf 0 U+1DF7F beside 1DF7E-1DF7E
+61f09dbe95 7 U+1DF95 first or last of 1DF95-1DF95
+61f09dbe94 0 U+1DF94 beside 1DF95-1DF95
+61f09dbe96 0 U+1DF96 beside 1DF95-1DF95
+61f09dbf8d 7 U+1DFCD first or last of 1DFCD-1DFFF
+61f09dbfbf 7 U+1DFFF first or last of 1DFCD-1DFFF
+61f09dbf8c 0 U+1DFCC beside 1DFCD-1DFFF
+61f09e8080 0 U+1E000 beside 1DFCD-1DFFF
+61f09e80b0 7 U+1E030 first or last of 1E030-1E06D
+61f09e81ad 7 U+1E06D first or last of 1E030-1E06D
+61f09e80af 0 U+1E02F beside 1E030-1E06D
+61f09e81ae 0 U+1E06E beside 1E030-1E06D
+61f09e858f 7 U+1E14F first or last of 1E14F-1E14F
+61f09e858e 0 U+1E14E beside 1E14F-1E14F
+61f09e8590 0 U+1E150 beside 1E14F-1E14F
+61f09e8bbf 7 U+1E2FF first or last of 1E2FF-1E2FF
+61f09e8bbe 0 U+1E2FE beside 1E2FF-1E2FF
+61f09e8c80 0 U+1E300 beside 1E2FF-1E2FF
+61f09e97bf 7 U+1E5FF first or last of 1E5FF-1E5FF
+61f09e97be 0 U+1E5FE beside 1E5FF-1E5FF
+61f09e9880 0 U+1E600 beside 1E5FF-1E5FF
+61f09ea480 7 U+1E900 first or last of 1E900-1E921
+61f09ea4a1 7 U+1E921 first or last of 1E900-1E921
+61f09ea3bf 0 U+1E8FF beside 1E900-1E921
+61f09ea4a2 0 U+1E922 beside 1E900-1E921
+61f09ea59e 7 U+1E95E first or last of 1E95E-1E95F
+61f09ea59f 7 U+1E95F first or last of 1E95E-1E95F
+61f09ea59d 0 U+1E95D beside 1E95E-1E95F
+61f09ea5a0 0 U+1E960 beside 1E95E-1E95F
+61f09eb2ac 7 U+1ECAC first or last of 1ECAC-1ECAC
+61f09eb2ab 0 U+1ECAB beside 1ECAC-1ECAC
+61f09eb2ad 0 U+1ECAD beside 1ECAC-1ECAC
+61f09eb2b0 7 U+1ECB0 first or last of 1ECB0-1ECB0
+61f09eb2af 0 U+1ECAF beside 1ECB0-1ECB0
+61f09eb2b1 0 U+1ECB1 beside 1ECB0-1ECB0
+61f09eb4ae 7 U+1ED2E first or last of 1ED2E-1ED2E
+61f09eb4ad 0 U+1ED2D beside 1ED2E-1ED2E
+61f09eb4af 0 U+1ED2F beside 1ED2E-1ED2E
+61f09eb880 7 U+1EE00 first or last of 1EE00-1EE03
+61f09eb883 7 U+1EE03 first or last of 1EE00-1EE03
+61f09eb7bf 0 U+1EDFF beside 1EE00-1EE03
+61f09eb884 0 U+1EE04 beside 1EE00-1EE03
+61f09eb885 7 U+1EE05 first or last of 1EE05-1EE1F
+61f09eb89f 7 U+1EE1F first or last of 1EE05-1EE1F
+61f09eb8a0 0 U+1EE20 beside 1EE05-1EE1F
+61f09eb8a1 7 U+1EE21 first or last of 1EE21-1EE22
+61f09eb8a2 7 U+1EE22 first or last of 1EE21-1EE22
+61f09eb8a3 0 U+1EE23 beside 1EE21-1EE22
+61f09eb8a4 7 U+1EE24 first or last of 1EE24-1EE24
+61f09eb8a5 0 U+1EE25 beside 1EE24-1EE24
+61f09eb8a7 7 U+1EE27 first or last of 1EE27-1EE27
+61f09eb8a6 0 U+1EE26 beside 1EE27-1EE27
+61f09eb8a8 0 U+1EE28 beside 1EE27-1EE27
+61f09eb8a9 7 U+1EE29 first or last of 1EE29-1EE32
+61f09eb8b2 7 U+1EE32 first or last of 1EE29-1EE32
+61f09eb8b3 0 U+1EE33 beside 1EE29-1EE32
+61f09eb8b4 7 U+1EE34 first or last of 1EE34-1EE37
+61f09eb8b7 7 U+1EE37 first or last of 1EE34-1EE37
+61f09eb8b8 0 U+1EE38 beside 1EE34-1EE37
+61f09eb8b9 7 U+1EE39 first or last of 1EE39-1EE39
+61f09eb8ba 0 U+1EE3A beside 1EE39-1EE39
+61f09eb8bb 7 U+1EE3B first or last of 1EE3B-1EE3B
+61f09eb8bc 0 U+1EE3C beside 1EE3B-1EE3B
+61f09eb982 7 U+1EE42 first or last of 1EE42-1EE42
+61f09eb981 0 U+1EE41 beside 1EE42-1EE42
+61f09eb983 0 U+1EE43 beside 1EE42-1EE42
+61f09eb987 7 U+1EE47 first or last of 1EE47-1EE47
+61f09eb986 0 U+1EE46 beside 1EE47-1EE47
+61f09eb988 0 U+1EE48 beside 1EE47-1EE47
+61f09eb989 7 U+1EE49 first or last of 1EE49-1EE49
+61f09eb98a 0 U+1EE4A beside 1EE49-1EE49
+61f09eb98b 7 U+1EE4B first or last of 1EE4B-1EE4B
+61f09eb98c 0 U+1EE4C beside 1EE4B-1EE4B
+61f09eb98d 7 U+1EE4D first or last of 1EE4D-1EE4F
+61f09eb98f 7 U+1EE4F first or last of 1EE4D-1EE4F
+61f09eb990 0 U+1EE50 beside 1EE4D-1EE4F
+61f09eb991 7 U+1EE51 first or last of 1EE51-1EE52
+61f09eb992 7 U+1EE52 first or last of 1EE51-1EE52
+61f09eb993 0 U+1EE53 beside 1EE51-1EE52
+61f09eb994 7 U+1EE54 first or last of 1EE54-1EE54
+61f09eb995 0 U+1EE55 beside 1EE54-1EE54
+61f09eb997 7 U+1EE57 first or last of 1EE57-1EE57
+61f09eb996 0 U+1EE56 beside 1EE57-1EE57
+61f09eb998 0 U+1EE58 beside 1EE57-1EE57
+61f09eb999 7 U+1EE59 first or last of 1EE59-1EE59
+61f09eb99a 0 U+1EE5A beside 1EE59-1EE59
+61f09eb99b 7 U+1EE5B first or last of 1EE5B-1EE5B
+61f09eb99c 0 U+1EE5C beside 1EE5B-1EE5B
+61f09eb99d 7 U+1EE5D first or last of 1EE5D-1EE5D
+61f09eb99e 0 U+1EE5E beside 1EE5D-1EE5D
+61f09eb99f 7 U+1EE5F first or last of 1EE5F-1EE5F
+61f09eb9a0 0 U+1EE60 beside 1EE5F-1EE5F
+61f09eb9a1 7 U+1EE61 first or last of 1EE61-1EE62
+61f09eb9a2 7 U+1EE62 first or last of 1EE61-1EE62
+61f09eb9a3 0 U+1EE63 beside 1EE61-1EE62
+61f09eb9a4 7 U+1EE64 first or last of 1EE64-1EE64
+61f09eb9a5 0 U+1EE65 beside 1EE64-1EE64
+61f09eb9a7 7 U+1EE67 first or last of 1EE67-1EE6A
+61f09eb9aa 7 U+1EE6A first or last of 1EE67-1EE6A
+61f09eb9a6 0 U+1EE66 beside 1EE67-1EE6A
+61f09eb9ab 0 U+1EE6B beside 1EE67-1EE6A
+61f09eb9ac 7 U+1EE6C first or last of 1EE6C-1EE72
+61f09eb9b2 7 U+1EE72 first or last of 1EE6C-1EE72
+61f09eb9b3 0 U+1EE73 beside 1EE6C-1EE72
+61f09eb9b4 7 U+1EE74 first or last of 1EE74-1EE77
+61f09eb9b7 7 U+1EE77 first or last of 1EE74-1EE77
+61f09eb9b8 0 U+1EE78 beside 1EE74-1EE77
+61f09eb9b9 7 U+1EE79 first or last of 1EE79-1EE7C
+61f09eb9bc 7 U+1EE7C first or last of 1EE79-1EE7C
+61f09eb9bd 0 U+1EE7D beside 1EE79-1EE7C
+61f09eb9be 7 U+1EE7E first or last of 1EE7E-1EE7E
+61f09eb9bf 0 U+1EE7F beside 1EE7E-1EE7E
+61f09eba80 7 U+1EE80 first or last of 1EE80-1EE89
+61f09eba89 7 U+1EE89 first or last of 1EE80-1EE89
+61f09eba8a 0 U+1EE8A beside 1EE80-1EE89
+61f09eba8b 7 U+1EE8B first or last of 1EE8B-1EE9B
+61f09eba9b 7 U+1EE9B first or last of 1EE8B-1EE9B
+61f09eba9c 0 U+1EE9C beside 1EE8B-1EE9B
+61f09ebaa1 7 U+1EEA1 first or last of 1EEA1-1EEA3
+61f09ebaa3 7 U+1EEA3 first or last of 1EEA1-1EEA3
+61f09ebaa0 0 U+1EEA0 beside 1EEA1-1EEA3
+61f09ebaa4 0 U+1EEA4 beside 1EEA1-1EEA3
+61f09ebaa5 7 U+1EEA5 first or last of 1EEA5-1EEA9
+61f09ebaa9 7 U+1EEA9 first or last of 1EEA5-1EEA9
+61f09ebaaa 0 U+1EEAA beside 1EEA5-1EEA9
+61f09ebaab 7 U+1EEAB first or last of 1EEAB-1EEBB
+61f09ebabb 7 U+1EEBB first or last of 1EEAB-1EEBB
+61f09ebabc 0 U+1EEBC beside 1EEAB-1EEBB
+61f09ebbb0 7 U+1EEF0 first or last of 1EEF0-1EEF1
+61f09ebbb1 7 U+1EEF1 first or last of 1EEF0-1EEF1
+61f09ebbaf 0 U+1EEEF beside 1EEF0-1EEF1
+61f09ebbb2 0 U+1EEF2 beside 1EEF0-1EEF1
+61f09f8080 7 U+1F000 first or last of 1F000-1F003
+61f09f8083 7 U+1F003 first or last of 1F000-1F003
+61f09ebfbf 0 U+1EFFF beside 1F000-1F003
+61f09f8084 0 U+1F004 beside 1F000-1F003
+61f09f8085 7 U+1F005 first or last of 1F005-1F02B
+61f09f80ab 7 U+1F02B first or last of 1F005-1F02B
+61f09f80ac 0 U+1F02C beside 1F005-1F02B
+61f09f80b0 7 U+1F030 first or last of 1F030-1F093
+61f09f8293 7 U+1F093 first or last of 1F030-1F093
+61f09f80af 0 U+1F02F beside 1F030-1F093
+61f09f8294 0 U+1F094 beside 1F030-1F093
+61f09f82a0 7 U+1F0A0 first or last of 1F0A0-1F0AE
+61f09f82ae 7 U+1F0AE first or last of 1F0A0-1F0AE
+61f09f829f 0 U+1F09F beside 1F0A0-1F0AE
+61f09f82af 0 U+1F0AF beside 1F0A0-1F0AE
+61f09f82b1 7 U+1F0B1 first or last of 1F0B1-1F0BF
+61f09f82bf 7 U+1F0BF first or last of 1F0B1-1F0BF
+61f09f82b0 0 U+1F0B0 beside 1F0B1-1F0BF
+61f09f8380 0 U+1F0C0 beside 1F0B1-1F0BF
+61f09f8381 7 U+1F0C1 first or last of 1F0C1-1F0CE
+61f09f838e 7 U+1F0CE first or last of 1F0C1-1F0CE
+61f09f838f 0 U+1F0CF beside 1F0C1-1F0CE
+61f09f8391 7 U+1F0D1 first or last of 1F0D1-1F0F5
+61f09f83b5 7 U+1F0F5 first or last of 1F0D1-1F0F5
+61f09f8390 0 U+1F0D0 beside 1F0D1-1F0F5
+61f09f83b6 0 U+1F0F6 beside 1F0D1-1F0F5
+61f09f8480 7 U+1F100 first or last of 1F100-1F10A
+61f09f848a 7 U+1F10A first or last of 1F100-1F10A
+61f09f83bf 0 U+1F0FF beside 1F100-1F10A
+61f09f848b 0 U+1F10B beside 1F100-1F10A
+61f09f848d 7 U+1F10D first or last of 1F10D-1F16F
+61f09f85af 7 U+1F16F first or last of 1F10D-1F16F
+61f09f848c 0 U+1F10C beside 1F10D-1F16F
+61f09f85b0 0 U+1F170 beside 1F10D-1F16F
+61f09f85b2 7 U+1F172 first or last of 1F172-1F17D
+61f09f85bd 7 U+1F17D first or last of 1F172-1F17D
+61f09f85b1 0 U+1F171 beside 1F172-1F17D
+61f09f85be 0 U+1F17E beside 1F172-1F17D
+61f09f8680 7 U+1F180 first or last of 1F180-1F18D
+61f09f868d 7 U+1F18D first or last of 1F180-1F18D
+61f09f85bf 0 U+1F17F beside 1F180-1F18D
+61f09f868e 0 U+1F18E beside 1F180-1F18D
+61f09f868f 7 U+1F18F first or last of 1F18F-1F190
+61f09f8690 7 U+1F190 first or last of 1F18F-1F190
+61f09f8691 0 U+1F191 beside 1F18F-1F190
+61f09f869b 7 U+1F19B first or last of 1F19B-1F1AE
+61f09f86ae 7 U+1F1AE first or last of 1F19B-1F1AE
+61f09f869a 0 U+1F19A beside 1F19B-1F1AE
+61f09f86af 0 U+1F1AF beside 1F19B-1F1AE
+61f09f8880 7 U+1F200 first or last of 1F200-1F202
+61f09f8882 7 U+1F202 first or last of 1F200-1F202
+61f09f87bf 0 U+1F1FF beside 1F200-1F202
+61f09f8883 0 U+1F203 beside 1F200-1F202
+61f09f8890 7 U+1F210 first or last of 1F210-1F23B
+61f09f88bb 7 U+1F23B first or last of 1F210-1F23B
+61f09f888f 0 U+1F20F beside 1F210-1F23B
+61f09f88bc 0 U+1F23C beside 1F210-1F23B
+61f09f8980 7 U+1F240 first or last of 1F240-1F248
+61f09f8988 7 U+1F248 first or last of 1F240-1F248
+61f09f88bf 0 U+1F23F beside 1F240-1F248
+61f09f8989 0 U+1F249 beside 1F240-1F248
+61f09f8990 7 U+1F250 first or last of 1F250-1F251
+61f09f8991 7 U+1F251 first or last of 1F250-1F251
+61f09f898f 0 U+1F24F beside 1F250-1F251
+61f09f8992 0 U+1F252 beside 1F250-1F251
+61f09f89a0 7 U+1F260 first or last of 1F260-1F265
+61f09f89a5 7 U+1F265 first or last of 1F260-1F265
+61f09f899f 0 U+1F25F beside 1F260-1F265
+61f09f89a6 0 U+1F266 beside 1F260-1F265
+61f09f8ca2 7 U+1F322 first or last of 1F322-1F323
+61f09f8ca3 7 U+1F323 first or last of 1F322-1F323
+61f09f8ca1 0 U+1F321 beside 1F322-1F323
+61f09f8ca4 0 U+1F324 beside 1F322-1F323
+61f09f8e94 7 U+1F394 first or last of 1F394-1F395
+61f09f8e95 7 U+1F395 first or last of 1F394-1F395
+61f09f8e93 0 U+1F393 beside 1F394-1F395
+61f09f8e96 0 U+1F396 beside 1F394-1F395
+61f09f8e98 7 U+1F398 first or last of 1F398-1F398
+61f09f8e97 0 U+1F397 beside 1F398-1F398
+61f09f8e99 0 U+1F399 beside 1F398-1F398
+61f09f8e9c 7 U+1F39C first or last of 1F39C-1F39D
+61f09f8e9d 7 U+1F39D first or last of 1F39C-1F39D
+61f09f8e9b 0 U+1F39B beside 1F39C-1F39D
+61f09f8e9e 0 U+1F39E beside 1F39C-1F39D
+61f09f8fb1 7 U+1F3F1 first or last of 1F3F1-1F3F2
+61f09f8fb2 7 U+1F3F2 first or last of 1F3F1-1F3F2
+61f09f8fb0 0 U+1F3F0 beside 1F3F1-1F3F2
+61f09f8fb3 0 U+1F3F3 beside 1F3F1-1F3F2
+61f09f8fb6 7 U+1F3F6 first or last of 1F3F6-1F3F6
+61f09f8fb5 0 U+1F3F5 beside 1F3F6-1F3F6
+61f09f8fb7 0 U+1F3F7 beside 1F3F6-1F3F6
+61f09f93be 7 U+1F4FE first or last of 1F4FE-1F4FE
+61f09f93bd 0 U+1F4FD beside 1F4FE-1F4FE
+61f09f93bf 0 U+1F4FF beside 1F4FE-1F4FE
+61f09f94be 7 U+1F53E first or last of 1F53E-1F548
+61f09f9588 7 U+1F548 first or last of 1F53E-1F548
+61f09f94bd 0 U+1F53D beside 1F53E-1F548
+61f09f9589 0 U+1F549 beside 1F53E-1F548
+61f09f958f 7 U+1F54F first or last of 1F54F-1F54F
+61f09f958e 0 U+1F54E beside 1F54F-1F54F
+61f09f9590 0 U+1F550 beside 1F54F-1F54F
+61f09f95a8 7 U+1F568 first or last of 1F568-1F56E
+61f09f95ae 7 U+1F56E first or last of 1F568-1F56E
+61f09f95a7 0 U+1F567 beside 1F568-1F56E
+61f09f95af 0 U+1F56F beside 1F568-1F56E
+61f09f95b1 7 U+1F571 first or last of 1F571-1F572
+61f09f95b2 7 U+1F572 first or last of 1F571-1F572
+61f09f95b0 0 U+1F570 beside 1F571-1F572
+61f09f95b3 0 U+1F573 beside 1F571-1F572
+61f09f95bb 7 U+1F57B first or last of 1F57B-1F586
+61f09f9686 7 U+1F586 first or last of 1F57B-1F586
+61f09f95ba 0 U+1F57A beside 1F57B-1F586
+61f09f9687 0 U+1F587 beside 1F57B-1F586
+61f09f9688 7 U+1F588 first or last of 1F588-1F589
+61f09f9689 7 U+1F589 first or last of 1F588-1F589
+61f09f968a 0 U+1F58A beside 1F588-1F589
+61f09f968e 7 U+1F58E first or last of 1F58E-1F58F
+61f09f968f 7 U+1F58F first or last of 1F58E-1F58F
+61f09f968d 0 U+1F58D beside 1F58E-1F58F
+61f09f9690 0 U+1F590 beside 1F58E-1F58F
+61f09f9691 7 U+1F591 first or last of 1F591-1F594
+61f09f9694 7 U+1F594 first or last of 1F591-1F594
+61f09f9695 0 U+1F595 beside 1F591-1F594
+61f09f9697 7 U+1F597 first or last of 1F597-1F5A3
+61f09f96a3 7 U+1F5A3 first or last of 1F597-1F5A3
+61f09f9696 0 U+1F596 beside 1F597-1F5A3
+61f09f96a4 0 U+1F5A4 beside 1F597-1F5A3
+61f09f96a6 7 U+1F5A6 first or last of 1F5A6-1F5A7
+61f09f96a7 7 U+1F5A7 first or last of 1F5A6-1F5A7
+61f09f96a5 0 U+1F5A5 beside 1F5A6-1F5A7
+61f09f96a8 0 U+1F5A8 beside 1F5A6-1F5A7
+61f09f96a9 7 U+1F5A9 first or last of 1F5A9-1F5B0
+61f09f96b0 7 U+1F5B0 first or last of 1F5A9-1F5B0
+61f09f96b1 0 U+1F5B1 beside 1F5A9-1F5B0
+61f09f96b3 7 U+1F5B3 first or last of 1F5B3-1F5BB
+61f09f96bb 7 U+1F5BB first or last of 1F5B3-1F5BB
+61f09f96b2 0 U+1F5B2 beside 1F5B3-1F5BB
+61f09f96bc 0 U+1F5BC beside 1F5B3-1F5BB
+61f09f96bd 7 U+1F5BD first or last of 1F5BD-1F5C1
+61f09f9781 7 U+1F5C1 first or last of 1F5BD-1F5C1
+61f09f9782 0 U+1F5C2 beside 1F5BD-1F5C1
+61f09f9785 7 U+1F5C5 first or last of 1F5C5-1F5D0
+61f09f9790 7 U+1F5D0 first or last of 1F5C5-1F5D0
+61f09f9784 0 U+1F5C4 beside 1F5C5-1F5D0
+61f09f9791 0 U+1F5D1 beside 1F5C5-1F5D0
+61f09f9794 7 U+1F5D4 first or last of 1F5D4-1F5DB
+61f09f979b 7 U+1F5DB first or last of 1F5D4-1F5DB
+61f09f9793 0 U+1F5D3 beside 1F5D4-1F5DB
+61f09f979c 0 U+1F5DC beside 1F5D4-1F5DB
+61f09f979f 7 U+1F5DF first or last of 1F5DF-1F5E0
+61f09f97a0 7 U+1F5E0 first or last of 1F5DF-1F5E0
+61f09f979e 0 U+1F5DE beside 1F5DF-1F5E0
+61f09f97a1 0 U+1F5E1 beside 1F5DF-1F5E0
+61f09f97a2 7 U+1F5E2 first or last of 1F5E2-1F5E2
+61f09f97a3 0 U+1F5E3 beside 1F5E2-1F5E2
+61f09f97a4 7 U+1F5E4 first or last of 1F5E4-1F5E7
+61f09f97a7 7 U+1F5E7 first or last of 1F5E4-1F5E7
+61f09f97a8 0 U+1F5E8 beside 1F5E4-1F5E7
+61f09f97a9 7 U+1F5E9 first or last of 1F5E9-1F5EE
+61f09f97ae 7 U+1F5EE first or last of 1F5E9-1F5EE
+61f09f97af 0 U+1F5EF beside 1F5E9-1F5EE
+61f09f97b0 7 U+1F5F0 first or last of 1F5F0-1F5F2
+61f09f97b2 7 U+1F5F2 first or last of 1F5F0-1F5F2
+61f09f97b3 0 U+1F5F3 beside 1F5F0-1F5F2
+61f09f97b4 7 U+1F5F4 first or last of 1F5F4-1F5F9
+61f09f97b9 7 U+1F5F9 first or last of 1F5F4-1F5F9
+61f09f97ba 0 U+1F5FA beside 1F5F4-1F5F9
+61f09f9990 7 U+1F650 first or last of 1F650-1F67F
+61f09f99bf 7 U+1F67F first or last of 1F650-1F67F
+61f09f998f 0 U+1F64F beside 1F650-1F67F
+61f09f9a80 0 U+1F680 beside 1F650-1F67F
+61f09f9b86 7 U+1F6C6 first or last of 1F6C6-1F6CA
+61f09f9b8a 7 U+1F6CA first or last of 1F6C6-1F6CA
+61f09f9b85 0 U+1F6C5 beside 1F6C6-1F6CA
+61f09f9b8b 0 U+1F6CB beside 1F6C6-1F6CA
+61f09f9b93 7 U+1F6D3 first or last of 1F6D3-1F6D4
+61f09f9b94 7 U+1F6D4 first or last of 1F6D3-1F6D4
+61f09f9b92 0 U+1F6D2 beside 1F6D3-1F6D4
+61f09f9b95 0 U+1F6D5 beside 1F6D3-1F6D4
+61f09f9ba6 7 U+1F6E6 first or last of 1F6E6-1F6E8
+61f09f9ba8 7 U+1F6E8 first or last of 1F6E6-1F6E8
+61f09f9ba5 0 U+1F6E5 beside 1F6E6-1F6E8
+61f09f9ba9 0 U+1F6E9 beside 1F6E6-1F6E8
+61f09f9baa 7 U+1F6EA first or last of 1F6EA-1F6EA
+61f09f9bab 0 U+1F6EB beside 1F6EA-1F6EA
+61f09f9bb1 7 U+1F6F1 first or last of 1F6F1-1F6F2
+61f09f9bb2 7 U+1F6F2 first or last of 1F6F1-1F6F2
+61f09f9bb0 0 U+1F6F0 beside 1F6F1-1F6F2
+61f09f9bb3 0 U+1F6F3 beside 1F6F1-1F6F2
+61f09f9c80 7 U+1F700 first or last of 1F700-1F7DB
+61f09f9f9b 7 U+1F7DB first or last of 1F700-1F7DB
+61f09f9bbf 0 U+1F6FF beside 1F700-1F7DB
+61f09f9f9c 0 U+1F7DC beside 1F700-1F7DB
+61f09f9fb1 7 U+1F7F1 first or last of 1F7F1-1F80B
+61f09fa08b 7 U+1F80B first or last of 1F7F1-1F80B
+61f09f9fb0 0 U+1F7F0 beside 1F7F1-1F80B
+61f09fa08c 0 U+1F80C beside 1F7F1-1F80B
+61f09fa090 7 U+1F810 first or last of 1F810-1F847
+61f09fa187 7 U+1F847 first or last of 1F810-1F847
+61f09fa08f 0 U+1F80F beside 1F810-1F847
+61f09fa188 0 U+1F848 beside 1F810-1F847
+61f09fa190 7 U+1F850 first or last of 1F850-1F859
+61f09fa199 7 U+1F859 first or last of 1F850-1F859
+61f09fa18f 0 U+1F84F beside 1F850-1F859
+61f09fa19a 0 U+1F85A beside 1F850-1F859
+61f09fa1a0 7 U+1F860 first or last of 1F860-1F887
+61f09fa287 7 U+1F887 first or last of 1F860-1F887
+61f09fa19f 0 U+1F85F beside 1F860-1F887
+61f09fa288 0 U+1F888 beside 1F860-1F887
+61f09fa290 7 U+1F890 first or last of 1F890-1F8AD
+61f09fa2ad 7 U+1F8AD first or last of 1F890-1F8AD
+61f09fa28f 0 U+1F88F beside 1F890-1F8AD
+61f09fa2ae 0 U+1F8AE beside 1F890-1F8AD
+61f09fa2b0 7 U+1F8B0 first or last of 1F8B0-1F8BB
+61f09fa2bb 7 U+1F8BB first or last of 1F8B0-1F8BB
+61f09fa2af 0 U+1F8AF beside 1F8B0-1F8BB
+61f09fa2bc 0 U+1F8BC beside 1F8B0-1F8BB
+61f09fa380 7 U+1F8C0 first or last of 1F8C0-1F8C1
+61f09fa381 7 U+1F8C1 first or last of 1F8C0-1F8C1
+61f09fa2bf 0 U+1F8BF beside 1F8C0-1F8C1
+61f09fa382 0 U+1F8C2 beside 1F8C0-1F8C1
+61f09fa390 7 U+1F8D0 first or last of 1F8D0-1F8D8
+61f09fa398 7 U+1F8D8 first or last of 1F8D0-1F8D8
+61f09fa38f 0 U+1F8CF beside 1F8D0-1F8D8
+61f09fa399 0 U+1F8D9 beside 1F8D0-1F8D8
+61f09fa480 7 U+1F900 first or last of 1F900-1F90B
+61f09fa48b 7 U+1F90B first or last of 1F900-1F90B
+61f09fa3bf 0 U+1F8FF beside 1F900-1F90B
+61f09fa48c 0 U+1F90C beside 1F900-1F90B
+61f09fa4bb 7 U+1F93B first or last of 1F93B-1F93B
+61f09fa4ba 0 U+1F93A beside 1F93B-1F93B
+61f09fa4bc 0 U+1F93C beside 1F93B-1F93B
+61f09fa586 7 U+1F946 first or last of 1F946-1F946
+61f09fa585 0 U+1F945 beside 1F946-1F946
+61f09fa587 0 U+1F947 beside 1F946-1F946
+61f09fa880 7 U+1FA00 first or last of 1FA00-1FA57
+61f09fa997 7 U+1FA57 first or last of 1FA00-1FA57
+61f09fa7bf 0 U+1F9FF beside 1FA00-1FA57
+61f09fa998 0 U+1FA58 beside 1FA00-1FA57
+61f09fa9a0 7 U+1FA60 first or last of 1FA60-1FA6D
+61f09fa9ad 7 U+1FA6D first or last of 1FA60-1FA6D
+61f09fa99f 0 U+1FA5F beside 1FA60-1FA6D
+61f09fa9ae 0 U+1FA6E beside 1FA60-1FA6D
+61f09fac80 7 U+1FB00 first or last of 1FB00-1FB92
+61f09fae92 7 U+1FB92 first or last of 1FB00-1FB92
+61f09fabbf 0 U+1FAFF beside 1FB00-1FB92
+61f09fae93 0 U+1FB93 beside 1FB00-1FB92
+61f09fae94 7 U+1FB94 first or last of 1FB94-1FBFA
+61f09fafba 7 U+1FBFA first or last of 1FB94-1FBFA
+61f09fafbb 0 U+1FBFB beside 1FB94-1FBFA
+61f09fbfbe 7 U+1FFFE first or last of 1FFFE-1FFFF
+61f09fbfbf 7 U+1FFFF first or last of 1FFFE-1FFFF
+61f09fbfbd 0 U+1FFFD beside 1FFFE-1FFFF
+61f0a08080 0 U+20000 beside 1FFFE-1FFFF
+61f0afa080 7 U+2F800 first or last of 2F800-2FA1D
+61f0afa89d 7 U+2FA1D first or last of 2F800-2FA1D
+61f0af9fbf 0 U+2F7FF beside 2F800-2FA1D
+61f0afa89e 0 U+2FA1E beside 2F800-2FA1D
+61f0afbfbe 7 U+2FFFE first or last of 2FFFE-2FFFF
+61f0afbfbf 7 U+2FFFF first or last of 2FFFE-2FFFF
+61f0afbfbd 0 U+2FFFD beside 2FFFE-2FFFF
+61f0b08080 0 U+30000 beside 2FFFE-2FFFF
+61f0bfbfbe 7 U+3FFFE first or last of 3FFFE-3FFFF
+61f0bfbfbf 7 U+3FFFF first or last of 3FFFE-3FFFF
+61f0bfbfbd 0 U+3FFFD beside 3FFFE-3FFFF
+61f1808080 0 U+40000 beside 3FFFE-3FFFF
+61f18fbfbe 7 U+4FFFE first or last of 4FFFE-4FFFF
+61f18fbfbf 7 U+4FFFF first or last of 4FFFE-4FFFF
+61f18fbfbd 0 U+4FFFD beside 4FFFE-4FFFF
+61f1908080 0 U+50000 beside 4FFFE-4FFFF
+61f19fbfbe 7 U+5FFFE first or last of 5FFFE-5FFFF
+61f19fbfbf 7 U+5FFFF first or last of 5FFFE-5FFFF
+61f19fbfbd 0 U+5FFFD beside 5FFFE-5FFFF
+61f1a08080 0 U+60000 beside 5FFFE-5FFFF
+61f1afbfbe 7 U+6FFFE first or last of 6FFFE-6FFFF
+61f1afbfbf 7 U+6FFFF first or last of 6FFFE-6FFFF
+61f1afbfbd 0 U+6FFFD beside 6FFFE-6FFFF
+61f1b08080 0 U+70000 beside 6FFFE-6FFFF
+61f1bfbfbe 7 U+7FFFE first or last of 7FFFE-7FFFF
+61f1bfbfbf 7 U+7FFFF first or last of 7FFFE-7FFFF
+61f1bfbfbd 0 U+7FFFD beside 7FFFE-7FFFF
+61f2808080 0 U+80000 beside 7FFFE-7FFFF
+61f28fbfbe 7 U+8FFFE first or last of 8FFFE-8FFFF
+61f28fbfbf 7 U+8FFFF first or last of 8FFFE-8FFFF
+61f28fbfbd 0 U+8FFFD beside 8FFFE-8FFFF
+61f2908080 0 U+90000 beside 8FFFE-8FFFF
+61f29fbfbe 7 U+9FFFE first or last of 9FFFE-9FFFF
+61f29fbfbf 7 U+9FFFF first or last of 9FFFE-9FFFF
+61f29fbfbd 0 U+9FFFD beside 9FFFE-9FFFF
+61f2a08080 0 U+A0000 beside 9FFFE-9FFFF
+61f2afbfbe 7 U+AFFFE first or last of AFFFE-AFFFF
+61f2afbfbf 7 U+AFFFF first or last of AFFFE-AFFFF
+61f2afbfbd 0 U+AFFFD beside AFFFE-AFFFF
+61f2b08080 0 U+B0000 beside AFFFE-AFFFF
+61f2bfbfbe 7 U+BFFFE first or last of BFFFE-BFFFF
+61f2bfbfbf 7 U+BFFFF first or last of BFFFE-BFFFF
+61f2bfbfbd 0 U+BFFFD beside BFFFE-BFFFF
+61f3808080 0 U+C0000 beside BFFFE-BFFFF
+61f38fbfbe 7 U+CFFFE first or last of CFFFE-CFFFF
+61f38fbfbf 7 U+CFFFF first or last of CFFFE-CFFFF
+61f38fbfbd 0 U+CFFFD beside CFFFE-CFFFF
+61f3908080 0 U+D0000 beside CFFFE-CFFFF
+61f39fbfbe 7 U+DFFFE first or last of DFFFE-E0FFF
+61f3a0bfbf 7 U+E0FFF first or last of DFFFE-E0FFF
+61f39fbfbd 0 U+DFFFD beside DFFFE-E0FFF
+61f3a18080 0 U+E1000 beside DFFFE-E0FFF
+61f3afbfbe 7 U+EFFFE first or last of EFFFE-10FFFF
+61f48fbfbf 7 U+10FFFF first or last of EFFFE-10FFFF
+61f3afbfbd 0 U+EFFFD beside EFFFE-10FFFF
+61d7b3 0 U+05F3 left to the SDK
+61d7b4 0 U+05F4 left to the SDK
+61dc80 0 U+0700 left to the SDK
+61dc81 0 U+0701 left to the SDK
+61dc82 0 U+0702 left to the SDK
+61dc83 0 U+0703 left to the SDK
+61dc84 0 U+0704 left to the SDK
+61dc85 0 U+0705 left to the SDK
+61dc86 0 U+0706 left to the SDK
+61dc87 0 U+0707 left to the SDK
+61dc88 0 U+0708 left to the SDK
+61dc89 0 U+0709 left to the SDK
+61dc8a 0 U+070A left to the SDK
+61dc8b 0 U+070B left to the SDK
+61dc8c 0 U+070C left to the SDK
+61dc8d 0 U+070D left to the SDK
+61e0a7b2 0 U+09F2 left to the SDK
+61e0a7b3 0 U+09F3 left to the SDK
+61e1829e 0 U+109E left to the SDK
+61e18e90 0 U+1390 left to the SDK
+61e18e91 0 U+1391 left to the SDK
+61e18e92 0 U+1392 left to the SDK
+61e18e93 0 U+1393 left to the SDK
+61e18e94 0 U+1394 left to the SDK
+61e18e95 0 U+1395 left to the SDK
+61e18e96 0 U+1396 left to the SDK
+61e18e97 0 U+1397 left to the SDK
+61e18e98 0 U+1398 left to the SDK
+61e18e99 0 U+1399 left to the SDK
+61e383bb 0 U+30FB left to the SDK
+61ea9290 0 U+A490 left to the SDK
+61ea9291 0 U+A491 left to the SDK
+61ea9292 0 U+A492 left to the SDK
+61ea9293 0 U+A493 left to the SDK
+61ea9294 0 U+A494 left to the SDK
+61ea9295 0 U+A495 left to the SDK
+61ea9296 0 U+A496 left to the SDK
+61ea9297 0 U+A497 left to the SDK
+61ea9298 0 U+A498 left to the SDK
+61ea9299 0 U+A499 left to the SDK
+61ea929a 0 U+A49A left to the SDK
+61ea929b 0 U+A49B left to the SDK
+61ea929c 0 U+A49C left to the SDK
+61ea929d 0 U+A49D left to the SDK
+61ea929e 0 U+A49E left to the SDK
+61ea929f 0 U+A49F left to the SDK
+61ea92a0 0 U+A4A0 left to the SDK
+61ea92a1 0 U+A4A1 left to the SDK
+61ea92a2 0 U+A4A2 left to the SDK
+61ea92a3 0 U+A4A3 left to the SDK
+61ea92a4 0 U+A4A4 left to the SDK
+61ea92a5 0 U+A4A5 left to the SDK
+61ea92a6 0 U+A4A6 left to the SDK
+61ea92a7 0 U+A4A7 left to the SDK
+61ea92a8 0 U+A4A8 left to the SDK
+61ea92a9 0 U+A4A9 left to the SDK
+61ea92aa 0 U+A4AA left to the SDK
+61ea92ab 0 U+A4AB left to the SDK
+61ea92ac 0 U+A4AC left to the SDK
+61ea92ad 0 U+A4AD left to the SDK
+61ea92ae 0 U+A4AE left to the SDK
+61ea92af 0 U+A4AF left to the SDK
+61ea92b0 0 U+A4B0 left to the SDK
+61ea92b1 0 U+A4B1 left to the SDK
+61ea92b2 0 U+A4B2 left to the SDK
+61ea92b3 0 U+A4B3 left to the SDK
+61ea92b4 0 U+A4B4 left to the SDK
+61ea92b5 0 U+A4B5 left to the SDK
+61ea92b6 0 U+A4B6 left to the SDK
+61ea92b7 0 U+A4B7 left to the SDK
+61ea92b8 0 U+A4B8 left to the SDK
+61ea92b9 0 U+A4B9 left to the SDK
+61ea92ba 0 U+A4BA left to the SDK
+61ea92bb 0 U+A4BB left to the SDK
+61ea92bc 0 U+A4BC left to the SDK
+61ea92bd 0 U+A4BD left to the SDK
+61ea92be 0 U+A4BE left to the SDK
+61ea92bf 0 U+A4BF left to the SDK
+61ea9380 0 U+A4C0 left to the SDK
+61ea9381 0 U+A4C1 left to the SDK
+61ea9382 0 U+A4C2 left to the SDK
+61ea9383 0 U+A4C3 left to the SDK
+61ea9384 0 U+A4C4 left to the SDK
+61ea9385 0 U+A4C5 left to the SDK
+61ea9386 0 U+A4C6 left to the SDK
+636f6cc2b76c65636369c3b3 0 folded: Catalan, U+00B7 between l and l
+636fc5806c65636369c3b3 7 typed: Catalan, U+0140 (folds to l + U+00B7) (U+0140)
+706172616cc2b76c656c 0 folded: Catalan
+61c2b762 0 folded: U+00B7 outside l·l
+e382b8e383a7e383b3e383bbe382b9e3839fe382b9 0 folded: Japanese foreign name, U+30FB
+e3838fe383aae383bce383bbe3839de38383e382bfe383bc 0 folded: halfwidth katakana and U+FF65 (fold to U+30FB)
+efbe8aefbe98efbdb0efbda5efbe8eefbe9fefbdafefbe80efbdb0 7 typed: halfwidth katakana and U+FF65 (fold to U+30FB) (U+FF8A)
+e58897e5a4abc2b7e68998e5b094e696afe6b3b0 0 folded: Chinese foreign name with U+00B7
+e58897e5a4abe383bbe68998e5b094e696afe6b3b0 0 folded: Chinese foreign name with U+30FB
+61e383bb62 0 folded: U+30FB between Latin letters
+d7a6d794d7b4d79c 0 folded: Hebrew acronym, gershayim U+05F4
+d792d7b3d799d7a8d7a4d794 0 folded: Hebrew, geresh U+05F3
+e0bd96e0bdbce0bd91e0bc8be0bda1e0bdb2e0bd82 0 folded: Tibetan, tsheg U+0F0B
+e0bda3e0beb7e0bc8be0bda6 0 folded: Tibetan, Lhasa
+646f6ee2809974 7 folded: U+2019 (U+2019)
+646f6ecabc74 0 folded: U+02BC modifier letter apostrophe
+d0bccabcd18fd181d0be 0 folded: Ukrainian, U+02BC
+6861776169cabb69 0 folded: Hawaiian, okina U+02BB
+d983d8aad8a7d8a8 0 folded: Arabic
+d983d8aad980d980d980d8a7d8a8 7 folded: Arabic with tatweel U+0640 (U+0640)
+d985db8cd8aed988d8a7d987d985 0 folded: Persian with ZWNJ (the fold removes it)
+d985db8ce2808cd8aed988d8a7d987d985 7 typed: Persian with ZWNJ (the fold removes it) (U+200C)
+e0a4a1e0a589e0a5b0 7 folded: Devanagari abbreviation sign U+0970 (U+0970)
+d9a4d9a5 0 folded: Arabic-Indic digits
+d9a4dbb5 0 folded: mixed Arabic-Indic and extended Arabic-Indic digits
+e4ba8ce38087e4ba8ce585ad 0 folded: CJK numerals with U+3007 (Nl)
+786969 0 folded: Roman numeral (folds to xii)
+e285ab 7 typed: Roman numeral (folds to xii) (U+216B)
+f09f8e89 0 folded: emoji
+e29da4 0 folded: emoji with VS16 (the fold removes it)
+e29da4efb88f 7 typed: emoji with VS16 (the fold removes it) (U+FE0F)
+f09f918df09f8fbd 0 folded: emoji with a skin tone
+f09f87baf09f87b8 0 folded: flag (regional indicators)
+f09f91a8f09f91a9f09f91a7 0 folded: ZWJ sequence (the fold removes the joiners)
+f09f91a8e2808df09f91a9e2808df09f91a7 7 typed: ZWJ sequence (the fold removes the joiners) (U+200D)
+31e283a3 0 folded: keycap
+31efb88fe283a3 7 typed: keycap (U+FE0F)
+c2a9 0 folded: copyright sign
+746d 0 folded: trade mark (folds to tm)
+e284a2 7 typed: trade mark (folds to tm) (U+2122)
+e380b0 7 folded: wavy dash U+3030 (emoji, Pd) (U+3030)
+e28694 7 folded: left right arrow U+2194 (emoji, Sm) (U+2194)
+f09f8fb4 0 folded: black flag
+f09f8fb4f3a081a7f3a081a2f3a081b3f3a081a3f3a081b4f3a081bf 7 typed: Scotland flag (tag characters: refused) (U+E0067)
+f09f8fb4f3a081a7f3a081a2f3a081a5f3a081aef3a081a7f3a081bf 7 typed: England flag (tag characters: refused) (U+E0067)
+f09f8fb4f3a081a7f3a081a2f3a081b7f3a081acf3a081b3f3a081bf 7 typed: Wales flag (tag characters: refused) (U+E0067)
+6ee28b8568 0 folded: Occitan interior dot U+22C5 (Sm)
+73c2b76369c3a0766f 0 folded: Venetian, U+00B7 between s and c
+63e299af 7 folded: music sharp U+266F (So) (U+266F)
+3235c2b063 7 folded: folds to 25°c (U+00B0)
+3235e28483 7 typed: folds to 25°c (U+2103)
+e282ac75726f 7 folded: euro sign (Sc) (U+20AC)
+31e2818432 7 folded: folds to 1⁄2 (U+2044)
+c2bd 7 typed: folds to 1⁄2 (U+00BD)
+7832 0 folded: folds to x2
+78c2b2 7 typed: folds to x2 (U+00B2)
+cebc6d 0 folded: micro sign (folds to μ)
+c2b56d 7 typed: micro sign (folds to μ) (U+00B5)
+61e2818462 7 folded: fraction slash U+2044 (U+2044)
+61e2889562 7 folded: division slash U+2215 (U+2215)
+61e2a7b862 7 folded: big solidus U+29F8 (U+29F8)
+61e2889662 7 folded: set minus U+2216 (U+2216)
+61e2a7b562 7 folded: reverse solidus operator U+29F5 (U+29F5)
+65e280906d61696c 7 folded: hyphen U+2010 (U+2010)
+65e280916d61696c 7 typed: non-breaking hyphen U+2011 (folds to U+2010) (U+2011)
+612d62 0 folded: fullwidth hyphen-minus (folds to -)
+61efbc8d62 7 typed: fullwidth hyphen-minus (folds to -) (U+FF0D)
+61efbc8f62 7 typed: fullwidth solidus (folds to /) (U+FF0F)
+61e3838e62 0 folded: katakana no U+30CE, a slash lookalike
+61c78062 0 folded: U+01C0 dental click, a | lookalike
+61cb9062 0 folded: U+02D0 length mark, a : lookalike
+61ccb862 7 folded: U+0338 combining long solidus overlay (U+0338)
+696e632e 0 folded: trailing dot
+2e6e6574 0 folded: leading dot
+2d78 0 folded: leading hyphen
+782d 0 folded: trailing hyphen
+6e6f64652e6a73 0 folded: ASCII dot inside

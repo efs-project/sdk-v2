@@ -1,0 +1,658 @@
+{
+  "schema": "efs-sdk/word-characters-left-to-sdk/1",
+  "unicode": "18.0.0 (ICU 79)",
+  "note": "Code points the chain's table leaves alone and the SDK's word rule decides: the contextual characters, word-internal punctuation some orthography uses, and every item of a language's CLDR standard or auxiliary exemplars that the class rule refuses. The SDK refuses them today (the contextual ones outside their context) and can admit one later without moving any word id.",
+  "codePoints": [
+    {
+      "cp": "U+00B7",
+      "gc": "Po",
+      "script": "Zyyy",
+      "why": "middle-dot",
+      "languages": ["ca"]
+    },
+    {
+      "cp": "U+05F3",
+      "gc": "Po",
+      "script": "Hebr",
+      "why": "hebrew-geresh",
+      "languages": []
+    },
+    {
+      "cp": "U+05F4",
+      "gc": "Po",
+      "script": "Hebr",
+      "why": "hebrew-gershayim",
+      "languages": ["he"]
+    },
+    {
+      "cp": "U+0700",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+0701",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+0702",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+0703",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+0704",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+0705",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+0706",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+0707",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+0708",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+0709",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+070A",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+070B",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+070C",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+070D",
+      "gc": "Po",
+      "script": "Syrc",
+      "why": "CLDR letters",
+      "languages": ["syr"]
+    },
+    {
+      "cp": "U+09F2",
+      "gc": "Sc",
+      "script": "Beng",
+      "why": "CLDR letters",
+      "languages": ["as", "bn"]
+    },
+    {
+      "cp": "U+09F3",
+      "gc": "Sc",
+      "script": "Beng",
+      "why": "CLDR letters",
+      "languages": ["bn"]
+    },
+    {
+      "cp": "U+09FA",
+      "gc": "So",
+      "script": "Beng",
+      "why": "CLDR letters",
+      "languages": ["bn"]
+    },
+    {
+      "cp": "U+0AF0",
+      "gc": "Po",
+      "script": "Gujr",
+      "why": "CLDR letters",
+      "languages": ["gu"]
+    },
+    {
+      "cp": "U+0F0B",
+      "gc": "Po",
+      "script": "Tibt",
+      "why": "tibetan-tsheg",
+      "languages": []
+    },
+    {
+      "cp": "U+104F",
+      "gc": "Po",
+      "script": "Mymr",
+      "why": "CLDR letters",
+      "languages": ["my"]
+    },
+    {
+      "cp": "U+109E",
+      "gc": "So",
+      "script": "Mymr",
+      "why": "CLDR letters",
+      "languages": ["shn"]
+    },
+    {
+      "cp": "U+109F",
+      "gc": "So",
+      "script": "Mymr",
+      "why": "CLDR letters",
+      "languages": ["shn"]
+    },
+    {
+      "cp": "U+1390",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+1391",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+1392",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+1393",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+1394",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+1395",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+1396",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+1397",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+1398",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+1399",
+      "gc": "So",
+      "script": "Ethi",
+      "why": "CLDR letters",
+      "languages": ["ti"]
+    },
+    {
+      "cp": "U+2027",
+      "gc": "Po",
+      "script": "Zyyy",
+      "why": "hyphenation point (CLDR blo, gd, yue)",
+      "languages": []
+    },
+    {
+      "cp": "U+22C5",
+      "gc": "Sm",
+      "script": "Zyyy",
+      "why": "Occitan interior dot (CLDR oc)",
+      "languages": []
+    },
+    {
+      "cp": "U+30FB",
+      "gc": "Po",
+      "script": "Zyyy",
+      "why": "katakana-middle-dot",
+      "languages": []
+    },
+    {
+      "cp": "U+A490",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A491",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A492",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A493",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A494",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A495",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A496",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A497",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A498",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A499",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A49A",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A49B",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A49C",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A49D",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A49E",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A49F",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A0",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A1",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A2",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A3",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A4",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A5",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A6",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A7",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A8",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4A9",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4AA",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4AB",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4AC",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4AD",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4AE",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4AF",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B0",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B1",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B2",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B3",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B4",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B5",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B6",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B7",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B8",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4B9",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4BA",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4BB",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4BC",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4BD",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4BE",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4BF",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4C0",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4C1",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4C2",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4C3",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4C4",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4C5",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    },
+    {
+      "cp": "U+A4C6",
+      "gc": "So",
+      "script": "Yiii",
+      "why": "CLDR letters",
+      "languages": ["ii"]
+    }
+  ]
+}

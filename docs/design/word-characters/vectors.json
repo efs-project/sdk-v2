@@ -1,7 +1,7 @@
 {
   "schema": "efs-sdk/word-characters-evaluation/1",
   "unicode": "18.0.0 (ICU 79)",
-  "note": "Typed word, its fold (NFKC_Casefold after the whitespace step), and the verdict under the proposal and under the README's recommended contextual exceptions and refusals (null: admitted). Invisible characters are written as escapes.",
+  "note": "Typed word, its fold (NFKC_Casefold after the whitespace step), and the verdict under the proposal and under the recommended SDK rule (null: admitted), and the first character of the typed word (as a writer that skips the fold would send it) that the chain's table refuses (null: none; the chain also applies its shape rules). Invisible characters are written as escapes.",
   "vectors": [
     {
       "typed": "col·lecció",
@@ -12,7 +12,8 @@
         "char": "U+00B7",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "coŀlecció",
@@ -23,7 +24,8 @@
         "char": "U+00B7",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "paral·lel",
@@ -34,7 +36,8 @@
         "char": "U+00B7",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "a·b",
@@ -48,7 +51,8 @@
       "recommended": {
         "rule": "middle-dot",
         "char": "U+00B7"
-      }
+      },
+      "chainTable": null
     },
     {
       "typed": "ジョン・スミス",
@@ -59,7 +63,8 @@
         "char": "U+30FB",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "ﾊﾘｰ･ﾎﾟｯﾀｰ",
@@ -70,7 +75,10 @@
         "char": "U+30FB",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": {
+        "char": "U+FF65"
+      }
     },
     {
       "typed": "列夫·托尔斯泰",
@@ -81,7 +89,8 @@
         "char": "U+00B7",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "列夫・托尔斯泰",
@@ -92,7 +101,8 @@
         "char": "U+30FB",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "a・b",
@@ -106,7 +116,8 @@
       "recommended": {
         "rule": "katakana-middle-dot",
         "char": "U+30FB"
-      }
+      },
+      "chainTable": null
     },
     {
       "typed": "צה״ל",
@@ -117,7 +128,8 @@
         "char": "U+05F4",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "ג׳ירפה",
@@ -128,7 +140,8 @@
         "char": "U+05F3",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "צה\"ל",
@@ -140,6 +153,9 @@
       },
       "recommended": {
         "rule": "ascii-character",
+        "char": "U+0022"
+      },
+      "chainTable": {
         "char": "U+0022"
       }
     },
@@ -155,7 +171,8 @@
       "recommended": {
         "rule": "hebrew-geresh",
         "char": "U+05F3"
-      }
+      },
+      "chainTable": null
     },
     {
       "typed": "བོད་ཡིག",
@@ -166,7 +183,8 @@
         "char": "U+0F0B",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "ལྷ་ས",
@@ -177,7 +195,8 @@
         "char": "U+0F0B",
         "class": "Po"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "don't",
@@ -189,6 +208,9 @@
       },
       "recommended": {
         "rule": "ascii-character",
+        "char": "U+0027"
+      },
+      "chainTable": {
         "char": "U+0027"
       }
     },
@@ -205,6 +227,9 @@
         "rule": "character",
         "char": "U+2019",
         "class": "Pf"
+      },
+      "chainTable": {
+        "char": "U+2019"
       }
     },
     {
@@ -212,7 +237,8 @@
       "note": "U+02BC modifier letter apostrophe",
       "folded": "donʼt",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "aujourd'hui",
@@ -224,6 +250,9 @@
       },
       "recommended": {
         "rule": "ascii-character",
+        "char": "U+0027"
+      },
+      "chainTable": {
         "char": "U+0027"
       }
     },
@@ -238,6 +267,9 @@
       "recommended": {
         "rule": "ascii-character",
         "char": "U+0027"
+      },
+      "chainTable": {
+        "char": "U+0027"
       }
     },
     {
@@ -250,6 +282,9 @@
       },
       "recommended": {
         "rule": "ascii-character",
+        "char": "U+0027"
+      },
+      "chainTable": {
         "char": "U+0027"
       }
     },
@@ -264,6 +299,9 @@
       "recommended": {
         "rule": "ascii-character",
         "char": "U+0027"
+      },
+      "chainTable": {
+        "char": "U+0027"
       }
     },
     {
@@ -271,14 +309,16 @@
       "note": "Ukrainian, U+02BC",
       "folded": "мʼясо",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "hawaiʻi",
       "note": "Hawaiian, okina U+02BB",
       "folded": "hawaiʻi",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "hawai'i",
@@ -291,6 +331,9 @@
       "recommended": {
         "rule": "ascii-character",
         "char": "U+0027"
+      },
+      "chainTable": {
+        "char": "U+0027"
       }
     },
     {
@@ -298,7 +341,8 @@
       "note": "Arabic",
       "folded": "كتاب",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "كتـــاب",
@@ -308,6 +352,9 @@
       "recommended": {
         "rule": "arabic-tatweel",
         "char": "U+0640"
+      },
+      "chainTable": {
+        "char": "U+0640"
       }
     },
     {
@@ -315,7 +362,10 @@
       "note": "Persian with ZWNJ (the fold removes it)",
       "folded": "میخواهم",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": {
+        "char": "U+200C"
+      }
     },
     {
       "typed": "डॉ॰",
@@ -330,6 +380,9 @@
         "rule": "character",
         "char": "U+0970",
         "class": "Po"
+      },
+      "chainTable": {
+        "char": "U+0970"
       }
     },
     {
@@ -337,7 +390,8 @@
       "note": "Arabic-Indic digits",
       "folded": "٤٥",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "٤۵",
@@ -346,7 +400,8 @@
       "proposal": null,
       "recommended": {
         "rule": "mixed-arabic-indic-digits"
-      }
+      },
+      "chainTable": null
     },
     {
       "typed": "二〇二六",
@@ -357,70 +412,86 @@
         "char": "U+3007",
         "class": "Nl"
       },
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "Ⅻ",
       "note": "Roman numeral (folds to xii)",
       "folded": "xii",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "🎉",
       "note": "emoji",
       "folded": "🎉",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "❤\ufe0f",
       "note": "emoji with VS16 (the fold removes it)",
       "folded": "❤",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": {
+        "char": "U+FE0F"
+      }
     },
     {
       "typed": "👍🏽",
       "note": "emoji with a skin tone",
       "folded": "👍🏽",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "🇺🇸",
       "note": "flag (regional indicators)",
       "folded": "🇺🇸",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "👨\u200d👩\u200d👧",
       "note": "ZWJ sequence (the fold removes the joiners)",
       "folded": "👨👩👧",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": {
+        "char": "U+200D"
+      }
     },
     {
       "typed": "1\ufe0f⃣",
       "note": "keycap",
       "folded": "1⃣",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": {
+        "char": "U+FE0F"
+      }
     },
     {
       "typed": "©",
       "note": "copyright sign",
       "folded": "©",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "™",
       "note": "trade mark (folds to tm)",
       "folded": "tm",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "〰",
@@ -435,6 +506,9 @@
         "rule": "character",
         "char": "U+3030",
         "class": "Pd"
+      },
+      "chainTable": {
+        "char": "U+3030"
       }
     },
     {
@@ -450,14 +524,103 @@
         "rule": "character",
         "char": "U+2194",
         "class": "Sm"
+      },
+      "chainTable": {
+        "char": "U+2194"
       }
     },
     {
-      "typed": "🏴\udb40\udc67\udb40\udc62\udb40\udc73\udb40\udc63\udb40\udc74\udb40\udc7f",
-      "note": "subdivision flag (tags fold away)",
+      "typed": "🏴",
+      "note": "black flag",
       "folded": "🏴",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
+    },
+    {
+      "typed": "🏴\udb40\udc67\udb40\udc62\udb40\udc73\udb40\udc63\udb40\udc74\udb40\udc7f",
+      "note": "Scotland flag (tag characters: refused)",
+      "folded": "🏴",
+      "proposal": {
+        "rule": "refused-character",
+        "char": "U+E0067",
+        "class": "tag"
+      },
+      "recommended": {
+        "rule": "refused-character",
+        "char": "U+E0067",
+        "class": "tag"
+      },
+      "chainTable": {
+        "char": "U+E0067"
+      }
+    },
+    {
+      "typed": "🏴\udb40\udc67\udb40\udc62\udb40\udc65\udb40\udc6e\udb40\udc67\udb40\udc7f",
+      "note": "England flag (tag characters: refused)",
+      "folded": "🏴",
+      "proposal": {
+        "rule": "refused-character",
+        "char": "U+E0067",
+        "class": "tag"
+      },
+      "recommended": {
+        "rule": "refused-character",
+        "char": "U+E0067",
+        "class": "tag"
+      },
+      "chainTable": {
+        "char": "U+E0067"
+      }
+    },
+    {
+      "typed": "🏴\udb40\udc67\udb40\udc62\udb40\udc77\udb40\udc6c\udb40\udc73\udb40\udc7f",
+      "note": "Wales flag (tag characters: refused)",
+      "folded": "🏴",
+      "proposal": {
+        "rule": "refused-character",
+        "char": "U+E0067",
+        "class": "tag"
+      },
+      "recommended": {
+        "rule": "refused-character",
+        "char": "U+E0067",
+        "class": "tag"
+      },
+      "chainTable": {
+        "char": "U+E0067"
+      }
+    },
+    {
+      "typed": "n⋅h",
+      "note": "Occitan interior dot U+22C5 (Sm)",
+      "folded": "n⋅h",
+      "proposal": {
+        "rule": "character",
+        "char": "U+22C5",
+        "class": "Sm"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+22C5",
+        "class": "Sm"
+      },
+      "chainTable": null
+    },
+    {
+      "typed": "s·ciàvo",
+      "note": "Venetian, U+00B7 between s and c",
+      "folded": "s·ciàvo",
+      "proposal": {
+        "rule": "character",
+        "char": "U+00B7",
+        "class": "Po"
+      },
+      "recommended": {
+        "rule": "middle-dot",
+        "char": "U+00B7"
+      },
+      "chainTable": null
     },
     {
       "typed": "c♯",
@@ -472,6 +635,9 @@
         "rule": "character",
         "char": "U+266F",
         "class": "Sm"
+      },
+      "chainTable": {
+        "char": "U+266F"
       }
     },
     {
@@ -487,6 +653,9 @@
         "rule": "character",
         "char": "U+00B0",
         "class": "So"
+      },
+      "chainTable": {
+        "char": "U+2103"
       }
     },
     {
@@ -502,6 +671,9 @@
         "rule": "character",
         "char": "U+20AC",
         "class": "Sc"
+      },
+      "chainTable": {
+        "char": "U+20AC"
       }
     },
     {
@@ -517,21 +689,24 @@
         "rule": "character",
         "char": "U+2044",
         "class": "Sm"
-      }
+      },
+      "chainTable": null
     },
     {
       "typed": "x²",
       "note": "folds to x2",
       "folded": "x2",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "µm",
       "note": "micro sign (folds to μ)",
       "folded": "μm",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "a⁄b",
@@ -546,6 +721,9 @@
         "rule": "character",
         "char": "U+2044",
         "class": "Sm"
+      },
+      "chainTable": {
+        "char": "U+2044"
       }
     },
     {
@@ -561,6 +739,9 @@
         "rule": "character",
         "char": "U+2215",
         "class": "Sm"
+      },
+      "chainTable": {
+        "char": "U+2215"
       }
     },
     {
@@ -576,6 +757,9 @@
         "rule": "character",
         "char": "U+29F8",
         "class": "Sm"
+      },
+      "chainTable": {
+        "char": "U+29F8"
       }
     },
     {
@@ -591,6 +775,9 @@
         "rule": "character",
         "char": "U+2216",
         "class": "Sm"
+      },
+      "chainTable": {
+        "char": "U+2216"
       }
     },
     {
@@ -606,6 +793,9 @@
         "rule": "character",
         "char": "U+29F5",
         "class": "Sm"
+      },
+      "chainTable": {
+        "char": "U+29F5"
       }
     },
     {
@@ -621,6 +811,9 @@
         "rule": "character",
         "char": "U+2010",
         "class": "Pd"
+      },
+      "chainTable": {
+        "char": "U+2010"
       }
     },
     {
@@ -636,6 +829,9 @@
         "rule": "character",
         "char": "U+2010",
         "class": "Pd"
+      },
+      "chainTable": {
+        "char": "U+2011"
       }
     },
     {
@@ -643,7 +839,10 @@
       "note": "fullwidth hyphen-minus (folds to -)",
       "folded": "a-b",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": {
+        "char": "U+FF0D"
+      }
     },
     {
       "typed": "a／b",
@@ -656,6 +855,9 @@
       "recommended": {
         "rule": "ascii-character",
         "char": "U+002F"
+      },
+      "chainTable": {
+        "char": "U+FF0F"
       }
     },
     {
@@ -663,21 +865,24 @@
       "note": "katakana no U+30CE, a slash lookalike",
       "folded": "aノb",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "aǀb",
       "note": "U+01C0 dental click, a | lookalike",
       "folded": "aǀb",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "aːb",
       "note": "U+02D0 length mark, a : lookalike",
       "folded": "aːb",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "a̸b",
@@ -686,6 +891,9 @@
       "proposal": null,
       "recommended": {
         "rule": "delimiter-overlay",
+        "char": "U+0338"
+      },
+      "chainTable": {
         "char": "U+0338"
       }
     },
@@ -698,14 +906,16 @@
       },
       "recommended": {
         "rule": "trailing-dot"
-      }
+      },
+      "chainTable": null
     },
     {
       "typed": ".net",
       "note": "leading dot",
       "folded": ".net",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "-x",
@@ -716,14 +926,16 @@
       },
       "recommended": {
         "rule": "leading-hyphen"
-      }
+      },
+      "chainTable": null
     },
     {
       "typed": "x-",
       "note": "trailing hyphen",
       "folded": "x-",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     },
     {
       "typed": "c++",
@@ -735,6 +947,9 @@
       },
       "recommended": {
         "rule": "ascii-character",
+        "char": "U+002B"
+      },
+      "chainTable": {
         "char": "U+002B"
       }
     },
@@ -749,6 +964,9 @@
       "recommended": {
         "rule": "ascii-character",
         "char": "U+0028"
+      },
+      "chainTable": {
+        "char": "U+0028"
       }
     },
     {
@@ -756,7 +974,8 @@
       "note": "ASCII dot inside",
       "folded": "node.js",
       "proposal": null,
-      "recommended": null
+      "recommended": null,
+      "chainTable": null
     }
   ]
 }

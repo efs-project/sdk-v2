@@ -260,6 +260,102 @@ exemplar items refused (recommended): 95
   U+05F4 hebrew-gershayim in the punctuation exemplars of: he yi
   U+0F0B tibetan-tsheg in the punctuation exemplars of: (none)
   U+30FB katakana-middle-dot in the punctuation exemplars of: ja ko
+left to the SDK: 93 code points
+  U+00B7 Po Zyyy middle-dot ca
+  U+05F3 Po Hebr hebrew-geresh 
+  U+05F4 Po Hebr hebrew-gershayim he
+  U+0700 Po Syrc  syr
+  U+0701 Po Syrc  syr
+  U+0702 Po Syrc  syr
+  U+0703 Po Syrc  syr
+  U+0704 Po Syrc  syr
+  U+0705 Po Syrc  syr
+  U+0706 Po Syrc  syr
+  U+0707 Po Syrc  syr
+  U+0708 Po Syrc  syr
+  U+0709 Po Syrc  syr
+  U+070A Po Syrc  syr
+  U+070B Po Syrc  syr
+  U+070C Po Syrc  syr
+  U+070D Po Syrc  syr
+  U+09F2 Sc Beng  as bn
+  U+09F3 Sc Beng  bn
+  U+09FA So Beng  bn
+  U+0AF0 Po Gujr  gu
+  U+0F0B Po Tibt tibetan-tsheg 
+  U+104F Po Mymr  my
+  U+109E So Mymr  shn
+  U+109F So Mymr  shn
+  U+1390 So Ethi  ti
+  U+1391 So Ethi  ti
+  U+1392 So Ethi  ti
+  U+1393 So Ethi  ti
+  U+1394 So Ethi  ti
+  U+1395 So Ethi  ti
+  U+1396 So Ethi  ti
+  U+1397 So Ethi  ti
+  U+1398 So Ethi  ti
+  U+1399 So Ethi  ti
+  U+2027 Po Zyyy hyphenation point (CLDR blo, gd, yue) 
+  U+22C5 Sm Zyyy Occitan interior dot (CLDR oc) 
+  U+30FB Po Zyyy katakana-middle-dot 
+  U+A490 So Yiii  ii
+  U+A491 So Yiii  ii
+  U+A492 So Yiii  ii
+  U+A493 So Yiii  ii
+  U+A494 So Yiii  ii
+  U+A495 So Yiii  ii
+  U+A496 So Yiii  ii
+  U+A497 So Yiii  ii
+  U+A498 So Yiii  ii
+  U+A499 So Yiii  ii
+  U+A49A So Yiii  ii
+  U+A49B So Yiii  ii
+  U+A49C So Yiii  ii
+  U+A49D So Yiii  ii
+  U+A49E So Yiii  ii
+  U+A49F So Yiii  ii
+  U+A4A0 So Yiii  ii
+  U+A4A1 So Yiii  ii
+  U+A4A2 So Yiii  ii
+  U+A4A3 So Yiii  ii
+  U+A4A4 So Yiii  ii
+  U+A4A5 So Yiii  ii
+  U+A4A6 So Yiii  ii
+  U+A4A7 So Yiii  ii
+  U+A4A8 So Yiii  ii
+  U+A4A9 So Yiii  ii
+  U+A4AA So Yiii  ii
+  U+A4AB So Yiii  ii
+  U+A4AC So Yiii  ii
+  U+A4AD So Yiii  ii
+  U+A4AE So Yiii  ii
+  U+A4AF So Yiii  ii
+  U+A4B0 So Yiii  ii
+  U+A4B1 So Yiii  ii
+  U+A4B2 So Yiii  ii
+  U+A4B3 So Yiii  ii
+  U+A4B4 So Yiii  ii
+  U+A4B5 So Yiii  ii
+  U+A4B6 So Yiii  ii
+  U+A4B7 So Yiii  ii
+  U+A4B8 So Yiii  ii
+  U+A4B9 So Yiii  ii
+  U+A4BA So Yiii  ii
+  U+A4BB So Yiii  ii
+  U+A4BC So Yiii  ii
+  U+A4BD So Yiii  ii
+  U+A4BE So Yiii  ii
+  U+A4BF So Yiii  ii
+  U+A4C0 So Yiii  ii
+  U+A4C1 So Yiii  ii
+  U+A4C2 So Yiii  ii
+  U+A4C3 So Yiii  ii
+  U+A4C4 So Yiii  ii
+  U+A4C5 So Yiii  ii
+  U+A4C6 So Yiii  ii
+  chain table under the two-layer rule, default (unassigned admitted): 492 ranges (about 2,952 bytes as 3-byte pairs)
+  chain table under the two-layer rule, plus every assigned code point the fold changes: 1183 ranges (about 7,098 bytes as 3-byte pairs)
   col·lecció             -> col·lecció           proposal: character U+00B7 Po                recommended: ok
   coŀlecció              -> col·lecció           proposal: character U+00B7 Po                recommended: ok
   paral·lel              -> paral·lel            proposal: character U+00B7 Po                recommended: ok
@@ -303,7 +399,12 @@ exemplar items refused (recommended): 95
   ™                      -> tm                   proposal: ok                                 recommended: ok
   〰                      -> 〰                    proposal: character U+3030 Pd                recommended: character U+3030 Pd
   ↔                      -> ↔                    proposal: character U+2194 Sm                recommended: character U+2194 Sm
-  🏴󠁧󠁢󠁳󠁣󠁴󠁿                -> 🏴                    proposal: ok                                 recommended: ok
+  🏴                      -> 🏴                    proposal: ok                                 recommended: ok
+  🏴󠁧󠁢󠁳󠁣󠁴󠁿                -> 🏴                    proposal: refused-character U+E0067 tag      recommended: refused-character U+E0067 tag
+  🏴󠁧󠁢󠁥󠁮󠁧󠁿                -> 🏴                    proposal: refused-character U+E0067 tag      recommended: refused-character U+E0067 tag
+  🏴󠁧󠁢󠁷󠁬󠁳󠁿                -> 🏴                    proposal: refused-character U+E0067 tag      recommended: refused-character U+E0067 tag
+  n⋅h                    -> n⋅h                  proposal: character U+22C5 Sm                recommended: character U+22C5 Sm
+  s·ciàvo                -> s·ciàvo              proposal: character U+00B7 Po                recommended: middle-dot U+00B7
   c♯                     -> c♯                   proposal: character U+266F Sm                recommended: character U+266F Sm
   25℃                    -> 25°c                 proposal: character U+00B0 So                recommended: character U+00B0 So
   €uro                   -> €uro                 proposal: character U+20AC Sc                recommended: character U+20AC Sc
@@ -330,3 +431,7 @@ exemplar items refused (recommended): 95
   c++                    -> c++                  proposal: ascii-character U+002B             recommended: ascii-character U+002B
   mercury_(planet)       -> mercury_(planet)     proposal: ascii-character U+0028             recommended: ascii-character U+0028
   node.js                -> node.js              proposal: ok                                 recommended: ok
+generator: chain-table.txt 1183 ranges; table-vectors.txt 3477 vectors
+today's table: 59 ranges, 4324 scalars
+  refused today, admitted by chain-table.txt: 0 
+  admitted today, refused by chain-table.txt, by class: {'Co': 137468, 'Cs': 2048, 'Lm': 8, 'Mn': 7, 'Pc': 9, 'Pd': 26, 'Pe': 75, 'Pf': 10, 'Pi': 12, 'Po': 606, 'Ps': 77, 'Sc': 64, 'Sk': 120, 'Sm': 998, 'So': 6073, 'fold changes it': 5342} total 152943

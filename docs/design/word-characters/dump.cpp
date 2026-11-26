@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Dump, for every assigned code point (gc != Cn), the facts the word-character evaluation needs, from ICU's own data:
+// Dump, for every assigned code point (gc != Cn) and every default-ignorable one, the facts the word-character
+// evaluation needs, from ICU's own data:
 // general category, script, Extended_Pictographic, Emoji, Regional_Indicator, Emoji_Modifier, Default_Ignorable,
 // NFKC_Casefold(c), and the UTS 39 confusable skeleton of NFKC_Casefold(c). Tab-separated, hex sequences.
 // Build: c++ -std=c++17 dump.cpp -I"$ICU/include" -L"$ICU/lib" -licui18n -licuuc -licudata -o dump
@@ -29,7 +30,9 @@ int main() {
   fprintf(stderr, "unicode %d.%d.%d\n", uv[0], uv[1], uv[2]);
   for (UChar32 c = 0; c <= 0x10FFFF; c++) {
     int8_t gc = u_charType(c);
-    if (gc == U_UNASSIGNED) continue;
+    // Unassigned code points are skipped, except the default-ignorable ones (reserved inside the default-ignorable
+    // blocks, e.g. U+2065, U+FFF0..FFF8, U+E0000..E0FFF): printed with category 0 (Cn) so a table can refuse them.
+    if (gc == U_UNASSIGNED && !u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT)) continue;
     UnicodeString s(c);
     UnicodeString f = cf->normalize(s, e);
     UChar buf[256];

@@ -4,24 +4,32 @@
 # digits of any script, plus emoji; punctuation, math and currency symbols and separators refused) after the ruled fold
 # (NFKC_Casefold), on ICU's data (icu-dump.tsv from dump.cpp) and ICU's string fold (the fold tool built from
 # ../fold-evaluation/fold.cpp). Prints the figures README.md quotes and writes vectors.json.
-# Usage: python3 -I analyze.py <icu-dump.tsv> <fold binary> <out vectors.json> <exemplars.tsv>
+# Usage: python3 -I analyze.py <icu-dump.tsv> <fold binary> <out vectors.json> <exemplars.tsv> [<generator dir>
+#        [<TopicProfile.sol>]]
 import json, subprocess, sys, unicodedata
 from collections import Counter, defaultdict
 
 DUMP, FOLD, OUT, EXEMPLARS = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-GC = {1: "Lu", 2: "Ll", 3: "Lt", 4: "Lm", 5: "Lo", 6: "Mn", 7: "Me", 8: "Mc", 9: "Nd", 10: "Nl", 11: "No", 12: "Zs",
+GC = {0: "Cn", 1: "Lu", 2: "Ll", 3: "Lt", 4: "Lm", 5: "Lo", 6: "Mn", 7: "Me", 8: "Mc", 9: "Nd", 10: "Nl", 11: "No", 12: "Zs",
       13: "Zl", 14: "Zp", 15: "Cc", 16: "Cf", 17: "Co", 18: "Cs", 19: "Pd", 20: "Ps", 21: "Pe", 22: "Pc", 23: "Po",
       24: "Sm", 25: "Sc", 26: "Sk", 27: "So", 28: "Pi", 29: "Pf"}
 seq = lambda x: tuple(int(h, 16) for h in x.split()) if x else ()
 U = {}
+DI_UNASSIGNED = set()  # unassigned, but Default_Ignorable_Code_Point (reserved inside the default-ignorable blocks)
 for line in open(DUMP):
     cp, gc, sc, xp, em, ri, mod, di, cf, sk = line.rstrip("\n").split("\t")
+    if gc == "0":
+        DI_UNASSIGNED.add(int(cp, 16))
+        continue
     U[int(cp, 16)] = dict(gc=GC[int(gc)], sc=sc, xp=xp == "1", em=em == "1", ri=ri == "1", mod=mod == "1",
                           di=di == "1", cf=seq(cf), sk=seq(sk))
 
 # ---- the pipeline shared with the fold evaluation (steps 1, 2 and 4), then the word rules
 BIDI = {0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A)}
 INVISIBLE = {0x200B, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0xFEFF, 0x00AD, 0x180E}
+# Tag characters (subdivision flags): refused, never stripped, so a flag is refused with a reason rather than folded
+# to a plain black flag (tag PM, 2026-11-26). The chain already refuses them.
+TAGS = {0xE0001, *range(0xE0020, 0xE0080)}
 WS = {0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20, 0x85, 0xA0, 0x1680, *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F,
       0x3000}
 def noncharacter(c): return (0xFDD0 <= c <= 0xFDEF) or (c & 0xFFFE) == 0xFFFE
@@ -30,6 +38,7 @@ def refused_early(c):
     if u is None: return "unassigned"
     if c in BIDI: return "bidi"
     if c in INVISIBLE: return "invisible"
+    if c in TAGS: return "tag"
     if u["gc"] in ("Cc", "Co", "Cs") or noncharacter(c): return "control or private use"
     return None
 def whitespace(s):
@@ -228,6 +237,60 @@ for c in sorted(CONTEXT):
                     if kind == "punctuation" and it == f"{c:04X}"})
     print(f"  U+{c:04X} {CONTEXT[c][0]} in the punctuation exemplars of: {' '.join(langs) or '(none)'}")
 
+# ---- 4c. where each rule lives (tag PM, 2026-11-26): the chain refuses only what no future rule could want inside a
+# stored word, and admits unassigned code points (its table is part of the word Type's id, so it can never be re-pinned);
+# the SDK carries the exact rule and can loosen it in any release. Left to the SDK: the contextual characters, word-
+# internal punctuation some orthography uses, and every letter-set exemplar item the class rule refuses.
+WORD_INTERNAL = {0x22C5: "Occitan interior dot (CLDR oc)", 0x2027: "hyphenation point (CLDR blo, gd, yue)"}
+left = {}
+for loc, kind, it in items:
+    for ch in fmap[it]:
+        c = ord(ch)
+        # a format character (Cf) is never a stored word's letter, and the chain refuses every one today
+        if c >= 0x80 and c in U and klass(c, True) is not None and c not in COSMETIC and U[c]["gc"] != "Cf":
+            left.setdefault(c, set()).add(loc.split("_")[0])
+for c in list(CONTEXT) + list(WORD_INTERNAL):
+    left.setdefault(c, set())
+def chain_refuses(c):
+    """The chain's table (default): early refusals, then assigned code points the classes refuse, outside the set
+    left to the SDK, and the cosmetic letters and overlay marks. Unassigned code points are admitted."""
+    if c < 0x80: return chr(c) not in ASCII_OK
+    if noncharacter(c): return True  # unassigned by category (Cn), refused for good (chain class 5)
+    if c in DI_UNASSIGNED: return True  # reserved default-ignorables, refused today (classes 3 and 4)
+    u = U.get(c)
+    if u is None: return False
+    if u["di"]: return True  # every default-ignorable, letters and marks among them: a folded word never holds one
+    if refused_early(c): return True
+    if c in COSMETIC: return True
+    return klass(c, True) is not None and c not in left
+print("left to the SDK:", len(left), "code points")
+for c in sorted(left):
+    note = CONTEXT.get(c, (None,))[0] or WORD_INTERNAL.get(c) or ""
+    print(f"  U+{c:04X} {U[c]['gc']} {U[c]['sc']} {note} {' '.join(sorted(left[c]))}")
+json.dump({"schema": "efs-sdk/word-characters-left-to-sdk/1", "unicode": "18.0.0 (ICU 79)",
+           "note": "Code points the chain's table leaves alone and the SDK's word rule decides: the contextual "
+                   "characters, word-internal punctuation some orthography uses, and every item of a language's CLDR "
+                   "standard or auxiliary exemplars that the class rule refuses. The SDK refuses them today (the "
+                   "contextual ones outside their context) and can admit one later without moving any word id.",
+           "codePoints": [{"cp": f"U+{c:04X}", "gc": U[c]["gc"], "script": U[c]["sc"],
+                           "why": CONTEXT.get(c, (None,))[0] or WORD_INTERNAL.get(c) or "CLDR letters",
+                           "languages": sorted(left[c])} for c in sorted(left)]},
+          open(OUT.replace("vectors.json", "left-to-sdk.json"), "w"), ensure_ascii=False, indent=1)
+def ranges_list(pred):
+    out, start = [], None
+    for c in range(0x80, 0x110000):
+        if pred(c):
+            if start is None: start = c
+        elif start is not None:
+            out.append((start, c - 1)); start = None
+    if start is not None: out.append((start, 0x10FFFF))
+    return out
+def chain_refuses_fold(c): return chain_refuses(c) or (c in U and U[c]["cf"] != (c,))
+for name, pred in [("default (unassigned admitted)", lambda c: chain_refuses(c)),
+                   ("plus every assigned code point the fold changes", chain_refuses_fold)]:
+    n = ranges_of(lambda c, p=pred: p(c))
+    print(f"  chain table under the two-layer rule, {name}: {n} ranges (about {n * 6:,} bytes as 3-byte pairs)")
+
 # ---- 5. vectors
 CASES = [
     # [typed, note]
@@ -250,7 +313,11 @@ CASES = [
     ("🎉", "emoji"), ("❤️", "emoji with VS16 (the fold removes it)"), ("👍🏽", "emoji with a skin tone"),
     ("🇺🇸", "flag (regional indicators)"), ("👨‍👩‍👧", "ZWJ sequence (the fold removes the joiners)"),
     ("1️⃣", "keycap"), ("©", "copyright sign"), ("™", "trade mark (folds to tm)"), ("〰", "wavy dash U+3030 (emoji, Pd)"),
-    ("↔", "left right arrow U+2194 (emoji, Sm)"), ("🏴󠁧󠁢󠁳󠁣󠁴󠁿", "subdivision flag (tags fold away)"),
+    ("↔", "left right arrow U+2194 (emoji, Sm)"), ("🏴", "black flag"),
+    ("🏴\U000E0067\U000E0062\U000E0073\U000E0063\U000E0074\U000E007F", "Scotland flag (tag characters: refused)"),
+    ("🏴\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F", "England flag (tag characters: refused)"),
+    ("🏴\U000E0067\U000E0062\U000E0077\U000E006C\U000E0073\U000E007F", "Wales flag (tag characters: refused)"),
+    ("n⋅h", "Occitan interior dot U+22C5 (Sm)"), ("s·ciàvo", "Venetian, U+00B7 between s and c"),
     ("c♯", "music sharp U+266F (So)"), ("25℃", "folds to 25°c"), ("€uro", "euro sign (Sc)"), ("½", "folds to 1⁄2"),
     ("x²", "folds to x2"), ("µm", "micro sign (folds to μ)"),
     ("a⁄b", "fraction slash U+2044"), ("a∕b", "division slash U+2215"), ("a⧸b", "big solidus U+29F8"),
@@ -265,12 +332,16 @@ CASES = [
 folded = fold_all([t for t, _ in CASES])
 vectors = []
 for (typed, note), f in zip(CASES, folded):
+    # what the chain's table refuses of the typed word as a writer that skips the fold would send it
+    chain = next(({"char": f"U+{ord(ch):04X}"} for ch in whitespace(typed) if chain_refuses(ord(ch))), None)
     vectors.append({"typed": typed, "note": note, "folded": whitespace(f), "proposal": verdict(typed, f, False),
-                    "recommended": verdict(typed, f, True)})
+                    "recommended": verdict(typed, f, True), "chainTable": chain})
 text = json.dumps({"schema": "efs-sdk/word-characters-evaluation/1", "unicode": "18.0.0 (ICU 79)",
                    "note": "Typed word, its fold (NFKC_Casefold after the whitespace step), and the verdict under the "
-                           "proposal and under the README's recommended contextual exceptions and refusals (null: "
-                           "admitted). Invisible characters are written as escapes.",
+                           "proposal and under the recommended SDK rule (null: admitted), and the first character of the "
+                           "typed word (as a writer that skips the fold would send it) that the chain's table refuses "
+                           "(null: none; the chain also applies its shape rules). "
+                           "Invisible characters are written as escapes.",
                    "vectors": vectors}, ensure_ascii=False, indent=1)
 def visible(ch):
     """JSON text with its invisible characters (format and default-ignorable) escaped."""
@@ -283,3 +354,62 @@ for v in vectors:
     p, r = v["proposal"], v["recommended"]
     fmt = lambda x: "ok" if x is None else f"{x['rule']}{' ' + x['char'] if 'char' in x else ''}{' ' + x['class'] if 'class' in x else ''}"
     print(f"  {v['typed']!s:22} -> {v['folded']!s:20} proposal: {fmt(p):34} recommended: {fmt(r)}")
+
+# ---- 6. the generator's inputs, and today's table against them
+if len(sys.argv) > 5:  # the generator's inputs (generator/README.md says what each file is)
+    GEN = sys.argv[5]
+    table = ranges_list(chain_refuses_fold)
+    open(f"{GEN}/chain-table.txt", "w").write("".join(f"{a:04X} {b:04X}\n" for a, b in table))
+    open(f"{GEN}/chain-table-without-fold.txt", "w").write(
+        "".join(f"{a:04X} {b:04X}\n" for a, b in ranges_list(chain_refuses)))
+    # Option (ii), should the owner choose it: the same table, also refusing every code point Unicode 18.0 leaves
+    # unassigned.
+    open(f"{GEN}/chain-table-refuse-unassigned.txt", "w").write(
+        "".join(f"{a:04X} {b:04X}\n" for a, b in ranges_list(lambda c: chain_refuses_fold(c) or c not in U)))
+    # The table's vectors: "a" then one code point (a leading "a" keeps every other rule out of the way), as UTF-8 hex,
+    # and the expected refusal: 7 (a scalar of the table) or 0. Each range's first and last scalar, its neighbours
+    # outside it, every code point left to the SDK, and the curated words whose ASCII is all admitted.
+    SURR = range(0xD800, 0xE000)
+    lines, seen = [], set()
+    def add(word, code, why):
+        h = word.encode("utf-8").hex()
+        if h in seen: return
+        seen.add(h)
+        lines.append(f"{h} {code} {why}\n")
+    def one(c): return "a" + chr(c)
+    for a, b in table:
+        lo = a if a not in SURR else max(a, 0xE000)
+        hi = b if b not in SURR else min(b, 0xD7FF)
+        for c in sorted({lo, hi}):
+            if a <= c <= b and c not in SURR: add(one(c), 7, f"U+{c:04X} first or last of {a:04X}-{b:04X}")
+        for c in (a - 1, b + 1):
+            if 0x80 <= c <= 0x10FFFF and c not in SURR and not chain_refuses_fold(c):
+                add(one(c), 0, f"U+{c:04X} beside {a:04X}-{b:04X}")
+    for c in sorted(left): add(one(c), 0, f"U+{c:04X} left to the SDK")
+    for (typed, note), f in zip(CASES, folded):
+        for w, form in ((whitespace(f), "folded"), (whitespace(typed), "typed")):
+            if not w or any(ord(ch) < 0x80 and ch not in ASCII_OK for ch in w) or len(w.encode()) > 255: continue
+            bad = next((ch for ch in w if chain_refuses_fold(ord(ch))), None)
+            add(w, 7 if bad else 0, f"{form}: {note}" + (f" (U+{ord(bad):04X})" if bad else ""))
+    open(f"{GEN}/table-vectors.txt", "w").write(
+        "# <word as UTF-8 hex> <expected: 7 a scalar of chain-table.txt, 0 none of it> <why>\n" + "".join(lines))
+    print("generator: chain-table.txt", len(table), "ranges;", "table-vectors.txt", len(lines), "vectors")
+if len(sys.argv) > 6:  # today's table (contracts src/profiles/TopicProfile.sol REFUSED), against the new one
+    import re
+    today = {}
+    for lo, hi, cls in re.findall(r'hex"([0-9a-f]{6})([0-9a-f]{6})([0-9a-f]{2})"', open(sys.argv[6]).read()):
+        for c in range(int(lo, 16), int(hi, 16) + 1): today[c] = int(cls, 16)
+    loosened = sorted(c for c in today if c >= 0x80 and not chain_refuses_fold(c))
+    tightened = Counter()
+    for c in range(0x80, 0x110000):
+        if chain_refuses_fold(c) and c not in today:
+            u = U.get(c)
+            why = ("unassigned" if u is None else "fold changes it" if (u["cf"] != (c,) and not chain_refuses(c))
+                   else u["gc"])
+            tightened[why] += 1
+    print("today's table:", len(set(re.findall(r'hex"([0-9a-f]{14})"', open(sys.argv[6]).read()))), "ranges,",
+          len(today), "scalars")
+    print("  refused today, admitted by chain-table.txt:", len(loosened),
+          " ".join(f"U+{c:04X}({U[c]['gc'] if c in U else 'unassigned'})" for c in loosened[:40]))
+    print("  admitted today, refused by chain-table.txt, by class:", dict(sorted(tightened.items())),
+          "total", sum(tightened.values()))

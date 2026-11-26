@@ -1,18 +1,24 @@
 # Tag word characters outside ASCII
 
-> **For the owner and the contracts dev to decide. Nothing is built.** Already ruled: the fold is NFKC_Casefold
-> (planning fb17a41), and a word's ASCII is exactly `a-z 0-9 - _ .` with no trailing `.` (planning 424c1b6). This
-> page evaluates the tag PM's proposal for everything outside ASCII, with the same method as
+> **One question is left for the owner (unassigned code points); nothing is built.** Already ruled: the fold is
+> NFKC_Casefold (planning fb17a41), and a word's ASCII is exactly `a-z 0-9 - _ .` with no trailing `.` (planning
+> 424c1b6). This page evaluates the tag PM's proposal for everything outside ASCII, with the same method as
 > [the fold evaluation](../fold-evaluation/README.md): ICU's own data (Unicode 18.0, ICU 79), every code point, plus
-> CLDR's per-language letter lists. Vectors are in [`vectors.json`](vectors.json).
+> CLDR's per-language letter lists. Vectors are in [`vectors.json`](vectors.json). The tag PM reviewed it (2026-11-26):
+> accepted as the basis, with the rules split between the chain and the SDK, and unassigned code points put to the
+> owner as two options.
 
 ## The choice in one line
 
-**Recommended: the proposal's classes, plus numbers, six contextual exceptions and a short list of cosmetic
-refusals. The chain should refuse what its Unicode pin doesn't assign, rather than admit it.** Admitting unassigned
-code points would let scripts and emoji assigned later work at once. But Unicode 18.0 alone assigned 88 characters
-whose fold is not themselves, so admitting them early gives two ids to one word. It would also admit new
-punctuation and symbols the rule refuses: 138 more in 18.0.
+**The proposal's classes, plus numbers, six contextual exceptions, a short list of cosmetic refusals, and refused
+subdivision flags, in two layers.**
+- **The chain** refuses only what no future rule could want inside a stored word. Its table is part of the word
+  Type's id, so it can never be loosened.
+- **The SDK** carries the exact rule and can loosen it in any release without moving a word id. Older clients just
+  hide the newer words.
+
+Whether the chain also refuses code points its Unicode pin doesn't assign is the owner's question:
+[two options](#assigned-after-the-pin-two-options).
 
 ## The rule, as proposed
 
@@ -24,8 +30,8 @@ After the fold and the fold evaluation's whitespace and refusal steps, each char
   (`Z*`) or controls (`C*`).
 
 Shape rules: no trailing `.` (ruled: auto-linkers trim it, so `/inc.` opens `/inc`; this also refuses `.` and `..`),
-and no leading `-` (proposed). The chain's other shapes stay: 1–255 bytes, no leading combining mark, not an address
-(`0x` and 40 hex digits).
+and no leading `-` (a PM default since 2026-11-26: it keeps `-word` free to mean "not" in link and search syntax).
+The chain's other shapes stay: 1–255 bytes, no leading combining mark, not an address (`0x` and 40 hex digits).
 
 | Outside ASCII, after the fold | Code points |
 | --- | --- |
@@ -50,6 +56,9 @@ Two sources, in [`vectors.json`](vectors.json):
 | `צה״ל` (gershayim), `ג׳ירפה` (geresh) | Hebrew | refused (U+05F4, U+05F3) | **admitted** after a Hebrew letter |
 | `བོད་ཡིག` (the Tibetan language), `ལྷ་ས` (Lhasa) | Tibetan: every word of two or more syllables | refused (U+0F0B tsheg) | **admitted** after a Tibetan letter |
 | `二〇二六` | Chinese and Japanese numerals with `〇` (U+3007, `Nl`) | refused | **admitted**: numbers (`Nl`, `No`) |
+| `n⋅h`, `s⋅h` (U+22C5, CLDR's Occitan interior dot) | Occitan | refused (`Sm`) | refused by the SDK, left alone by the chain |
+| `s·ciàvo` (U+00B7 between `s` and `c`) | Venetian | refused | refused by the SDK (not `l·l`), left alone by the chain |
+| `🏴` with tag characters (England, Scotland, Wales) | subdivision flags | admitted, folded to `🏴` | **refused**: tag characters |
 | `don't`, `aujourd'hui`, `l'amour`, `o'brien`, `м'ясо`, `hawai'i` | English, French, Irish, Ukrainian, Hawaiian, typed with `'` | refused (ASCII ruling) | refused |
 | `don’t` | any, typed with U+2019 | refused (`Pf`) | refused |
 | `donʼt`, `мʼясо`, `hawaiʻi` | typed with U+02BC or U+02BB (modifier letters) | admitted | admitted |
@@ -57,7 +66,7 @@ Two sources, in [`vectors.json`](vectors.json):
 | `၏` (a word meaning "of") | Burmese: U+104C–U+104F are word-like but `Po` | refused | refused |
 | Kuvi letters written with an ASCII `:` | Kuvi | refused (ASCII ruling) | refused |
 | `كتـــاب` (with tatweel U+0640) | Arabic and Persian: cosmetic stretching, which CLDR lists among their letters | admitted | **refused**, as IDNA2008 does |
-| `می‌خواهم` (with ZWNJ) | Persian | admitted: the fold removes the ZWNJ | admitted |
+| `میخواهم`, typed with a ZWNJ (U+200C) after `می` | Persian | admitted: the fold removes the ZWNJ | admitted |
 
 Beyond these, CLDR's lists also hold items that are not word letters, and the rule refuses them: Bengali currency
 numerators, Syriac punctuation, Yi radicals and Ethiopic tonal marks. The full list is in `figures.txt`.
@@ -70,7 +79,14 @@ rewrite the word silently.
 ## Contextual exceptions (recommended)
 
 As in IDNA2008 (RFC 5892), each is a character that is only admitted where its language needs it. Each is tested on
-the folded word.
+the folded word, **by the SDK only**: the chain leaves these characters out of its table, so a later SDK can widen a
+context without moving any word id. IDNA's `l·l`-only rule, frozen on chain, would lock out more than Catalan's
+neighbours:
+- **Occitan:** CLDR lists U+22C5 `⋅` as its interior dot, for `n⋅h` and `s⋅h`.
+- **Venetian** (`s·c`), Sardinian and Gaelic, and Chinese and Cantonese names, list U+00B7 among their punctuation.
+- **Anii, Gaelic and Cantonese** list U+2027 `‧` (the hyphenation point).
+
+U+22C5 and U+2027 are left to the SDK for the same reason, and the SDK refuses them today.
 
 | Character | Admitted when | IDNA2008 |
 | --- | --- | --- |
@@ -106,7 +122,8 @@ anyway: `½` folds to `1⁄2`, and U+2044 is `Sm`.
 - or it is `Regional_Indicator` (the 26 flag letters, U+1F1E6–1F1FF);
 - or it is `Emoji_Modifier` (the 5 skin tones, U+1F3FB–1F3FF, which are `Sk`).
 
-The keycap U+20E3 is a combining mark (`Me`), so `1️⃣` is admitted as `1⃣`.
+The keycap U+20E3 is a combining mark (`Me`), so the keycap `1` + U+FE0F + U+20E3 is admitted as `1⃣` (the fold
+removes the variation selector).
 
 - **Not `Emoji`:** it includes ASCII `# * 0-9` (governed by the ASCII rule).
 - **Not `Emoji_Presentation`:** it leaves out text-default emoji such as `❤` and `☺`.
@@ -116,10 +133,11 @@ The keycap U+20E3 is a combining mark (`Me`), so `1️⃣` is admitted as `1⃣`
   - the squares `◻ ◼ ◽ ◾` U+25FB–25FE (`Sm`);
   - `‼` and `⁉`, which fold to ASCII `!!` and `!?` anyway.
 - **What the ruled fold does to emoji:**
-  - it removes variation selectors and zero-width joiners, so `❤️` and `❤` meet, and `👨‍👩‍👧` becomes three emoji;
-  - **it removes tag characters, so the England, Scotland and Wales flags all fold to `🏴`, one word.** The display
-    name, a label statement, can keep what was typed. This is a consequence of the ruled fold, flagged for the
-    owner.
+  - it removes variation selectors and zero-width joiners, so `❤` with or without its variation selector (U+FE0F) is
+    one word, and a family emoji (`👨`, `👩` and `👧` joined by ZWJs, U+200D) becomes three emoji;
+  - it would remove tag characters, folding the England, Scotland and Wales flags to a plain `🏴`, a silent change of
+    meaning. **So tag characters (U+E0001, U+E0020–E007F) are refused** in the step before the fold, with a reason, as
+    the chain already does (class 3). The plain black flag stays admitted.
 
 1,404 `Extended_Pictographic` code points are assigned in 18.0. 1,426 more are reserved, unassigned, for future emoji.
 
@@ -144,66 +162,117 @@ Most are ordinary letters of their scripts and can't be refused. They are visual
 different bytes, so none of them is a delimiter. The defence belongs in display (showing a non-ASCII word as typed,
 and mixed-script warnings), not in the chain's grammar. The full list by delimiter is in `figures.txt`.
 
-## Assigned after the pin: refuse, don't admit
+## Where each rule lives
 
-The proposal makes the chain's rule a deny-list outside ASCII, so that scripts and emoji assigned after the pin
-still work. Measured from Unicode 17.0 to 18.0 (Python's UCD 17.0 against ICU's 18.0):
+A refusal on the chain can never be taken back: the table is a constant of the word rule's code, that code is the
+word Type's id, and a word's id hashes the Type's id. A refusal in the SDK can be loosened in any release; an older
+client then just hides the newer words, as readers hide any word that isn't its own fold.
+
+| Rule | Chain | SDK |
+| --- | --- | --- |
+| ASCII `a-z 0-9 - _ .` | exact | exact |
+| Controls, bidi, invisibles, private use, noncharacters, tag characters, every default-ignorable | refused | refused |
+| Punctuation, symbols, separators, format characters (`P*`, `S*` but emoji, `Z*`, `Cf`), assigned at the pin | refused, except the set left to the SDK | refused |
+| Cosmetic letters (tatweel and the others), the delimiter overlay marks | refused | refused |
+| The contextual characters (U+00B7, U+30FB, U+05F3, U+05F4, U+0F0B) | left alone | in context only |
+| Word-internal punctuation some orthography uses (U+22C5 Occitan, U+2027) | left alone | refused for now |
+| Items of a language's CLDR letters that the classes refuse | left alone | refused for now |
+| Code points the pin doesn't assign | **the owner's question** (below) | refused at the SDK's pin |
+| Code points the fold changes (enforcing canonical words on chain) | option for the contracts dev | never produced |
+
+[`left-to-sdk.json`](left-to-sdk.json) is the generator's "left to the SDK" set: 93 code points, each with its class,
+why it is left, and the languages whose CLDR letters hold it. It contains:
+- the five contextual characters and the two word-internal marks;
+- what CLDR lists among languages' letters:
+  - Burmese U+104C–U+104F (only U+104F is in CLDR's set);
+  - the Devanagari and Gujarati abbreviation signs;
+  - Syriac and Shan marks, Bengali currency numerators, Yi radicals and Ethiopic tonal marks.
+
+Format characters (`Cf`) are not left to the SDK, even where CLDR lists them (the Arabic number signs U+0600–U+0603 in
+Urdu's letters, U+070F in Syriac's). A format character is never a word's letter, and the chain refuses every one
+today.
+
+The tatweel is in Arabic and Persian CLDR letters too. It is refused on chain as a cosmetic letter, as IDNA2008 does,
+and that decision is the tag PM's.
+
+## Assigned after the pin: two options
+
+Measured from Unicode 17.0 to 18.0 (Python's UCD 17.0 against ICU's 18.0):
 
 - **13,007 code points were newly assigned.** 12,334 of them are `Lo`.
 - **88 of them have a fold that is not themselves:** new case pairs (U+A7DD, U+A7E2, U+AB6C, U+AB6D …) and
-  compatibility letters (U+0558, U+209D …). Suppose a chain pinned at 17.0 had admitted them while unassigned. A
-  word typed with the capital form is then not canonical once 18.0 assigns it, so one word has two ids. That is what
-  the fold exists to prevent.
-- **138 of them are punctuation or symbols** the rule refuses (`Sm` 45, `So` 84, `Sc` 3, `Po` 2, `Ps` and `Pe` 2,
-  `Sk` 2). A deny-list frozen at 17.0 would admit them all, including U+2E62 and U+2E63, new lookalikes of `(` and
-  `)`. Every Unicode version adds punctuation for new scripts.
+  compatibility letters (U+0558, U+209D …).
+- **138 of them are punctuation or symbols** the classes refuse (`Sm` 45, `So` 84, `Sc` 3, `Po` 2, `Ps` and `Pe` 2,
+  `Sk` 2). They include U+2E62 and U+2E63, new lookalikes of `(` and `)`. Every Unicode version adds punctuation for
+  new scripts.
 
-So the chain should refuse every code point its pin doesn't assign, as the fold evaluation's freeze rule already says
-for the SDK. New scripts and emoji then arrive with a pin upgrade, which the fold evaluation's CI check guards (old
-vectors give the same words).
+**(i) The chain admits unassigned code points.** This is the working default; the tag PM, the PM and the contracts
+dev recommend it, and I agree.
+- New scripts and emoji can become words without touching the chain. Only the SDK's pin moves, and that pin moves no
+  word id.
+- The SDK refuses unassigned code points at its own pin (the fold evaluation's freeze rule). So the 88 fold-changing
+  characters and the 138 new marks reach the chain only through a writer that bypasses the SDK.
+- Such a word is never its own fold, or breaks the SDK's rule, so readers hide it (tag spec 2.1). Two honest SDKs at
+  different pins never give one word two ids.
+- The owner's two tests are untouched: every URI-reserved character and EFS delimiter is ASCII, and the chain's ASCII
+  rule is exact.
 
-**Option (not recommended):** admit the reserved, unassigned `Extended_Pictographic` ranges early, so future emoji
-work before a pin upgrade. Emoji rarely have fold mappings, but 22 assigned ones do (`™` to `tm`, `🈁` to `ココ`,
-`㊗` to `祝` …), and those enclosed ideographs sit in blocks with reserved slots. So this is not safe in principle.
+**(ii) The chain refuses unassigned code points.** The chain then holds only what Unicode 18.0 knew, **for the life
+of the word Type.** A later pin would change the table, and so the Type's id, every word id and every path id. No
+script or emoji assigned after 18.0 could ever be a word.
 
 ## The chain's table
 
-The chain checks a folded word against a table of refused code-point ranges. Today's table has 59 ranges. Under the
-recommended rule, outside ASCII:
+The chain checks a folded word against a table of refused code-point ranges. Today's table has 59 ranges. Outside
+ASCII:
 
 | What the table refuses | Ranges | Size as 3-byte lo/hi pairs |
 | --- | --- | --- |
-| The recommended classes and refusals, plus everything the pin doesn't assign | 982 | about 5.9 KB |
-| The same, admitting unassigned code points | 483 | about 2.9 KB |
-| The first, plus every code point the fold changes (enforcing canonical words on chain) | 1,438 | about 8.6 KB |
+| (i): the chain's column above, unassigned admitted | 492 | about 3.0 KB |
+| (i), plus every assigned code point the fold changes: **the working default** | 1,183 | about 7.1 KB |
+| (ii): the working default, also refusing every unassigned code point | 1,440 | about 8.6 KB |
 
-The contextual exceptions are checked by code, not by the table: four characters, each against its neighbour's
-script, and a digit-set check. The storage form (bytecode, a data contract, or the Type's descriptor) is the
-contracts dev's choice.
+The agreed definition, the three tables, their vectors and a diff against today's table (the new table loosens
+nothing) are the contracts' generator inputs, in [`generator/`](generator/README.md). The contracts dev measured the
+working default: about 2,110 gas per non-ASCII character against 1,515 today (eleven probes of the table), and the
+table is about 7.1 KB without class bytes. An ASCII word pays nothing for it. Refusing every code point the fold changes is safe for good: a folded word never holds one, and the fold of an
+assigned code point never changes. It also closes the gap that the chain can't check case outside ASCII. The
+storage form (bytecode, a data contract, or the Type's descriptor) is the contracts dev's choice. The chain needs no
+contextual code under either option.
 
 ## Vectors
 
-[`vectors.json`](vectors.json) has 70 cases. Each is a typed word, its fold, and the verdict under the proposal and
-under the recommendation. A verdict is `null` (admitted) or names its rule:
-- `character`, `ascii-character` or a contextual rule, each with the offending `char` and its `class`;
+[`vectors.json`](vectors.json) has 75 cases. Each has:
+- a typed word and its fold;
+- the verdict under the proposal and under the recommended SDK rule;
+- the first character of the typed word that the chain's table (option (i), the chain's column) refuses. This is the
+  word as a writer that skips the fold would send it, so the subdivision flags show the chain refusing tag characters.
+
+A verdict is `null` (admitted) or names its rule:
+- `character`, `ascii-character`, `refused-character` or a contextual rule, each with the offending `char` and its
+  `class`;
 - `trailing-dot`, `leading-hyphen`, `leading-mark`, `length` or `address`;
 - `mixed-arabic-indic-digits`.
 
-These are proposals for the chain's refusal codes. The client needs the rule and the character to offer a fixed word.
+These are proposals for the refusal codes. The client needs the rule and the character to offer a fixed word.
 
 ## Questions
 
-1. **Owner:** the five contextual exceptions and the middle dot between Han characters (yes, recommended). Also,
-   numbers (`Nl`, `No`): admit them (recommended)?
-2. **Owner:** refuse unassigned code points at the pin (recommended), or admit them for early emoji and scripts?
-3. **Owner:** the England, Scotland and Wales flags fold to one word. Keep that as the ruled fold's consequence, or
-   refuse tag characters in words instead, so subdivision flags can't be used as words?
-4. **Contracts dev:** the table size above, and the refusal codes the vectors propose.
+1. **Owner, the only one left:** does the chain admit unassigned code points, (i), or refuse them, (ii)?
+2. **Settled by the tag PM (2026-11-26):**
+   - the exceptions and numbers as recommended, in the SDK;
+   - subdivision flags refused, not folded;
+   - no leading `-`;
+   - apostrophes refused, with U+02BC and U+02BB admitted as letters;
+   - the emoji set as specified.
+3. **Contracts dev:** the table under (i), with or without refusing every code point the fold changes, and the refusal
+   codes the vectors propose.
 
 ## Rerun
 
 - Build `dump.cpp` and `exemplars.cpp` against ICU, and `../fold-evaluation/fold.cpp` as the fold tool. The build
   line is in each file's header.
 - Then run `./dump > icu-dump.tsv` and `./exemplars > exemplars.tsv`.
-- Then run `python3 -I analyze.py icu-dump.tsv <fold> vectors.json exemplars.tsv > figures.txt`, and format
-  `vectors.json` with Biome (`pnpm exec biome format --write`).
+- Then run `python3 -I analyze.py icu-dump.tsv <fold> vectors.json exemplars.tsv [<dir>] > figures.txt`. It also writes
+  `left-to-sdk.json` beside `vectors.json`, and with `<dir>` the two candidate chain tables (`ranges-i.txt`,
+  `ranges-i-fold.txt`). Format the JSON with Biome (`pnpm exec biome format --write`).
