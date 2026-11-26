@@ -12,7 +12,12 @@ import type { Address, Hex, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { openFile } from "../../src/files/bytes.ts";
 import { planCreateFile } from "../../src/files/entries.ts";
 import { type FolderRef, listFolder } from "../../src/files/folders.ts";
-import { filesPageReaderAbi, ledgerViewsAbi, lensReaderAbi } from "../../src/generated/abis.ts";
+import {
+  filesPageReaderAbi,
+  ledgerReadsAbi,
+  ledgerViewsAbi,
+  lensReaderAbi,
+} from "../../src/generated/abis.ts";
 import { fileNames, planLabel, planSame, planTag, topicSynonyms } from "../../src/tags/index.ts";
 import { lyingEfs } from "./lying.ts";
 
@@ -155,5 +160,13 @@ describe("the Lens reader's decider and refusals", () => {
     ]);
     const r = await listFolder(lie, root, { lens: mine() });
     expect(r).toMatchObject({ status: "UNKNOWN", reason: { retry: "transient" } });
+  });
+});
+
+describe("a HEAD whose revision reads absent", () => {
+  it("openFile: the endpoint's fault (fail over, then UNKNOWN), never ABSENT_PROVEN", async () => {
+    const lie = lying(ledgerReadsAbi, "record", ([, ...rest]) => [3, ...rest]); // every record ABSENT_PROVEN
+    const r = await openFile(lie, { kind: "file", subject: file }, { lens: mine() });
+    expect(r).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
   });
 });

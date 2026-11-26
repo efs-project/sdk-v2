@@ -327,7 +327,16 @@ export async function openSelected(
   h: HeadSelection,
 ): Promise<Step<RevisionOpen>> {
   if (h.status !== "PRESENT") return { ok: true, value: h };
-  return resolveRevision(ctx, s, basis, h.target, subject, h.author);
+  const r = await resolveRevision(ctx, s, basis, h.target, subject, h.author);
+  // A HEAD the Lens reader calls PRESENT names a revision the kernel admitted (the HEAD law): one that reads absent is
+  // this endpoint's fault, never "no such file".
+  if (r.ok && r.value.status === "ABSENT_PROVEN")
+    return {
+      ok: false,
+      retryElsewhere: true,
+      reason: reason("RPC_ERROR", "transient", "the HEAD names a revision this endpoint says is absent"),
+    };
+  return r;
 }
 
 /** @internal A RevisionOpen as the public OpenResult. */
@@ -361,8 +370,14 @@ export async function resolveRevision(
   const rev = await readOne(ctx, s, basis, revisionId);
   if (!rev.ok) return rev;
   if (rev.value.status !== "PRESENT" || !rev.value.body) {
-    const st = rev.value.status === "ABSENT_PROVEN" ? "ABSENT_PROVEN" : "UNKNOWN";
-    return { ok: true, value: { status: st } };
+    if (rev.value.status === "ABSENT_PROVEN") return { ok: true, value: { status: "ABSENT_PROVEN" } };
+    return {
+      ok: true,
+      value: {
+        status: "UNKNOWN",
+        reason: reason("NOT_YET_DECIDABLE", "transient", `the revision record reads ${rev.value.status}`),
+      },
+    };
   }
   const kind = typeName(efs, rev.value.typeId);
   if (kind !== "files-root/1" && kind !== "files-child/1") {
@@ -1052,7 +1067,7 @@ export async function readRange(
         ...base,
         grade: "UNKNOWN",
         attempts: [],
-        ...(pin.status === "UNKNOWN" ? { reason: pin.reason } : {}),
+        reason: pin.status === "UNKNOWN" ? pin.reason : reason("NOT_VERIFIED_DEPLOYMENT", "never"),
         evidence: pin.evidence,
       };
     }
