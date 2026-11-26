@@ -8,7 +8,10 @@
 //   - a "same as" restored as the 11th statement: the history word, against the 9th;
 //   - a folder placed at a lone-hidden name (bindFolderAfterNo) against one placed where your entry was removed
 //     (restoreFolder, measured placing a new target: the kernel's rewrite is in the row);
-//   - a label set again after its removal: restoreProperty (a later statement), never the re-bind row.
+//   - a label set again after its removal: restoreProperty (a later statement), never the re-bind row;
+//   - an edit where your own HEAD is a lone "not this" (bindHeadAfterNo), or a version you released (restoreHead),
+//     against an edit of a file you never stated (bindHeadFresh): the only SDK flow that binds a HEAD that is neither
+//     UNSET nor BOUND.
 // Each is compared with a control at a head that bound before and opens no history word, so the plans differ only by
 // the row and the position. A part's planned gas is intrinsic + calldata + max(E, V), and for a single later statement
 // V is above E, so on the real model only K's difference shows. Each case is planned twice: with the vendored model (what
@@ -21,15 +24,19 @@ import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { type GasConstants, type GasModel, gasPlanFor } from "../../src/actions/split.ts";
 import { createEfs } from "../../src/client.ts";
-import type { Address, RecordId } from "../../src/core/hex.ts";
+import type { Address, Hex, RecordId, SubjectId } from "../../src/core/hex.ts";
+import { openFile } from "../../src/files/bytes.ts";
+import { planEditFile } from "../../src/files/edit.ts";
 import { planCreateFolder, planRemoveEntries } from "../../src/files/entries.ts";
 import type { FolderRef } from "../../src/files/folders.ts";
+import { ACTION, PURPOSES } from "../../src/generated/constants.ts";
 import { planDeny, planLabel, planSame, planTag, planUntag } from "../../src/tags/index.ts";
 import { planLoneHide } from "../../src/testing/index.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
   root: { directoryRecordId: RecordId };
+  seed: { files: { name: string; subjectId: SubjectId }[] };
 };
 const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
 const root: FolderRef = { kind: "folder", directory: deployment.root.directoryRecordId };
@@ -194,6 +201,65 @@ describe("later statements priced by the list release's rows (fixture)", () => {
     const restoreE = gasOf(await planned(label("second", eVisible())));
     // the same text record either way (published by neither plan: "second" is new to both, so both publish it)
     expect(restoreE - rebind).toBe(E.restorePropertyLongNewPlace - E.bindPropertyRebind);
+    await send(restore);
+  });
+
+  it("edits: your HEAD after a lone no is bindHeadAfterNo, after a release restoreHead, against a fresh HEAD", async () => {
+    const ZERO = `0x${"0".repeat(64)}` as Hex;
+    /** A HEAD statement the SDK's planners never make: your "not this" (UNBIND) or a release of your version. */
+    const headStatement = async (kind: number, subject: SubjectId, expectedRevision: bigint) => {
+      const raw = await w.planActions({
+        actions: [
+          {
+            kind,
+            typeId: ZERO,
+            bodyHashOrRecordId: ZERO,
+            purpose: PURPOSES.head,
+            subject,
+            role: ZERO,
+            target: ZERO,
+            expectedRevision,
+            saltOrStrength: ZERO,
+          },
+        ],
+        bodies: ["0x"],
+        effects: [{ code: "test.head", args: {} }],
+      });
+      if (raw.status !== "PLANNED") throw new Error(raw.status);
+      expect((await w.run(raw.plan)).reconcile?.outcome).toBe("COMMITTED");
+    };
+    /** An edit of a seeded file (the default Lens shows the seeder's version): its gas with E visible. */
+    const edit = async (subject: SubjectId, content: string, gasModel?: GasModel) => {
+      const o = await openFile(efs, { kind: "file", subject });
+      if (o.status !== "PRESENT") throw new Error(o.status);
+      return planned(
+        planEditFile(
+          efs,
+          w,
+          {
+            file: { kind: "file", subject },
+            base: { kind: "revision", recordId: o.file.revision },
+            content: new TextEncoder().encode(content),
+            mediaType: "",
+          },
+          gasModel ? { gasModel } : {},
+        ),
+      );
+    };
+    // One file throughout, so every plan publishes a record of the same length: the rows alone differ.
+    const a = deployment.seed.files.find((f) => f.name === "readme.txt")?.subjectId as SubjectId;
+    const fresh = gasOf(await edit(a, "lr-edit", eVisible())); // you never stated its HEAD: bindHeadFresh
+    await headStatement(ACTION.UNBIND, a, 0n); // a lone "not this": MASKED, never bound, revision 1
+    const afterNo = await edit(a, "lr-edit");
+    expect(gasOf(await edit(a, "lr-edit", eVisible())) - fresh).toBe(
+      E.bindHeadAfterNo - E.bindHeadFresh,
+    );
+    await send(afterNo); // the validator and the kernel admit a yes after a lone no on HEAD
+    await headStatement(ACTION.RELEASE, a, 2n); // your version released: RELEASED, it bound, revision 3
+    const restore = await edit(a, "lr-edi2"); // a new revision of the same length
+    expect(gasOf(await edit(a, "lr-edi2", eVisible())) - fresh).toBe(
+      E.restoreHead - E.bindHeadFresh,
+    );
     await send(restore);
   });
 
