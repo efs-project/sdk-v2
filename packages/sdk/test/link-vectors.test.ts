@@ -31,11 +31,15 @@ const asciiTest: FoldStep = (segment) => {
 
 describe("link grammar vectors", () => {
   it.each(vectors.cases)("$label", ({ input, fold, expect: want }) => {
-    const got = parseLink(input, fold === "ascii-test" ? { fold: asciiTest } : {});
+    // "none" parses the grammar alone (fold: null); the default fold is foldWord (test/fold.test.ts).
+    const got = parseLink(input, fold === "ascii-test" ? { fold: asciiTest } : { fold: null });
     expect(got).toEqual(want);
     // Every OK parse round-trips: its canonical form parses to the same target.
     if (got.status === "OK") {
-      const again = parseLink(got.canonical, fold === "ascii-test" ? { fold: asciiTest } : {});
+      const again = parseLink(
+        got.canonical,
+        fold === "ascii-test" ? { fold: asciiTest } : { fold: null },
+      );
       expect(again).toMatchObject({ status: "OK", canonical: got.canonical });
     }
   });

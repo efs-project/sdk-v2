@@ -31,6 +31,7 @@ import { decodeCreator, type FolderRef, subjectInfoCall } from "../files/folders
 import { type GasOpts, gasSetup } from "../files/plan.js";
 import { ledgerViewsAbi, topicLookupReaderAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
+import { foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { positionKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
@@ -69,7 +70,7 @@ export interface TagInput {
 }
 
 export interface TagPlanOpts extends CallOpts, GasOpts {
-  /** Folds each typed word before the chain's grammar checks it (efs/fold/1 when ruled). Default: words as given. */
+  /** Folds each typed word before the chain's grammar checks it. Default: foldWord (interim until the rule is ruled). */
   fold?: FoldStep;
   /** Refuse (TOO_LARGE) rather than plan more parts than this. Default 64. */
   maxParts?: number;
@@ -196,13 +197,11 @@ export function placeOf(
     };
   }
   if (p.length === 0) throw misuse("a topic is at least one word");
+  const step = fold ?? foldWord;
   const words = (p as readonly string[]).map((typed, i) => {
-    let w = typed;
-    if (fold) {
-      const f = fold(typed);
-      if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`, { index: i });
-      w = f.word;
-    }
+    const f = step(typed);
+    if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`, { index: i });
+    const w = f.word;
     const c = checkWord(w);
     if (!c.ok)
       throw misuse(`word ${i} is not a word the chain admits (code ${c.code}: ${c.rule})`, {

@@ -29,6 +29,7 @@ import type { Lens } from "../client.js";
 import { misuse } from "../core/errors.js";
 import type { Address, PrincipalId, RecordId, SubjectId } from "../core/hex.js";
 import { utf8Encode } from "../core/platform.js";
+import { foldWord } from "./fold.js";
 import { checkName, decodeScalars, type NameRule } from "./name.js";
 import { parseSegment, wireSegment } from "./segment.js";
 
@@ -89,8 +90,11 @@ export type FoldStep = (
   segment: string,
 ) => { ok: true; word: string } | { ok: false; rule: string };
 export interface ParseLinkOpts {
-  /** Fold each topic segment to its word. Without it, a topic parses with `segments` only and no `words`. */
-  fold?: FoldStep;
+  /**
+   * Fold each topic segment to its word. Default: foldWord (interim until the rule is ruled), so a typed `Cars/Tesla`
+   * opens `cars/tesla` and `canonical` is the folded link. `null`: no fold, `segments` only and no `words`.
+   */
+  fold?: FoldStep | null;
 }
 
 /**
@@ -365,12 +369,13 @@ function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts)
     };
     return { status: "OK", target, canonical: link(target) };
   }
+  const step = o.fold === null ? undefined : (o.fold ?? foldWord);
   const words: string[] = [];
   for (const [i, seg] of decoded.entries()) {
     const typed = wordRule(seg, true);
     if (typed) return { status: "INVALID", rule: "bad-word", segment: i, detail: typed };
-    if (!o.fold) continue;
-    const f = o.fold(seg);
+    if (!step) continue;
+    const f = step(seg);
     if (!f.ok) return { status: "INVALID", rule: "bad-word", segment: i, detail: f.rule };
     const after = wordRule(f.word, false); // what the fold produced is checked again
     if (after) return { status: "INVALID", rule: "bad-word", segment: i, detail: after };
@@ -379,10 +384,10 @@ function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts)
   const target: TopicLink = {
     kind: "topic",
     segments: decoded,
-    ...(o.fold ? { words } : {}),
+    ...(step ? { words } : {}),
     ...(lens ? { lens } : {}),
   };
-  const canonical = o.fold
+  const canonical = step
     ? link(target)
     : decoded.map((x) => wireSegment(utf8Encode(x))).join("/") + lensQuery(lens);
   return { status: "OK", target, canonical };

@@ -270,6 +270,11 @@ string that an app places in its route, for example after `#/files/`:
   departs from the naming review's `o/<id>` and `v/<id>`, which collide with root folders named `o` or `v`.
 - `link()` emits lowercase ids. `parseLink()` accepts any hex case and one percent-decode per segment, and returns
   `canonical` so a router can redirect to the canonical form. `%2F` is never a separator.
+- **The fold:** `foldWord` (from `@efs/sdk` and `@efs/sdk/links`) is the interim fold (docs/design/tags-0.1.md
+  section 2: all-ASCII words trimmed, spaces to underscores, A–Z to a–z; any other word as typed). It is the default
+  fold of the tag planners, the topic reads and `parseLink`, so a typed `Cars/Tesla` opens `cars/tesla` and its
+  `canonical` is the folded link. Pass your own `fold` to override it, or `fold: null` to `parseLink` for the grammar
+  alone. It is marked interim until Q53: the ruled rule replaces it, extending it and never contradicting it.
 - `parseLink(input, { fold? })` returns `{ status: "OK", target: ObjectLink | PathLink | RevisionLink | HomeLink |
   TopicLink, canonical }` or `{ status: "INVALID", rule, segment?, detail? }`. Every first segment starting with `~`
   is the system's (only `~efs` is defined); a first segment that is an address is a home; anything else is a topic

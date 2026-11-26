@@ -4,7 +4,7 @@
 // so CI fails if this stops being true.
 import assert from "node:assert/strict";
 import { startFixtureChain } from "@efs/fixture";
-import { createEfs } from "@efs/sdk";
+import { createEfs, foldWord } from "@efs/sdk";
 import { createWriter, memoryJournal } from "@efs/sdk/actions";
 import { listFolder, openHome, planCreateFile } from "@efs/sdk/files";
 import {
@@ -78,19 +78,21 @@ try {
   );
   say("home", `hello.txt in ${me.slice(0, 8)}…'s home`);
 
-  // 2. Tag it into a topic. Words are checked against the chain's grammar as given until the fold rule is ruled:
-  //    "Notes" (uppercase) is refused before anything is read, so fold what people type first.
+  // 2. Tag it into a topic. What people type is folded first (foldWord, interim until the fold rule is ruled): an
+  //    all-ASCII word is trimmed, its spaces become underscores, and A–Z become a–z, so "Notes" saves as "notes". Say
+  //    so ("Saved as notes"). A word that mixes ASCII capitals with other text is left as typed, and refused.
+  assert.equal(foldWord("Notes").word, "notes");
   await assert.rejects(
-    planTag(efs, writer, { topic: ["Notes"], targets: [file] }),
+    planTag(efs, writer, { topic: ["Straße"], targets: [file] }),
     /not a word the chain admits/,
   );
-  const tagged = await save(await planTag(efs, writer, { topic: ["notes"], targets: [file] }));
+  const tagged = await save(await planTag(efs, writer, { topic: ["Notes"], targets: [file] }));
   assert.deepEqual(
     tagged.review.newTopics.map((t) => t.words),
     [["notes"]],
   ); // registered in the same save
   assert.equal(tagged.effect.kind, "tags.tag"); // the save names what it touched
-  say("tag", `hello.txt filed in /notes (the topic registered in the same save)`);
+  say("tag", `hello.txt filed in /notes, typed as "Notes" (the topic registered in the same save)`);
 
   // 3. Read the topic. `finished` is true only when the chain said the list ended: a short or empty page with
   //    `finished: false` means "read on" with `next`, never "that's all".

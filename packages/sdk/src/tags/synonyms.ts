@@ -22,6 +22,7 @@ import {
   ledgerViewsAbi,
 } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
+import { foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
 import { positionKey, scopeKey } from "../protocol/keys.js";
@@ -505,13 +506,9 @@ async function wordsOf(
   if (Array.isArray(topic)) {
     if (topic.length === 0) throw misuse("a topic is at least one word");
     const words = (topic as readonly string[]).map((typed, i) => {
-      const w = o.fold
-        ? (() => {
-            const f = (o.fold as FoldStep)(typed);
-            if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`);
-            return f.word;
-          })()
-        : typed;
+      const f = (o.fold ?? foldWord)(typed);
+      if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`);
+      const w = f.word;
       const c = checkWord(w);
       if (!c.ok)
         throw misuse(`word ${i} is not a word the chain admits (code ${c.code}: ${c.rule})`);

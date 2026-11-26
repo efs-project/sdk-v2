@@ -40,6 +40,7 @@ import {
 } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { GAS_READS } from "../generated/gas.js";
+import { foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
 import { positionKey, recordId } from "../protocol/keys.js";
@@ -270,14 +271,11 @@ export function kindsQuery(o: { kinds?: readonly ViewKind[]; kindsExact?: boolea
 export function placeId(efs: Efs, p: TopicPlace, fold?: FoldStep): { id: Hex; topic: boolean } {
   if (Array.isArray(p)) {
     const t = topicTypesOf(efs.deployment);
+    const step = fold ?? foldWord;
     const words = (p as readonly string[]).map((typed, i) => {
-      let w = typed;
-      if (fold) {
-        const f = fold(typed);
-        if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`, { index: i });
-        w = f.word;
-      }
-      return w;
+      const f = step(typed);
+      if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`, { index: i });
+      return f.word;
     });
     return { id: pathId(t, words), topic: true };
   }
@@ -1459,12 +1457,9 @@ export function wordPage(
   word: string,
   o: PlacesOpts = {},
 ): Promise<LookupPage<PlaceCountRow>> {
-  let w = word;
-  if (o.fold) {
-    const f = o.fold(word);
-    if (!f.ok) throw misuse(`the word does not fold (${f.rule})`);
-    w = f.word;
-  }
+  const f = (o.fold ?? foldWord)(word);
+  if (!f.ok) throw misuse(`the word does not fold (${f.rule})`);
+  const w = f.word;
   const t = topicTypesOf(efs.deployment);
   const page = wordPageId(t, w);
   return paged<PlaceCountRow, RawCount>(efs, "wordPage", page, o, async (s, basis, ctx, rows) => {

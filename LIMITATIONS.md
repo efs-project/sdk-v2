@@ -6,7 +6,7 @@ reconcile) with durable attempt journals (IndexedDB + Web Locks in browsers and 
 homes (an address as a parent: list, look up, resolve paths and links, and create, edit, move, rename, remove,
 restore, hide and unhide entries), and tags (topics and homes as places, `planTag` / `planDeny` / `planUntag`, and
 the Mine / Everyone / Raw reads, labels and topic names, file names in a topic, "same as" and "broader", and synonym
-gathering, and the merged read across a Lens's synonyms). **Not yet:** the tag word fold (words are checked as given until it is ruled), authoring as a contract principal (the writer is
+gathering, and the merged read across a Lens's synonyms). **Not yet:** the ruled tag word fold (until it is ruled, an interim fold lowercases and joins all-ASCII words and leaves any other word as typed), authoring as a contract principal (the writer is
 key-principal only), and storage for files above the chain's per-file ceiling (about 1 MiB). Plan-time reuse is not
 built either: a part whose records all exist, or are being published by an in-flight attempt, is still sent. So an
 edit re-publishes every chunk of its content, including chunks already on chain. An identical publish-only part

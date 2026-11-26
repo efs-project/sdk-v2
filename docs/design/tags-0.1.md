@@ -88,8 +88,8 @@
 >
 >
 > **Not built yet:**
-> - the fold rule itself (James's ruling: the planners and readers take a `fold` step meanwhile, and check every
->   word against the chain's grammar);
+> - the fold rule itself (Q53, James's). Meanwhile the interim fold `foldWord` (PM default D15, section 2) is the
+>   default fold step of the planners, the reads and `parseLink`;
 > - the junk rule for children (two distinct authors), which needs a per-child author figure the readers don't
 >   give.
 
@@ -114,6 +114,16 @@
   Unicode version and refuses characters not assigned in it, so a later Unicode can never change an existing id.
 - **Which fold, NFKC_Casefold or NFC plus lowercase, is not decided.** The SDK dev evaluates both with vectors, and the
   owner confirms before any lasting deployment (it refines D-B).
+- **The interim fold, until it is decided** (`foldWord`, `FOLD_RULE = "efs-sdk/fold/interim-ascii-1"`; PM default D15,
+  2026-11-26). It is the default fold step of every planner, every read that takes words, and `parseLink`. A caller
+  passes its own `fold` to override it; `parseLink(…, { fold: null })` parses the grammar alone.
+  - **A word made only of ASCII** is trimmed of spaces and tabs, each run of them inside becomes one underscore, and
+    A–Z become a–z: `Notes` → `notes`, `My Notes` → `my_notes`, ` a  b ` → `a_b`.
+  - **Any other word is left exactly as typed** and judged by the grammar as before. `Straße` is still refused for its
+    `S`, and `École` is still admitted as typed: É is not ASCII A–Z, so a word with only non-ASCII capitals keeps
+    them. That is how such a word stood before the interim, and the ruled rule decides it.
+  - **It never contradicts the ruling.** Both candidates give the same word for every ASCII input, so an id the
+    interim makes is the id under either rule, and the ruled rule extends it.
 - **Vectors are shared with the contracts**, including words that must be refused. Two SDKs with two fold tables would
   give two ids for one typed word.
 - **Whitespace** is part of the rule: trimmed at both ends, and a run of whitespace inside a word becomes one
