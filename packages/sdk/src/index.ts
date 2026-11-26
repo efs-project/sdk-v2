@@ -13,6 +13,8 @@ export type { Attempt, Basis, BasisPolicy } from "./chain/pool.js";
 export type { Eip1193Like, FetchLike, RequestEvent, RpcEndpoint } from "./chain/rpc.js";
 export type { Capabilities, Efs, EfsConfig, GatewayConfig, Lens, LensTools } from "./client.js";
 export { createEfs } from "./client.js";
+export type { LocatorCheck } from "./content/locator.js";
+export { checkLocator } from "./content/locator.js";
 export type {
   AbortSignalLike,
   CallOpts,

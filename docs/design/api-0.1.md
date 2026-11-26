@@ -81,9 +81,12 @@ export interface Eip1193Like {
 }
 
 export interface GatewayConfig {
-  ipfs?: readonly string[];     // ordered gateway origins, user-configurable
+  // Ordered gateway origins, tried in order (the first whose bytes match the descriptor's length and sha256 wins).
+  // None by default: the SDK names no third party (which one sees a reader's IP and content ids is the app's visible
+  // choice), so ipfs:// and ar:// are POLICY_BLOCKED (rule "no-gateway") until the app names its gateways.
+  ipfs?: readonly string[];
   arweave?: readonly string[];
-  /** Which location schemes may be fetched at all (default: https, ipfs, ar, web3, data). */
+  /** Which location schemes may be fetched at all (default: ipfs, ar, web3, data; a publisher's https is off). */
   allowSchemes?: readonly string[];
   maxBytes?: bigint;            // per file (default 50 MiB)
   timeoutMs?: number;           // per attempt (default 10 000)
@@ -863,7 +866,10 @@ type EditPlanResult =
   | { status: "UNKNOWN"; reason; basis? };                        // the chain could not be read: nothing decided
 ```
 - **What is published:** a `files-child/1` revision whose parent is `base`, and `BIND(HEAD, file, 0 → revision)`.
-  `content` is bytes or `{ kind: "external", length, sha256, locator }`. Bytes that fit one record body
+  `content` is bytes or `{ kind: "external", length, sha256, locator }`. An external locator nobody could read is
+  MISUSE before anything is read or sent (`details.why`: MALFORMED, UNSUPPORTED_LOCATOR); check one as it is typed
+  with `checkLocator(locator)` (`@efs/sdk`). A location a reader's policy blocks (https off, no gateway named) is
+  still writable: read policy is each reader's. Bytes that fit one record body
   (`maxBodyBytes − 96`) go inline in the revision; larger bytes are chunked canonically (`efs/chunking/1`) under a
   `files-content/1` descriptor (layout `chunk` for one chunk, `span` for a tree). External content is a
   `files-external/1` locator over the empty sentinel chunk.

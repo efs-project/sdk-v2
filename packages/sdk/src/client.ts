@@ -16,11 +16,18 @@ import { PinMemory, type PinResult, pinDeployment } from "./deployment/pin.js";
 import { keyPrincipal, type PrincipalDisplay, principalDisplay } from "./protocol/keys.js";
 
 export interface GatewayConfig {
-  /** Ordered IPFS gateway origins (default ipfs.io, dweb.link, trustless-gateway.link). */
+  /**
+   * Ordered IPFS gateway origins, tried in order (the first whose bytes match the descriptor's length and sha256
+   * wins). None by default: the SDK names no third party, so ipfs:// reads are POLICY_BLOCKED (rule "no-gateway")
+   * until the app names its gateways.
+   */
   ipfs?: readonly string[];
-  /** Ordered Arweave gateway origins (default arweave.net, ar-io.net). */
+  /** Ordered Arweave gateway origins, as `ipfs` (none by default). */
   arweave?: readonly string[];
-  /** Location schemes that may be fetched (default https, ipfs, ar, data). Others return POLICY_BLOCKED. */
+  /**
+   * Location schemes that may be fetched (default ipfs, ar, data, web3; a publisher's https is off, since its server
+   * sees the reader). Others return POLICY_BLOCKED.
+   */
   allowSchemes?: readonly string[];
   /** Allow plain http:// locations (default false). */
   allowInsecureHttp?: boolean;
