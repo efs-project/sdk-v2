@@ -272,9 +272,14 @@ string that an app places in its route, for example after `#/files/`:
   `canonical` so a router can redirect to the canonical form. `%2F` is never a separator.
 - **The fold:** `foldWord` (from `@efs/sdk` and `@efs/sdk/links`) is the interim fold (docs/design/tags-0.1.md
   section 2). An all-ASCII word goes through the evaluation's white-space step (trimmed; a run of white space with the
-  underscores touching it becomes one underscore), then A–Z become a–z. Any other word is left as typed. It keeps the
-  word's text stable across the ruling, not its id: topic ids can still move when the refused table is regenerated
-  from the pinned Unicode version. It is the default
+  underscores touching it becomes one underscore), then A–Z become a–z. Any other word is left as typed.
+  `checkStableWord(word)` is the write guard: a write that adds a statement refuses a word with any non-ASCII
+  character that either candidate rule would change. It is MISUSE with `details: { rule: "unstable-until-ruled",
+  check }`, and the copy "can't be used until the tag text rule is chosen". Apps can call it as a word is typed, like
+  `checkWord`. Reads, links and taking a statement back pass such a word through.
+  The fold and the guard keep the word's text stable across the ruling, not its id: topic ids can still move when the
+  refused table is regenerated from the pinned Unicode version. The guard uses the engine's Unicode data, so very new
+  characters can differ between engines until the pin. It is the default
   fold of the tag planners, the topic reads and `parseLink`, so a typed `Cars/Tesla` opens `cars/tesla` and its
   `canonical` is the folded link. Pass your own `fold` to override it, or `fold: null` to `parseLink` for the grammar
   alone. It is marked interim until Q53: the ruled rule replaces it, extending it and never contradicting it.

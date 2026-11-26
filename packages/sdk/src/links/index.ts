@@ -5,7 +5,8 @@
  * also exported from `@efs/sdk`.
  */
 
-export { FOLD_RULE, foldWord } from "../names/fold.js";
+export type { StableWordCheck, UnstableCheck } from "../names/fold.js";
+export { checkStableWord, FOLD_RULE, foldWord } from "../names/fold.js";
 export type {
   FoldStep,
   HomeLink,

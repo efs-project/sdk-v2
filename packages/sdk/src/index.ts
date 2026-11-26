@@ -39,7 +39,8 @@ export type {
 export { validateDeploymentManifest } from "./deployment/manifest.js";
 export type { Evidence, LiveDeployment, PinMismatch, PinResult } from "./deployment/pin.js";
 export { PROTOCOL_INPUTS } from "./generated/inputs.js";
-export { FOLD_RULE, foldWord } from "./names/fold.js";
+export type { StableWordCheck, UnstableCheck } from "./names/fold.js";
+export { checkStableWord, FOLD_RULE, foldWord } from "./names/fold.js";
 export type {
   FoldStep,
   HomeLink,

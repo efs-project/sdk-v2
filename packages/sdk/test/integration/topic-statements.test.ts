@@ -21,6 +21,7 @@ import {
   topicLookupReaderAbi,
 } from "../../src/generated/abis.ts";
 import { PURPOSES } from "../../src/generated/constants.ts";
+import { parseLink } from "../../src/names/links.ts";
 import { keyPrincipal } from "../../src/protocol/keys.ts";
 import { fileNames } from "../../src/tags/filenames.ts";
 import { lensTagsOf } from "../../src/tags/lenstags.ts";
@@ -878,5 +879,18 @@ describe("the interim fold on a real chain (fixture)", () => {
     await expect(planTag(efs, wc, { topic: ["Straße"], targets: [fileRef] })).rejects.toThrow(
       /not a word the chain admits/,
     );
+    // Until the fold is ruled, a write refuses a word a ruling could fold differently (here É): an app can show the
+    // copy. Reads and links still take it as typed, so nothing written earlier becomes unreachable.
+    await expect(planTag(efs, wc, { topic: ["École"], targets: [fileRef] })).rejects.toMatchObject({
+      code: "MISUSE",
+      details: { rule: "unstable-until-ruled", check: "lowercase" },
+    });
+    await expect(planTag(efs, wc, { topic: ["École"], targets: [fileRef] })).rejects.toThrow(
+      /can't be used until the tag text rule is chosen/,
+    );
+    expect((await topicItems(efs, ["École"], { view: "mine", lens: lens(C) })).status).toBe(
+      "PRESENT",
+    );
+    expect(parseLink("École")).toMatchObject({ status: "OK", target: { words: ["École"] } });
   });
 });

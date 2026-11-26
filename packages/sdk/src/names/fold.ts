@@ -60,3 +60,41 @@ export const foldWord: FoldStep = (typed) => {
   }
   return { ok: true, word: String.fromCharCode(...out) };
 };
+
+/** Why a word is not stable until the fold rule is ruled (checkStableWord). */
+export type UnstableCheck =
+  | "nfc"
+  | "lowercase"
+  | "nfkc-casefold"
+  | "unassigned-or-private"
+  | "leading-mark";
+export type StableWordCheck = { ok: true } | { ok: false; check: UnstableCheck };
+
+const CHANGES_UNDER_NFKC_CASEFOLD = /\p{Changes_When_NFKC_Casefolded}/u;
+const PRIVATE_OR_UNASSIGNED = /[\p{Co}\p{Cn}]/u;
+const LEADING_MARK = /^\p{M}/u;
+
+/**
+ * Whether a word reads the same under both candidate fold rules, so writing it now can never leave text a ruling
+ * would fold differently. INTERIM, with the interim fold, until Q53 (tag PM, 2026-11-26). An all-ASCII word is always
+ * stable (foldWord made it so). A word with any other character is stable only when all of these hold:
+ *   - it is NFC already;
+ *   - lowercasing leaves it unchanged (rule A's fixed point, the final sigma included);
+ *   - no character of it changes under NFKC_Casefold (rule B's fixed point: ß, ς, both Cherokee cases, full-width
+ *     forms, ligatures and default-ignorable characters);
+ *   - it holds no private-use or unassigned character, and doesn't start with a combining mark (both rules refuse
+ *     those).
+ * These checks need no tables of our own: they use the engine's Unicode data (Node 24 and current browsers: Unicode
+ * 16). Until a version is pinned, two engines can disagree on characters newer than one of them. The planners apply
+ * it to writes that add a statement; reads and links still pass such a word through, and taking a statement back is
+ * never refused, so anything written before can be found and cleaned up.
+ */
+export function checkStableWord(word: string): StableWordCheck {
+  if (asciiOnly(word)) return { ok: true };
+  if (word.normalize("NFC") !== word) return { ok: false, check: "nfc" };
+  if (word.toLowerCase() !== word) return { ok: false, check: "lowercase" };
+  if (CHANGES_UNDER_NFKC_CASEFOLD.test(word)) return { ok: false, check: "nfkc-casefold" };
+  if (PRIVATE_OR_UNASSIGNED.test(word)) return { ok: false, check: "unassigned-or-private" };
+  if (LEADING_MARK.test(word)) return { ok: false, check: "leading-mark" };
+  return { ok: true };
+}
