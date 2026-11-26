@@ -120,8 +120,13 @@ export type LinkParse =
       target: ObjectLink | PathLink | RevisionLink | TopicLink | HomeLink;
       canonical: string;
     }
-  /** `segment` (0-based) is the segment that breaks `rule`; `detail` is the name rule or the fold's rule. */
-  | { status: "INVALID"; rule: LinkRule; segment?: number; detail?: string };
+  /**
+   * `segment` (0-based) is the segment that breaks `rule`; `detail` is the name rule or the fold's rule. For
+   * `bad-word`, `word` is that segment's text as the link spelled it, percent-decoded and not folded, so a page can
+   * name it ("… doesn't accept: Straße"). It may hold the very characters that broke the rule (a control or bidi
+   * character, a slash): show it escaped or isolated, never as markup.
+   */
+  | { status: "INVALID"; rule: LinkRule; segment?: number; detail?: string; word?: string };
 
 export type LinkRule =
   | "empty"
@@ -373,12 +378,13 @@ function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts)
   const words: string[] = [];
   for (const [i, seg] of decoded.entries()) {
     const typed = wordRule(seg, true);
-    if (typed) return { status: "INVALID", rule: "bad-word", segment: i, detail: typed };
+    if (typed) return { status: "INVALID", rule: "bad-word", segment: i, detail: typed, word: seg };
     if (!step) continue;
     const f = step(seg);
-    if (!f.ok) return { status: "INVALID", rule: "bad-word", segment: i, detail: f.rule };
+    if (!f.ok)
+      return { status: "INVALID", rule: "bad-word", segment: i, detail: f.rule, word: seg };
     const after = wordRule(f.word, false); // what the fold produced is checked again
-    if (after) return { status: "INVALID", rule: "bad-word", segment: i, detail: after };
+    if (after) return { status: "INVALID", rule: "bad-word", segment: i, detail: after, word: seg };
     words.push(f.word);
   }
   const target: TopicLink = {

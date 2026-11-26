@@ -44,6 +44,29 @@ describe("link grammar vectors", () => {
     }
   });
 
+  it("bad-word names the segment as the link spelled it, wherever the word is refused", () => {
+    // Refused as typed, by the fold, or after the fold (what the fold made breaks the rule): always the typed text.
+    expect(parseLink("cars/~x", { fold: null })).toMatchObject({ segment: 1, word: "~x" });
+    const refuses: FoldStep = () => ({ ok: false, rule: "unstable" });
+    expect(parseLink("cars/%C3%89cole", { fold: refuses })).toEqual({
+      status: "INVALID",
+      rule: "bad-word",
+      segment: 0,
+      detail: "unstable",
+      word: "cars",
+    });
+    const makesSlash: FoldStep = (w) => ({ ok: true, word: w === "b" ? "x/y" : w });
+    expect(parseLink("a/b", { fold: makesSlash })).toEqual({
+      status: "INVALID",
+      rule: "bad-word",
+      segment: 1,
+      detail: "slash",
+      word: "b",
+    });
+    // Other refusals carry no word.
+    expect(parseLink("cars//tesla", { fold: null })).not.toHaveProperty("word");
+  });
+
   it("formats topic and home links from their parts, and refuses parts the grammar refuses", () => {
     expect(link({ kind: "topic", segments: [], words: ["cars", "tesla"] })).toBe("cars/tesla");
     expect(() => link({ kind: "topic", segments: ["Cars"] })).toThrow(/folded words/);

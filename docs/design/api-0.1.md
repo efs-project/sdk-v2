@@ -284,7 +284,9 @@ string that an app places in its route, for example after `#/files/`:
   `canonical` is the folded link. Pass your own `fold` to override it, or `fold: null` to `parseLink` for the grammar
   alone. It is marked interim until Q53: the ruled rule replaces it, extending it and never contradicting it.
 - `parseLink(input, { fold? })` returns `{ status: "OK", target: ObjectLink | PathLink | RevisionLink | HomeLink |
-  TopicLink, canonical }` or `{ status: "INVALID", rule, segment?, detail? }`. Every first segment starting with `~`
+  TopicLink, canonical }` or `{ status: "INVALID", rule, segment?, detail?, word? }`. For `bad-word`, `word` is the
+  refused segment as the link spelled it (percent-decoded, not folded), so a page can say which word: it may hold the
+  characters that broke the rule, so show it escaped or isolated. Every first segment starting with `~`
   is the system's (only `~efs` is defined); a first segment that is an address is a home; anything else is a topic
   (tag model spec §5). The shared root has no named link (no `~root`), and `~home` is never defined: both are
   INVALID with rule `reserved-name`, like any other `~` segment.

@@ -22,6 +22,9 @@ import { feeScheduleOf, txGasCapOf } from "./split.js";
 /** EIP-8037's ceiling on tx.gas (2^32 − 1): the reservoir profile's limit never goes above it. */
 export const TX_GAS_HARD_MAX: bigint = 2n ** 32n - 1n;
 
+/** Gas to aim for per publication when splitting (contracts' guidance: about 14M, headroom under the cap). */
+const SPLIT_TARGET = 14_000_000n;
+
 /** The margin on the model's figures (its error is under 8% on every schedule today; the headroom check guards it). */
 const MARGIN_PERCENT = 115n;
 
@@ -45,8 +48,14 @@ export interface GasLimitInput {
 
 export type GasLimit =
   | { ok: true; gas: bigint }
-  /** Nothing can be sent: `execution` is the execution part that is over the cap (split the save). */
-  | { ok: false; execution: bigint; detail: string };
+  /**
+   * Nothing can be sent: split the save. `execution` is the publication's execution part; `suggestedParts` how many
+   * publications to split it into: by the execution part when that is over the cap, by the whole gas against 85% of
+   * the ceiling (the block gas limit or 2^32 − 1) when the whole is what can't fit.
+   */
+  | { ok: false; execution: bigint; detail: string; suggestedParts: number };
+
+const partsFor = (gas: bigint, per: bigint): number => Number((gas + per - 1n) / per);
 
 /**
  * The gas limit to sign or ask the wallet for, or a refusal. On a reservoir profile, whether the node's estimate
@@ -65,6 +74,7 @@ export function gasLimitOf(g: GasLimitInput): GasLimit {
         ok: false,
         execution: g.estimate,
         detail: `the publication needs ~${g.estimate} gas, over the per-transaction cap of ${g.cap}`,
+        suggestedParts: partsFor(g.estimate, SPLIT_TARGET),
       };
     return { ok: true, gas: min(quarterOver, g.cap) };
   }
@@ -83,12 +93,14 @@ export function gasLimitOf(g: GasLimitInput): GasLimit {
       ok: false,
       execution: executionPart,
       detail: `the publication's execution needs ~${executionPart} gas, over the per-transaction cap of ${g.cap} (state gas is not counted against it)`,
+      suggestedParts: partsFor(executionPart, SPLIT_TARGET),
     };
   if (total > ceiling)
     return {
       ok: false,
       execution: executionPart,
       detail: `the publication needs ~${total} gas in all, over the largest gas limit a transaction can have here (${ceiling}${ceiling < TX_GAS_HARD_MAX ? ", the block gas limit" : ""})`,
+      suggestedParts: partsFor(total, (ceiling * 85n) / 100n),
     };
   let gas = max(quarterOver, ceilPercent(total, MARGIN_PERCENT));
   // Over the cap, the reservoir (tx.gas above 2^24) must hold all the state gas, with the margin.

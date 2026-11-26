@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk/vectors/links/1",
-  "note": "The link grammar (tag model spec §5). `fold` names the fold step used: `none` (no fold given) or `ascii-test` (a stand-in for the tests only: lowercase A-Z and turn a run of spaces into one underscore; the real rule is efs/fold/1, still to be chosen). `expect` is the parse: status, then target and canonical, or rule, segment and detail. A `?lens=` parameter (1 to 64 principals, each once: a 20-byte address for an account, else a 32-byte principal id) is the only one defined, on every kind but revisions.",
+  "note": "The link grammar (tag model spec §5). `fold` names the fold step used: `none` (no fold given) or `ascii-test` (a stand-in for the tests only: lowercase A-Z and turn a run of spaces into one underscore; the real rule is efs/fold/1, still to be chosen). `expect` is the parse: status, then target and canonical, or rule, segment and detail (and, for bad-word, `word`: the segment as decoded, not folded). A `?lens=` parameter (1 to 64 principals, each once: a 20-byte address for an account, else a 32-byte principal id) is the only one defined, on every kind but revisions.",
   "cases": [
     {
       "label": "object link",
@@ -221,7 +221,8 @@
         "status": "INVALID",
         "rule": "bad-word",
         "segment": 0,
-        "detail": "slash"
+        "detail": "slash",
+        "word": "cars/tesla"
       }
     },
     {
@@ -241,7 +242,8 @@
         "status": "INVALID",
         "rule": "bad-word",
         "segment": 1,
-        "detail": "dot"
+        "detail": "dot",
+        "word": ".."
       }
     },
     {
@@ -252,7 +254,8 @@
         "status": "INVALID",
         "rule": "bad-word",
         "segment": 1,
-        "detail": "reserved-tilde"
+        "detail": "reserved-tilde",
+        "word": "~x"
       }
     },
     {
@@ -263,7 +266,8 @@
         "status": "INVALID",
         "rule": "bad-word",
         "segment": 1,
-        "detail": "address-shaped"
+        "detail": "address-shaped",
+        "word": "0xabcdef0123456789abcdef0123456789abcdef01"
       }
     },
     {
@@ -274,7 +278,8 @@
         "status": "INVALID",
         "rule": "bad-word",
         "segment": 0,
-        "detail": "address-shaped"
+        "detail": "address-shaped",
+        "word": "0XABCDEF0123456789ABCDEF0123456789ABCDEF01"
       }
     },
     {
@@ -305,7 +310,8 @@
         "status": "INVALID",
         "rule": "bad-word",
         "segment": 0,
-        "detail": "length"
+        "detail": "length",
+        "word": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     },
     {
@@ -333,7 +339,20 @@
         "status": "INVALID",
         "rule": "bad-word",
         "segment": 1,
-        "detail": "control"
+        "detail": "control",
+        "word": "te\u0000sla"
+      }
+    },
+    {
+      "label": "a bad word is named as decoded, not folded",
+      "input": "cars/Stra%C3%9Fe%2F",
+      "fold": "ascii-test",
+      "expect": {
+        "status": "INVALID",
+        "rule": "bad-word",
+        "segment": 1,
+        "detail": "slash",
+        "word": "Straße/"
       }
     },
     {

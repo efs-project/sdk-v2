@@ -243,9 +243,6 @@ export async function estimate(
 
 export { TX_GAS_CAP, txGasCapOf } from "./split.js";
 
-/** Gas to aim for per publication when splitting (contracts' guidance: about 14M, headroom under the cap). */
-const SPLIT_TARGET = 14_000_000n;
-
 /**
  * @internal The open attempt of another plan for the same publication (the same actions and bodies) from this
  * account, with its save when the journal knows it, or undefined. Open: on its way (SUBMISSION_POSSIBLE, SUBMITTED)
@@ -339,7 +336,7 @@ export async function sendPlan(
       const limit = "gas" in est ? planGasLimit(efs.deployment, plan, est.gas) : undefined;
       if (limit && !limit.ok && "gas" in est) {
         // Too big for one atomic transaction: not a stale plan. Nothing is sent; split, then send each part.
-        const suggestedParts = Number((limit.execution + SPLIT_TARGET - 1n) / SPLIT_TARGET);
+        const suggestedParts = limit.suggestedParts;
         return {
           kind: "efs.send",
           status: "NOT_SENT",

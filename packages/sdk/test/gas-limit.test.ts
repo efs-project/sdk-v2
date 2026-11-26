@@ -35,6 +35,7 @@ describe("gasLimitOf: prague and osaka, unchanged", () => {
     });
     expect(gasLimitOf({ reservoir: false, cap: CAP, estimate: M(20) })).toMatchObject({
       ok: false,
+      suggestedParts: 2,
     });
   });
 });
@@ -79,10 +80,14 @@ describe("gasLimitOf: amsterdam, with the state-gas reservoir", () => {
     expect(gasLimitOf({ reservoir: true, cap: CAP, estimate: M(30), model: deepTag }).ok).toBe(
       true,
     );
-    // 40M estimated: even taking the state gas out, the execution part is over 2^24.
+    // 40M estimated: even taking the state gas out, the execution part (25.6M) is over 2^24: about 2 parts of 14M.
     expect(
       gasLimitOf({ reservoir: true, cap: CAP, estimate: M(40), model: deepTag }),
-    ).toMatchObject({ ok: false });
+    ).toMatchObject({
+      ok: false,
+      execution: M(40) - BigInt(deepTag.total - deepTag.execution),
+      suggestedParts: 2,
+    });
     // The model's own execution figure over the cap is refused too.
     expect(
       gasLimitOf({
@@ -124,16 +129,18 @@ describe("gasLimitOf: amsterdam, with the state-gas reservoir", () => {
       blockGasLimit: block,
     });
     expect(g).toEqual({ ok: true, gas: block });
-    // A whole that no block can hold is refused, and so is the estimate alone past the block (no figures) clamped.
-    expect(
+    // A whole that no block can hold is refused, its parts counted by the whole against 85% of the block (51M), not
+    // by its execution part (which would say "about 1"); and the estimate alone past the block (no figures) clamped.
+    const over = (total: number) =>
       gasLimitOf({
         reservoir: true,
         cap: CAP,
         estimate: M(1),
-        model: { execution: 3_000_000, total: 61_000_000 },
+        model: { execution: 3_000_000, total },
         blockGasLimit: block,
-      }),
-    ).toMatchObject({ ok: false });
+      });
+    expect(over(61_000_000)).toMatchObject({ ok: false, suggestedParts: 2 });
+    expect(over(110_000_000)).toMatchObject({ ok: false, suggestedParts: 3 });
     expect(
       gasLimitOf({ reservoir: true, cap: CAP, estimate: M(70), blockGasLimit: block }),
     ).toEqual({
