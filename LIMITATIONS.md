@@ -14,7 +14,9 @@ edit re-publishes every chunk of its content, including chunks already on chain.
 after. Reuse waits on a design note settling occurrences (what reads an author's own occurrence). When the edited revision belongs to another author, only the planning-time base check guards it
 (the ledger's compare-and-swap covers the editor's own HEAD). web3:// reads cover addresses on the client's own chain in ERC-5219 mode. ENS names, other
 chains and manual-mode contracts are reported as unsupported. Streaming an external file buffers and verifies it before emitting any byte. The explicit opt-in
-`streamUnverified` plays one as it downloads and settles the grade at the end, but only for whole files. Verified
+`streamUnverified` plays one as it downloads and settles the grade at the end, but only for whole files. The amsterdam
+gas limit (EIP-8037's reservoir: never clamped at 2^24, state gas held above it) follows the EIP text and has run
+on no chain, since none runs amsterdam yet. Verified
 seeking into IPFS content is planned as per-block verification against the CID (trustless-gateway raw blocks or a
 CAR), not as unverified range reads, which can never be checked against a whole-file sha256. Both packages are
 `private` and have never been published. Do not depend on anything in this repository yet.

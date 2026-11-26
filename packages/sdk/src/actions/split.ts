@@ -262,12 +262,14 @@ export interface SplitPart {
 /**
  * What a part weighs in an atomic batch, from the planner's own pricing (rows, per-level terms, the kernel's floor):
  * the shown gas plus whatever V adds above E, and the whole gas where the block must hold it too. Carried on each
- * sequence part (`SequencePartInput.gas`) so packBatches never re-prices a part from its bare actions.
+ * sequence part (`SequencePartInput.gas`) so packBatches never re-prices a part from its bare actions. The floor's
+ * extra is added to both, so `total − gas` is exactly the part's state gas (the send's gas limit relies on it).
  */
 export function batchGasOf(p: SplitPart): { gas: number; total?: number } {
+  const extra = Math.max(p.rule.E, p.rule.V) - p.rule.E;
   return {
-    gas: p.gas + Math.max(p.rule.E, p.rule.V) - p.rule.E,
-    ...(p.total !== undefined ? { total: p.total } : {}),
+    gas: p.gas + extra,
+    ...(p.total !== undefined ? { total: p.total + extra } : {}),
   };
 }
 
@@ -724,6 +726,28 @@ export function floorMismatch(d: DeploymentInfo, m: GasModel): Reason | null {
   return null;
 }
 
+type Schedule = {
+  hardforks: readonly string[];
+  constants: GasConstants;
+  executionGas?: GasConstants;
+  floor?: FloorModel;
+};
+
+/**
+ * The vendored fee schedule of this deployment's chain: the one `chain.feeSchedule` names, else the one whose
+ * hardforks include `chain.hardfork`; undefined when the document has no `chain` block or no schedule matches.
+ */
+export function feeScheduleOf(d: DeploymentInfo): { name: string; schedule: Schedule } | undefined {
+  const chain = d.chain;
+  if (!chain) return undefined;
+  const all = GAS_SCHEDULES as unknown as Readonly<Record<string, Schedule>>;
+  const name =
+    chain.feeSchedule ??
+    Object.keys(all).find((k) => (all[k] as Schedule).hardforks.includes(chain.hardfork));
+  const schedule = name !== undefined ? all[name] : undefined;
+  return name !== undefined && schedule ? { name, schedule } : undefined;
+}
+
 /**
  * The gas model and cap to split with on this deployment's chain: the schedule `chain.feeSchedule` names, else the
  * one whose hardforks include `chain.hardfork`. Refused, never guessed, when the document has no `chain` block, names a
@@ -740,17 +764,10 @@ export function gasPlanFor(d: DeploymentInfo): GasPlan {
         "the deployment document has no `chain` block naming its fee schedule: pass a gas model",
       ),
     };
-  type Schedule = {
-    hardforks: readonly string[];
-    constants: GasConstants;
-    executionGas?: GasConstants;
-    floor?: FloorModel;
-  };
   const all = GAS_SCHEDULES as unknown as Readonly<Record<string, Schedule>>;
-  const name =
-    chain.feeSchedule ??
-    Object.keys(all).find((k) => (all[k] as Schedule).hardforks.includes(chain.hardfork));
-  const sch = name !== undefined ? all[name] : undefined;
+  const found = feeScheduleOf(d);
+  const name = found?.name;
+  const sch = found?.schedule;
   if (!name || !sch)
     return {
       ok: false,

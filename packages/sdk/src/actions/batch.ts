@@ -8,6 +8,7 @@ import type { Efs } from "../client.js";
 import { EfsFault, type Reason, type RevertInfo, reason } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
 import { setTimer } from "../core/platform.js";
+import { planGasLimit } from "./gaslimit.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
 import {
   classifyWalletError,
@@ -107,15 +108,18 @@ export async function sendPlansAsBatch(
             ],
             revert: est.revert,
           };
+        // The wallet sets each call's gas limit (wallet_sendCalls carries none): only the refusal is the SDK's, by the
+        // same per-profile rule as a single send (gasLimitOf: on amsterdam the cap bounds execution only).
         const cap = txGasCapOf(efs.deployment);
-        if ("gas" in est && est.gas > cap)
+        const limit = "gas" in est ? planGasLimit(efs.deployment, first, est.gas) : undefined;
+        if (limit && !limit.ok)
           return {
             kind: "efs.sendBatch",
             status: "NOT_SENT",
             reason: reason(
               "OVER_TX_GAS_CAP",
               "after-replan",
-              `the first part needs ~${est.gas} gas, over ${cap}`,
+              `the first part needs ~${limit.execution} gas, over ${cap}`,
             ),
           };
         let chainId: number;

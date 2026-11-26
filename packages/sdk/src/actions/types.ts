@@ -48,6 +48,12 @@ export interface Plan {
   calldata: Hex;
   effects: readonly EffectView[];
   basis: Basis;
+  /**
+   * The planner's gas figures for this publication, when a planner made it (PlanInput.gas and .total): `execution`
+   * includes intrinsic and calldata gas, `total` adds the state gas (amsterdam only; total − execution is the state
+   * gas). Not part of the digest. On a reservoir profile the send's gas limit is never below them (gasLimitOf).
+   */
+  plannedGas?: { execution: number; total: number };
 }
 
 export type PlanSequenceResult =
