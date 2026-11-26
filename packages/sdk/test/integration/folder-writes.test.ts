@@ -27,10 +27,11 @@ import {
   planUnhideEntries,
 } from "../../src/files/entries.ts";
 import { type FolderRef, listFolder, lookupEntry, resolvePath } from "../../src/files/folders.ts";
+import { plain, publish } from "../../src/files/plan.ts";
 import { listRemoved } from "../../src/files/removed.ts";
 import { ledgerReadsAbi } from "../../src/generated/abis.ts";
 import { PURPOSES } from "../../src/generated/constants.ts";
-import { bindingKey, positionKey } from "../../src/protocol/keys.ts";
+import { bindingKey, positionKey, subjectId } from "../../src/protocol/keys.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -646,6 +647,59 @@ describe("folder writes (fixture)", () => {
 });
 
 describe("planHideEntries: a folder owner hides another author's entry (fixture)", () => {
+  it("blocks a name whose shown entry has no usable target: a hide masks the position, whatever the target", async () => {
+    const made = await run(
+      w,
+      planCreateFolder(efs, w, { folder: root, name: "block-test", lens: both }),
+    );
+    const here: FolderRef = { kind: "folder", directory: made.review.created.directory };
+    // Bob puts a subject with no file version at junk.bin (a CREATE and no HEAD): it lists as "other", not a file.
+    const salt = `0x${"0b".repeat(32)}` as Hex;
+    const junk = subjectId(B, salt);
+    const nameType = efs.deployment.typeIds["files-name/2"] as Hex;
+    const name = new TextEncoder().encode("junk.bin");
+    const raw = await wb.planActions({
+      actions: [
+        plain({ kind: ACTION.CREATE, saltOrStrength: salt }).action,
+        publish(nameType, name, "files-name/2").action,
+        plain({
+          kind: ACTION.BIND,
+          purpose: PURPOSES.folder,
+          subject: here.directory,
+          role: keccak256(name),
+          target: junk,
+        }).action,
+      ],
+      bodies: ["0x", publish(nameType, name, "files-name/2").body, "0x"],
+      effects: [{ code: "test.junk", args: {} }],
+    });
+    if (raw.status !== "PLANNED") throw new Error(raw.status);
+    expect((await wb.run(raw.plan)).reconcile?.outcome).toBe("COMMITTED");
+    const listed = await listFolder(efs, here, { lens: both });
+    expect(
+      listed.status === "PRESENT" && listed.rows.find((r) => r.name === "junk.bin"),
+    ).toMatchObject({
+      kind: "other",
+      author: B,
+    });
+    const p = await planHideEntries(efs, w, {
+      entries: [{ folder: here, name: "junk.bin" }],
+      lens: both,
+    });
+    expect(p).toMatchObject({
+      status: "PLANNED",
+      review: { entries: [{ shownNow: { author: B }, shownAfter: null }] },
+    });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect((await w.runSequence(p.parts)).state).toBe("COMPLETE");
+    expect(
+      await lookupEntry(efs, { folder: here, name: "junk.bin" }, { lens: both }),
+    ).toMatchObject({
+      status: "MASKED",
+      by: A,
+    });
+  });
+
   it("masks Bob's entry in Alice's folder for views that put Alice first; Unhide undoes it", async () => {
     const made = await run(
       w,
