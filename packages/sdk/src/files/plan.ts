@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // @internal Shared by the Files planners (edit, create, move, remove, restore): the action builders, the gas setup
 // and the content records, so every planner encodes content and prices it the same way.
+
 import { keccak256, sha256 } from "viem";
 import {
   floorMismatch,
@@ -12,6 +13,7 @@ import {
 } from "../actions/split.js";
 import type { ActionData } from "../actions/types.js";
 import { CARRIER, CHUNK_PAYLOAD, chunkTree, encode } from "../content/codec.js";
+import { checkLocator } from "../content/locator.js";
 import { EfsFault, type Reason, reason } from "../core/errors.js";
 import { bytesToHex, type Hex, lower, ZERO_WORD } from "../core/hex.js";
 import type { DeploymentInfo } from "../deployment/manifest.js";
@@ -112,6 +114,20 @@ export function checkContent(content: Uint8Array | ExternalContent): void {
   if (content instanceof Uint8Array) return;
   if (!printableAscii(content.locator))
     throw new EfsFault("MISUSE", "an external locator must be printable ASCII");
+  // A location nobody could ever read would confirm on chain and never open: refuse it before anything is sent.
+  const loc = checkLocator(content.locator);
+  if (!loc.ok)
+    throw new EfsFault(
+      "MISUSE",
+      `the external locator is ${loc.why === "MALFORMED" ? "malformed" : "of a scheme no reader fetches"}${loc.detail ? `: ${loc.detail}` : ""}`,
+      {
+        details: {
+          why: loc.why,
+          scheme: loc.scheme,
+          ...(loc.detail ? { detail: loc.detail } : {}),
+        },
+      },
+    );
   if (!/^0x[0-9a-fA-F]{64}$/.test(content.sha256))
     throw new EfsFault("MISUSE", "sha256 must be 32 bytes of hex");
   if (content.length < 0n || content.length >= 1n << 256n)

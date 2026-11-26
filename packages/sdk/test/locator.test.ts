@@ -10,7 +10,12 @@ import {
 import { header, parsePathQuery } from "../src/content/web3.ts";
 import { withinGateway } from "../src/files/bytes.ts";
 
-const P = DEFAULT_GATEWAYS;
+/** Gateways named by the app: the SDK ships none (PM decision, 2026-11-26). */
+const P = {
+  ...DEFAULT_GATEWAYS,
+  ipfs: ["https://ipfs.io", "https://dweb.link"],
+  arweave: ["https://arweave.net"],
+};
 const CID = "bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy";
 
 describe("locator planning", () => {

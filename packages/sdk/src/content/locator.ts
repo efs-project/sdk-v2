@@ -23,9 +23,14 @@ export interface GatewayPolicy {
   /** The chain the client has RPC endpoints for: web3:// locations on other chains are unsupported. */
   web3ChainId?: number;
 }
+/**
+ * The SDK names no gateway of its own (PM decision, 2026-11-26): which third party sees a reader's IP address and the
+ * content ids it reads is the app's choice, made visibly there (`createEfs({ gateways: { ipfs, arweave } })`). Until
+ * an app names one, an ipfs:// or ar:// location is POLICY_BLOCKED (rule "no-gateway").
+ */
 export const DEFAULT_GATEWAYS: GatewayPolicy = {
-  ipfs: ["https://ipfs.io", "https://dweb.link", "https://trustless-gateway.link"],
-  arweave: ["https://arweave.net", "https://ar-io.net"],
+  ipfs: [],
+  arweave: [],
   allowSchemes: ["ipfs", "ar", "data", "web3"],
   allowInsecureHttp: false,
   allowPrivateHosts: false,
@@ -53,7 +58,7 @@ export type LocatorPlan =
  * Why the gateway policy blocked a location. Only `scheme` can be lifted for one call (allowOrigins, http(s) only);
  * the others are client-wide settings, or (credentials) never.
  */
-export type BlockRule = "scheme" | "insecure-http" | "private-host" | "credentials";
+export type BlockRule = "scheme" | "no-gateway" | "insecure-http" | "private-host" | "credentials";
 
 /** The exact option that would allow a blocked location, in words a developer can act on. */
 export function blockAdvice(label: string, scheme: string, rule: BlockRule): string {
@@ -62,6 +67,8 @@ export function blockAdvice(label: string, scheme: string, rule: BlockRule): str
       return label.includes("://")
         ? `${label}: allow once with { allowOrigins: ["${label}"] }, or always with gateways.allowSchemes including "${scheme}"`
         : `${label}: allow with gateways.allowSchemes including "${scheme}"`;
+    case "no-gateway":
+      return `${label}: name a gateway with gateways.${scheme === "ar" ? "arweave" : "ipfs"} (the SDK has none of its own)`;
     case "insecure-http":
       return `${label}: plain http needs gateways.allowInsecureHttp`;
     case "private-host":
@@ -298,9 +305,11 @@ export function planLocator(locator: string, policy: GatewayPolicy): LocatorPlan
     const path = encodePath(slash < 0 ? "" : body.slice(slash));
     if (path === null || !(scheme === "ipfs" ? CID : AR_ID).test(id))
       return { ok: false, scheme, why: "MALFORMED" };
-    const urls = (scheme === "ipfs" ? policy.ipfs : policy.arweave).map(
-      (g) => `${trim(g)}${scheme === "ipfs" ? "/ipfs" : ""}/${id}${path}`,
-    );
+    const gateways = scheme === "ipfs" ? policy.ipfs : policy.arweave;
+    // No gateway named: a policy choice the app can change, never "unavailable".
+    if (gateways.length === 0)
+      return { ok: false, scheme, why: "POLICY_BLOCKED", rule: "no-gateway" };
+    const urls = gateways.map((g) => `${trim(g)}${scheme === "ipfs" ? "/ipfs" : ""}/${id}${path}`);
     return { ok: true, scheme, urls };
   }
   if (scheme === "data") {
@@ -327,4 +336,40 @@ export function planLocator(locator: string, policy: GatewayPolicy): LocatorPlan
   }
   // web3:// is read through the EfsWeb3Gateway once contracts ship it (C10); bzz:// and others are not fetched yet.
   return { ok: false, scheme, why: "UNSUPPORTED_LOCATOR" };
+}
+
+/** Whether a location could ever be read (checkLocator). */
+export type LocatorCheck =
+  | { ok: true; scheme: string }
+  | { ok: false; why: "MALFORMED" | "UNSUPPORTED_LOCATOR"; scheme: string; detail?: string };
+
+/** Every scheme a reader can enable, every gateway named: what a location's shape alone allows. */
+const ANY_READER: GatewayPolicy = {
+  ipfs: ["https://gateway.invalid"],
+  arweave: ["https://gateway.invalid"],
+  allowSchemes: ["https", "http", "ipfs", "ar", "data", "web3"],
+  allowInsecureHttp: true,
+  allowPrivateHosts: true,
+};
+
+/**
+ * Whether a files-external/1 locator could ever be read, by its shape alone: pure, for checking one as it is typed
+ * (as checkName is for names). MALFORMED: not a well-formed location of its scheme (a bad id, a path that escapes, a
+ * URL carrying credentials, which is never fetched). UNSUPPORTED_LOCATOR: a scheme no reader of this SDK fetches. A
+ * location a reader's policy blocks (https off, plain http, a private host, a chain it has no RPC for, no gateway) is
+ * readable by another reader, so it passes: read policy is each reader's.
+ */
+export function checkLocator(locator: string): LocatorCheck {
+  const p = planLocator(locator, ANY_READER);
+  if (p.ok) return { ok: true, scheme: p.scheme };
+  if (p.why === "POLICY_BLOCKED")
+    return p.rule === "credentials"
+      ? {
+          ok: false,
+          why: "MALFORMED",
+          scheme: p.scheme,
+          detail: "a URL carrying credentials is never fetched",
+        }
+      : { ok: true, scheme: p.scheme };
+  return { ok: false, why: p.why, scheme: p.scheme, ...(p.detail ? { detail: p.detail } : {}) };
 }

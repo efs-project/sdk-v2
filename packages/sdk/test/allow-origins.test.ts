@@ -72,7 +72,8 @@ describe("publisher https:// locations", () => {
         "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
       ),
     );
-    expect(r.grade).toBe("UNAVAILABLE"); // the ipfs location was tried (and failed here), the https one never
+    // Both blocked by policy: the https one by scheme, the ipfs one because the SDK names no gateway of its own.
+    expect(r.grade).toBe("POLICY_BLOCKED");
     expect(r.blockedOrigins).toEqual(["https://files.example.org"]);
     expect(n.log.map((x) => x.url).some((u) => u.startsWith("https://files.example.org"))).toBe(
       false,
@@ -84,6 +85,19 @@ describe("publisher https:// locations", () => {
     expect(only.reason?.detail).toContain('allowOrigins: ["https://files.example.org"]');
     expect(only.reason?.detail).toContain("gateways.allowSchemes");
     expect(only.attempts[0]?.location).toBe("https://files.example.org");
+  });
+
+  it("an ipfs location with no gateway named is blocked by policy, never 'unavailable', with the option that allows it", async () => {
+    const n = net();
+    const cid = "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+    const r = await readBytes(client(n.fetch), file(cid));
+    expect(r.grade).toBe("POLICY_BLOCKED");
+    expect(r.reason?.detail).toContain("gateways.ipfs");
+    expect(n.log).toEqual([]); // nothing was fetched
+    // Named by the app: tried.
+    const named = await readBytes(client(n.fetch, { ipfs: ["https://gw.example"] }), file(cid));
+    expect(named.grade).not.toBe("POLICY_BLOCKED");
+    expect(n.log.some((x) => x.url.startsWith("https://gw.example/ipfs/"))).toBe(true);
   });
 
   it("allowOrigins allows exactly the listed origin, for that call only, and still verifies", async () => {
