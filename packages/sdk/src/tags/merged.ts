@@ -803,14 +803,16 @@ async function gather(
       evidence,
     };
   let limited = syn.limited;
-  const seen = new Set<string>([id]);
+  // One candidate per place, at its fewest hops (a place reached both as a "same" and as a swap keeps the nearer;
+  // at equal hops the "same").
   type Cand = MergedList & { order: number[] };
-  const cands: Cand[] = [];
+  const byPlace = new Map<string, Cand>();
   for (const p of syn.places) {
     const at = lower(p.id);
-    if (seen.has(at) || p.hops > maxHops) continue;
-    seen.add(at);
-    cands.push({ place: at, how: "same", hops: p.hops, order: [] });
+    if (at === id || p.hops > maxHops) continue;
+    const prev = byPlace.get(at);
+    if (!prev || p.hops < prev.hops)
+      byPlace.set(at, { place: at, how: "same", hops: p.hops, order: [] });
   }
   // Word swaps: each word of the path stays, or takes one of its word-level synonyms (that synonym's hops).
   const words = syn.topic.words;
@@ -834,12 +836,19 @@ async function gather(
     if (walked > MAX_SWAP_WALK) limited = true;
     // Nearest first; at equal hops, the swap that changes later words first (last word first).
     swaps.sort((a, b) => a.hops - b.hops || lastWordFirst(a.at, b.at));
-    if (swaps.length > MAX_SWAPS) limited = true;
+    // Only swaps that could still change the set use a slot: never the topic itself, a place already at as few hops,
+    // or a path already tried (the first, nearest, is kept).
     const tried: ((typeof swaps)[number] & { id: Hex })[] = [];
-    for (const x of swaps.slice(0, MAX_SWAPS)) {
+    const tries = new Set<string>();
+    for (const x of swaps) {
       const at = lower(pathId(t, x.words));
-      if (seen.has(at)) continue; // the topic itself, a place already joined, or a swap already tried
-      seen.add(at);
+      const prev = byPlace.get(at);
+      if (at === id || tries.has(at) || (prev && prev.hops <= x.hops)) continue;
+      if (tried.length === MAX_SWAPS) {
+        limited = true;
+        break;
+      }
+      tries.add(at);
       tried.push({ ...x, id: at });
     }
     const reg = await registered(
@@ -851,8 +860,10 @@ async function gather(
     evidence.requests += reg.evidence.requests;
     if (!reg.ok) return { ok: false, status: "UNKNOWN", reason: reg.reason, evidence };
     for (const x of tried)
-      if (reg.value.has(x.id)) cands.push({ place: x.id, how: "swap", hops: x.hops, order: x.at });
+      if (reg.value.has(x.id))
+        byPlace.set(x.id, { place: x.id, how: "swap", hops: x.hops, order: x.at });
   }
+  const cands = [...byPlace.values()];
   cands.sort(
     (a, b) =>
       a.hops - b.hops ||

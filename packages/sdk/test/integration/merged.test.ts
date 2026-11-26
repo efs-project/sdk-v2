@@ -337,6 +337,21 @@ describe("topicItemsMerged (fixture)", () => {
     expect(near.lists.map((l) => l.hops)).toEqual([0, 1, 1]);
   });
 
+  it("a place reached both ways is listed at its fewest hops: a one-word swap beats a two-hop 'same'", async () => {
+    // /mj1/mjx = /mk1/mk2 = /mj1/mjy (paths, 2 hops), and mjx = mjy (words): /mj1/mjy is one swap away.
+    await same(we, ["mjx"], ["mjy"]);
+    await same(we, ["mj1", "mjx"], ["mk1", "mk2"]);
+    await same(we, ["mk1", "mk2"], ["mj1", "mjy"]);
+    const page = present(
+      await topicItemsMerged(efs, ["mj1", "mjx"], { view: "mine", lens: lens(E) }),
+    );
+    expect(page.lists.map((l) => [l.place, l.how, l.hops])).toEqual([
+      [pathId(T, ["mj1", "mjx"]), "self", 0],
+      [pathId(T, ["mk1", "mk2"]), "same", 1],
+      [pathId(T, ["mj1", "mjy"]), "swap", 1],
+    ]);
+  });
+
   it("a synonym list the chain refuses is named in `missing`, and the rest still shows; the topic's own refused is INVALID", async () => {
     // Reuses /ma1 and /ma2.
     const refuse = (place: Hex) => {
