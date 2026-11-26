@@ -29,7 +29,7 @@
 | `@efs/sdk/links` | the route and link grammar alone (`link`, `parseLink`, `formatRealm`, `splitRealm`): no runtime dependencies, for startup routers | yes |
 | `@efs/sdk/files` | the Files reader (`resolve`, `list`, `lookup`, `open`, `read`, `stream`, `history`, …) | yes |
 | `@efs/sdk/actions` | `createWriter`, plans, `review`, `send`, `reconcile`, `memoryJournal` | no |
-| `@efs/sdk/tags` | topics, tags and homes: ids and the chain's word grammar, `planTag` / `planDeny` / `planUntag`, `planLabel` / `planSame` / `planBroader`, `topicItems` (Mine, Everyone, Raw), `tagsOf`, `topicChildren`, `wordPage`, `topicPath`, `labelOf` / `topicName`, `fileNames`, `topicSynonyms`, `lensTagsOf`, the counts (docs/design/tags-0.1.md) | reads yes, planners no |
+| `@efs/sdk/tags` | topics, tags and homes: ids and the chain's word grammar, `planTag` / `planDeny` / `planUntag`, `planLabel` / `planSame` / `planBroader`, `topicItems` (Mine, Everyone, Raw), `tagsOf`, `topicChildren`, `wordPage`, `topicPath`, `labelOf` / `topicName`, `fileNames`, `topicSynonyms`, `topicBroader`, `lensTagsOf`, the counts (docs/design/tags-0.1.md) | reads yes, planners no |
 | `@efs/sdk/web` | browser helpers (no journal) | yes |
 | `@efs/sdk/web/journal` | `indexedDbJournal`, submission lock (Web Locks) | no |
 | `@efs/sdk/node` | `fileJournal`, file-system stores (Node condition only) | no |

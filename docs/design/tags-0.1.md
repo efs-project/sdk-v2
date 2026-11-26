@@ -56,7 +56,11 @@
 >   word page only), found from both sides (each Lens author's own statements, and the list of statements naming the
 >   topic), each edge decided by the Lens law at its position (an earlier "not the same" decides it), at most 4 hops,
 >   16 topics and 16 entries per list, with `limited` and `complete` saying when it stopped short or can't prove an
->   absence; ids are never merged;
+>   absence; ids are never merged. Each joined place carries `said`, its deciding statement's own direction ("subject
+>   is the same as other"), so its author can release exactly that statement;
+> - `topicBroader(topic, { lens })`: one hop each way over "broader" statements, the topics it is under (`broader`)
+>   and the topics under it (`narrower`), found from both sides and each decided by the Lens law at its position, with
+>   `said`, `limited` and `complete` as above;
 > - `lensTagsOf(thing, { view, lens, rows, entries, cursor })`: a thing's tags as a Lens sees them, applied by the SDK
 >   over the chain's `about` list (which reads no Lens), per (place, thing): the first Lens author with a stance decides
 >   (a yes: the Lens tier with their number; "not this": hidden, counted); with none, Everyone shows the public tier

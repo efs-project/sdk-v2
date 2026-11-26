@@ -64,8 +64,15 @@ export type {
   TopicStatementReview,
 } from "./statements.js";
 export { langTag, planBroader, planLabel, planSame } from "./statements.js";
-export type { Joined, SynonymOpts, SynonymsResult, WordSynonyms } from "./synonyms.js";
-export { topicSynonyms } from "./synonyms.js";
+export type {
+  BroaderResult,
+  Joined,
+  Related,
+  SynonymOpts,
+  SynonymsResult,
+  WordSynonyms,
+} from "./synonyms.js";
+export { topicBroader, topicSynonyms } from "./synonyms.js";
 export type { GrammarCheck, TopicId, TopicTypes } from "./topics.js";
 export {
   broaderAction,
