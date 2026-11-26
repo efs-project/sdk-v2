@@ -277,12 +277,11 @@ export async function listRemoved(
       if (!head.ok) return head;
       if (!slice.ok) return slice;
       const count = BigInt(head.value[0]);
-      // This page is the list's entries from `from`, at most `limit`: a shorter slice would drop entries silently.
-      const wanted = Number(count > from ? count - from : 0n);
-      const expected = Math.min(wanted, Number(limit));
-      if (slice.value.length < expected)
-        return bad("scopeSlice (fewer entries than the list holds)");
-      const ordinals = [...slice.value].slice(0, wanted);
+      // This page is exactly the list's entries from `from`, at most `limit` (BitmapStore.scopeSlice, no padding): a
+      // shorter slice would drop entries silently, a longer one is more than was asked.
+      const expected = Math.min(Number(count > from ? count - from : 0n), Number(limit));
+      if (slice.value.length !== expected) return bad("scopeSlice (length)");
+      const ordinals = [...slice.value];
       if (!strictlyIncreasing(ordinals)) return bad("scopeSlice (entries out of order)");
       // 3. Each ordinal's position, then the author's head there and the position's cell (its name role).
       const positions: Hex[] = [];
@@ -301,6 +300,9 @@ export async function listRemoved(
           if (chainStatus(p.value[0]) !== "PRESENT") return bad("bindingPosition (status)");
           positions.push(lower(p.value[1]));
         }
+        // A scope list holds one entry per position: two entries at one position would list a row twice.
+        if (new Set(positions).size !== positions.length)
+          return bad("bindingPosition (two entries share a position)");
       }
       const rows: RemovedRow[] = [];
       if (positions.length > 0) {

@@ -126,6 +126,11 @@ export interface FileVersionsCursor {
   /** The list head the first page read: if it moved, `changed` is set and the scan carries on. */
   count: number;
   live: number;
+  /**
+   * The lowest entry (an admission ordinal, in decimal) the pages so far returned: the next page's entries, further
+   * back in the list, must all be lower, so no entry can be counted twice toward `total`. "" before any entry.
+   */
+  lowest: string;
   lens: string;
   includeRemoved: boolean;
 }
@@ -235,7 +240,8 @@ export async function fileVersions(
       lower(c.file) !== subject ||
       c.lens !== lensKey(principals) ||
       c.includeRemoved !== includeRemoved ||
-      ![c.before, c.found, c.count, c.live].every((n) => Number.isInteger(n) && n >= 0))
+      ![c.before, c.found, c.count, c.live].every((n) => Number.isInteger(n) && n >= 0) ||
+      !/^(\d+)?$/.test(c.lowest))
   )
     throw misuse("this cursor is for another file, Lens or includeRemoved setting");
 
@@ -414,6 +420,7 @@ export async function fileVersions(
       const n = Math.min(limit, start);
       const from = start - n;
       const rows: FileVersion[] = [];
+      let lowest = c ? c.lowest : "";
       if (n > 0) {
         ctx.requests += 1;
         const [sl] = await callsAt(s, at, [
@@ -429,6 +436,10 @@ export async function fileVersions(
         if (admissions.length !== n) return badReply("postingSliceOf (length)");
         if (!strictlyIncreasing(admissions))
           return badReply("postingSliceOf (entries out of order)");
+        // Further back than every earlier page: an entry served twice across pages would count twice toward `total`.
+        if (c && c.lowest !== "" && admissions.some((x) => BigInt(x) >= BigInt(c.lowest)))
+          return badReply("postingSliceOf (an entry an earlier page already returned)");
+        lowest = String(admissions[0]);
         ctx.requests += 1;
         const [ah] = await callsAt(s, at, [
           callOf(d.readers.ledgerViews, ledgerViewsAbi, "authorHeads", [
@@ -472,6 +483,7 @@ export async function fileVersions(
               live: c ? c.live : live,
               lens: lensKey(principals),
               includeRemoved,
+              lowest,
             }
           : undefined;
       return done({

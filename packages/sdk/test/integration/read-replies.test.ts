@@ -10,9 +10,16 @@ import { beforeAll, describe, expect, inject, it } from "vitest";
 import { ACTION, createWriter, memoryJournal } from "../../src/actions/index.ts";
 import type { FetchLike } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
-import type { Address, Hex, PrincipalId, RecordId, SubjectId } from "../../src/core/hex.ts";
+import {
+  type Address,
+  type Hex,
+  lower,
+  type PrincipalId,
+  type RecordId,
+  type SubjectId,
+} from "../../src/core/hex.ts";
 import { openFile } from "../../src/files/bytes.ts";
-import { planCreateFile, planRemoveEntries } from "../../src/files/entries.ts";
+import { planCreateFile, planCreateFolder, planRemoveEntries } from "../../src/files/entries.ts";
 import { type FolderRef, listFolder, openObject } from "../../src/files/folders.ts";
 import { listRemoved } from "../../src/files/removed.ts";
 import {
@@ -377,9 +384,27 @@ describe("a position's cell is bound to the position asked about", () => {
     expect(honest.status).toBe("PRESENT");
     const r = await listRemoved(forgedRole(), { folder: root, author });
     expect(r).toMatchObject({ status: "UNKNOWN" });
-    // a scope slice shorter than the list it pages: entries would drop silently
+    // a scope slice shorter than the list it pages: entries would drop silently; longer: more than was asked
     const short = lying(bitmapStoreAbi, "scopeSlice", () => [[]]);
     expect(await listRemoved(short, { folder: root, author })).toMatchObject({ status: "UNKNOWN" });
+    const long = lying(bitmapStoreAbi, "scopeSlice", ([xs]) => [[...(xs as bigint[]), 10n ** 15n]]);
+    expect(await listRemoved(long, { folder: root, author })).toMatchObject({ status: "UNKNOWN" });
+    // two entries at one position would list a row twice: a second removed entry, then every position forged alike
+    await run(planCreateFolder(efs, w, { folder: root, name: "read-replies-folder" }));
+    await run(
+      planRemoveEntries(efs, w, { entries: [{ folder: root, name: "read-replies-folder" }] }),
+    );
+    const two = await listRemoved(efs, { folder: root, author });
+    expect(two.status === "PRESENT" && two.rows.length).toBe(2);
+    const first = lower(
+      positionKey(
+        PURPOSES.folder,
+        deployment.root.directoryRecordId,
+        keccak256(toHex("read-replies.txt")),
+      ),
+    );
+    const same = lying(ledgerReadsAbi, "bindingPosition", ([st]) => [st, first]);
+    expect(await listRemoved(same, { folder: root, author })).toMatchObject({ status: "UNKNOWN" });
   });
 });
 

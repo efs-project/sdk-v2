@@ -367,6 +367,29 @@ describe("fileVersions (fixture)", () => {
     expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
   });
 
+  it("an entry an earlier page returned, served again, is the endpoint's fault (it would count twice)", async () => {
+    const first = await fileVersions(
+      efs,
+      { kind: "file", subject: file },
+      { lens: lensOf(C), limit: 1 },
+    );
+    if (first.status !== "PRESENT" || first.public.status !== "PRESENT")
+      throw new Error(first.status);
+    const next = first.public.next as FileVersionsCursor;
+    expect(next.lowest).toMatch(/^\d+$/);
+    const again = rewriting(indexAbi, "postingSliceOf", ([st, , ...rest]) => [
+      st,
+      [BigInt(next.lowest)],
+      ...rest,
+    ]);
+    const v = await fileVersions(
+      again,
+      { kind: "file", subject: file },
+      { lens: lensOf(C), limit: 1, cursor: next },
+    );
+    expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+  });
+
   it("a subject never created is ABSENT_PROVEN", async () => {
     const v = await fileVersions(efs, {
       kind: "file",
