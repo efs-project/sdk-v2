@@ -753,6 +753,22 @@ describe("runSequence (fixture)", () => {
     expect([batching.batches, batching.sends]).toEqual([1, 0]); // one approval, no per-part prompts
   });
 
+  it("the same parts saved again while their batch is in flight never reach the wallet: ALREADY_ATTEMPTED", async () => {
+    // The wallet takes the batch and runs nothing yet (EIP-5792 status 100: pending), so its parts stay in flight.
+    const pending = wallet(ERIN, { atomic5792: true, failStatus: 100 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: pending },
+      journal: memoryJournal(),
+    });
+    const same = parts(w.principal, "seq-batch-twice");
+    const first = await w.runSequence(same, { settleMs: 300, pollMs: 50 });
+    expect(first).toMatchObject({ state: "IN_FLIGHT", mode: "batch" });
+    await rpc("evm_mine", []); // a block later: new plans (their deadlines moved), the same publications
+    const twice = await w.runSequence(same, { settleMs: 300, pollMs: 50 });
+    expect(twice).toMatchObject({ state: "NOT_STARTED", reason: { code: "ALREADY_ATTEMPTED" } });
+    expect([pending.batches, pending.sends]).toEqual([1, 0]);
+  });
+
   it("a refused batch sends nothing; the same save can then go part by part", async () => {
     const journal = memoryJournal();
     const refusing = wallet(FRANK, { atomic5792: true, refuseBatch: true });

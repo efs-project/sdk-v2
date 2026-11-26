@@ -11,6 +11,7 @@ import { type Address, type Hex, lower } from "../core/hex.js";
 import { errorAbi } from "../generated/abis.js";
 import { ERROR_CATALOG } from "../generated/errors.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
+import { actionsHash } from "./plan.js";
 import { txGasCapOf } from "./split.js";
 import type { Plan, SendResult } from "./types.js";
 
@@ -245,6 +246,38 @@ export { TX_GAS_CAP, txGasCapOf } from "./split.js";
 const SPLIT_TARGET = 14_000_000n;
 const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
 
+/**
+ * @internal The attempt of another plan for the same publication (the same actions and bodies) from this account that
+ * may be on its way (SUBMISSION_POSSIBLE or SUBMITTED, not yet decided), or undefined. A second plan of one
+ * publication (a double submit, or the same parts saved again while the first is still in flight) has a new id, so
+ * the plan id alone can't stop it, and its simulation passes while the first is unconfirmed. Read under the account's
+ * lock, so two sends can't both miss each other. Once the first is decided COMMITTED the ledger itself refuses the
+ * second in simulation (E_CAS: STALE).
+ */
+export async function inFlightTwin(
+  journal: Journal,
+  lock: string,
+  plan: Plan,
+): Promise<AttemptRecord | undefined> {
+  const mine = actionsHash(plan.actions);
+  const bodies = plan.bodies.map((b) => b.toLowerCase()).join(",");
+  return (await journal.unresolved(lock)).find(
+    (r) =>
+      r.planId !== plan.id &&
+      (r.stage === "SUBMISSION_POSSIBLE" || r.stage === "SUBMITTED") &&
+      actionsHash(r.plan.actions) === mine &&
+      r.plan.bodies.map((b) => b.toLowerCase()).join(",") === bodies,
+  );
+}
+
+/** @internal NOT_SENT's reason when the same publication is already in flight. */
+export const twinReason = (twin: AttemptRecord): Reason =>
+  reason(
+    "ALREADY_ATTEMPTED",
+    "after-reconcile",
+    `the same publication is already in flight (attempt ${twin.planId}, ${twin.stage}): settle it from the ledger; it is never sent twice`,
+  );
+
 export async function sendPlan(
   efs: Efs,
   journal: Journal,
@@ -275,6 +308,10 @@ export async function sendPlan(
               ),
             };
       }
+      // The same publication under another plan, still in flight: nothing is sent, and the wallet is never asked.
+      const twin = await inFlightTwin(journal, lock, plan);
+      if (twin)
+        return { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: twinReason(twin) };
       const est = await estimate(efs, plan, o);
       if ("revert" in est)
         return {

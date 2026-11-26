@@ -797,6 +797,15 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   saved — checking" and `reconcileSequence(sequenceId)` once the cause is fixed: the ledger decides, and nothing is
   sent twice. Journal failures up to and including the write-ahead write are not thrown: they return NOT_SENT
   JOURNAL_UNAVAILABLE. A non-EfsFault error is rethrown as INVARIANT with the original as `cause`.
+- **One publication, one wallet request:** within one `runSequence` or `resume` a part is planned once, and resume never
+  sends a part that is in flight. A second save of the same parts (a double submit, or the same parts saved again)
+  is planned afresh, with a new plan id, and the journal stops it before the wallet in both cases:
+  - while the first is still on its way (its attempt SUBMISSION_POSSIBLE or SUBMITTED, single part or batch), it is
+    NOT_SENT with reason ALREADY_ATTEMPTED (`retry: "after-reconcile"`), and the save is NOT_STARTED: settle the
+    first, and abandon the second;
+  - once the first is COMMITTED, the ledger refuses the second in simulation (E_CAS), so the save is STALE.
+
+  Only the same publication (the same actions and bodies) is held back. Any other save goes out as usual.
 - **Each part keeps its `deadlineSeconds`:** it is applied each time the part is planned, including on resume.
 - **Wallet errors:** NOT_SENT only for errors that mean the request was refused before signing; the attempt is
   stamped NOT_SENT, so nothing waits on it. They are 4001 USER_REJECTED and 4100 WALLET_UNAUTHORIZED

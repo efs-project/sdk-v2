@@ -12,8 +12,10 @@ import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./
 import {
   classifyWalletError,
   estimate,
+  inFlightTwin,
   notify,
   type SendOpts,
+  twinReason,
   txGasCapOf,
   walletMismatch,
 } from "./send.js";
@@ -87,6 +89,11 @@ export async function sendPlansAsBatch(
                 `a part was already attempted (${prior.stage})`,
               ),
             };
+        }
+        // A part whose publication is already in flight under another plan: nothing is sent.
+        for (const p of plans) {
+          const twin = await inFlightTwin(journal, lockKey(first), p);
+          if (twin) return { kind: "efs.sendBatch", status: "NOT_SENT", reason: twinReason(twin) };
         }
         // Only the first part can be simulated now: later parts need the earlier nonces used first. The split
         // planned every part under the gas budget.
