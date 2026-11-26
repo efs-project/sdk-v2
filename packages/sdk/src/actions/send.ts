@@ -346,11 +346,14 @@ export async function sendPlan(
           kind: "efs.send",
           status: "NOT_SENT",
           planId: plan.id,
-          reason: reason(
-            "OVER_TX_GAS_CAP",
-            "after-replan",
-            `${limit.detail}: split it into about ${suggestedParts} publications`,
-          ),
+          reason: {
+            ...reason(
+              "OVER_TX_GAS_CAP",
+              "after-replan",
+              `${limit.detail}: split it into about ${suggestedParts} publications`,
+            ),
+            gas: { estimate: est.gas, cap, suggestedParts },
+          },
           gas: { estimate: est.gas, cap, suggestedParts },
         };
       }

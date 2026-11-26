@@ -35,6 +35,7 @@ import {
   type AttemptStage,
   type Journal,
   lockKey,
+  type PartUnit,
   type SequenceEffect,
   type SequencePart,
   type SequenceRecord,
@@ -123,8 +124,13 @@ export interface SequenceProgress {
   effect?: SequenceEffect;
 }
 
-/** A part as a planner made it: PlanInput.gas and .total carry its batching estimate and its whole gas. */
-export type SequencePartInput = Omit<PlanInput, "account" | "nonce">;
+/**
+ * A part as a planner made it: PlanInput.gas and .total carry its batching estimate and its whole gas, and `units`
+ * where it may be re-split (SequencePart.units).
+ */
+export type SequencePartInput = Omit<PlanInput, "account" | "nonce"> & {
+  units?: readonly PartUnit[];
+};
 
 interface Deps {
   efs: Efs;
@@ -756,9 +762,11 @@ export function sequenceOps(d: Deps) {
       if (limit !== undefined && limit < (r.batchMax ?? Number.POSITIVE_INFINITY))
         r = await save(
           { ...r, batchMax: limit },
-          limit === 1
-            ? "the wallet's batch failed: part by part from here on"
-            : `the wallet's batch failed: at most ${limit} parts per request from here on`,
+          sent.status === "NOT_SENT" && sent.reason.code === "OVER_TX_GAS_CAP"
+            ? `part ${(g[0] as number) + 1} alone is over the per-transaction cap: part by part from here on`
+            : limit === 1
+              ? "the wallet's batch failed: part by part from here on"
+              : `the wallet's batch failed: at most ${limit} parts per request from here on`,
         );
       if (done) return { done };
       const why =
@@ -774,10 +782,51 @@ export function sequenceOps(d: Deps) {
       return { done, ...(why ? { reason: why } : {}), ...(again ? { again } : {}) };
     };
 
+    /**
+     * Part `i` was refused as over the per-transaction cap, before anything was sent (NOT_SENT OVER_TX_GAS_CAP): its
+     * statements hit lists longer than the planner could see. Cut it between its units and go on, when it has units,
+     * no attempt of its plan reached a wallet, and the depth bound allows; else stop, a single unit as "never".
+     */
+    const overCap = async (
+      i: number,
+      planId: Hex,
+      why: Reason,
+    ): Promise<{ done: boolean; reason?: Reason; again?: boolean; resplit?: boolean }> => {
+      const attempt = await journal.get(planId);
+      const part = r.parts[i] as SequencePart;
+      const reached =
+        attempt !== undefined && attempt.stage !== "PLANNED" && attempt.stage !== "NOT_SENT";
+      const depth = part.splitDepth ?? 0;
+      const pieces =
+        reached || depth >= MAX_SPLIT_DEPTH ? null : resplit(part, why.gas?.suggestedParts ?? 2);
+      if (!pieces) {
+        // Not cut: settle the part as any refused send is (a plan that never went out is dropped, so the save is
+        // NOT_STARTED or PARTIAL; one that may have reached a wallet stays in flight).
+        r = await reconcileParts(r, o, 0);
+        const single = validUnits(part) && (part.units as readonly PartUnit[]).length === 1;
+        return {
+          done: false,
+          reason: single
+            ? {
+                ...why,
+                retry: "never",
+                detail: `${why.detail ?? "over the per-transaction cap"} (it is one unit, a single statement or entry: it can't be split further)`,
+              }
+            : why,
+        };
+      }
+      const parts = [...r.parts.slice(0, i), ...pieces, ...r.parts.slice(i + 1)];
+      r = await save(
+        { ...r, parts: renumber(parts) },
+        `part ${i + 1} was too large for one transaction: split into ${pieces.length}`,
+      );
+      return { done: false, again: true, resplit: true };
+    };
+
     /** Part `i` by itself: planned just in time, sent, and waited for. */
     const sendOne = async (
       i: number,
-    ): Promise<{ done: boolean; reason?: Reason; again?: boolean }> => {
+    ): Promise<{ done: boolean; reason?: Reason; again?: boolean; resplit?: boolean }> => {
       const part = r.parts[i] as SequencePart;
       const planned = await d.plan(partInput(part), o);
       if (planned.status !== "PLANNED") return { done: false, reason: planned.reason };
@@ -795,6 +844,8 @@ export function sequenceOps(d: Deps) {
         planned.plan,
         asking(o, r, [i], "sequential"),
       );
+      if (sent.status === "NOT_SENT" && sent.reason.code === "OVER_TX_GAS_CAP")
+        return overCap(i, planned.plan.id, sent.reason);
       // Bounded by settleMs, like the batch wait: when it runs out the part stays SUBMITTED (in flight, journaled),
       // never failed; reconcile settles it later from the ledger.
       if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o, settleMs);
@@ -817,15 +868,17 @@ export function sequenceOps(d: Deps) {
       return { done: false, reason: why };
     };
 
-    for (let replans = 0; ; replans++) {
+    // batchMax only falls, and at 1 nothing is batched: that re-groups a few times at most. A re-split adds pieces
+    // that are re-split at most MAX_SPLIT_DEPTH levels, so it has its own, larger bound.
+    for (let replans = 0, splits = 0; ; ) {
       const remaining = r.parts.flatMap((p, i) => (p.committed ? [] : [i]));
       let again = false;
       for (const g of await groupsFor(r, remaining, o)) {
         mode = g.length > 1 ? "batch" : "sequential";
-        const out = g.length > 1 ? await sendBatch(g) : await sendOne(g[0] as number);
+        const out: { done: boolean; reason?: Reason; again?: boolean; resplit?: boolean } =
+          g.length > 1 ? await sendBatch(g) : await sendOne(g[0] as number);
         if (out.done) continue;
-        // batchMax only falls, and at 1 nothing is batched: this re-groups a few times at most.
-        if (out.again && replans < 32) {
+        if (out.again && (out.resplit ? splits++ < 512 : replans++ < 32)) {
           again = true;
           break;
         }
@@ -880,6 +933,7 @@ export function sequenceOps(d: Deps) {
             ...(p.deadlineSeconds !== undefined ? { deadlineSeconds: p.deadlineSeconds } : {}),
             ...(p.gas !== undefined ? { gas: p.gas } : {}),
             ...(p.total !== undefined ? { total: p.total } : {}),
+            ...(validUnits(p) ? { units: p.units } : {}),
           })),
           state: "NOT_STARTED",
           history: [{ state: "NOT_STARTED", at: Date.now() }],
@@ -960,6 +1014,8 @@ function smallerBatch(
 ): number | undefined {
   const half = Math.max(1, Math.floor(k / 2));
   if (sent.status === "NOT_SENT") {
+    // The first part alone is over the per-transaction cap: part by part, where it can be re-split.
+    if (sent.reason.code === "OVER_TX_GAS_CAP") return 1;
     if (sent.walletCode === 5740) return half;
     if ([4200, 5700, 5710, 5750, 5760, -32602].includes(sent.walletCode ?? 0)) return 1;
     return undefined;
@@ -969,10 +1025,75 @@ function smallerBatch(
   return undefined;
 }
 
+/** How many times a planned part may be re-split, at most (each level at least doubles its pieces). */
+export const MAX_SPLIT_DEPTH = 6;
+
+/** Units that describe a part exactly: whole runs, at least one action each, covering every action in order. */
+function validUnits(p: { actions: readonly unknown[]; units?: readonly PartUnit[] }): boolean {
+  const u = p.units;
+  if (!u || u.length === 0) return false;
+  let n = 0;
+  for (const x of u) {
+    if (!Number.isSafeInteger(x.actions) || x.actions < 1 || typeof x.effect !== "object")
+      return false;
+    n += x.actions;
+  }
+  return n === p.actions.length;
+}
+
+/**
+ * @internal A part too large for one transaction, cut into at most `pieces` parts of near-equal unit counts, in
+ * order, only between units (never inside a folder entry's actions or between a statement and its registration).
+ * Each piece carries its units' effects (a registration-only effect only when it carries nothing else) and no gas
+ * figures (they are not known per piece). Null when the part can't be cut: no valid units, or a single unit.
+ */
+export function resplit(part: SequencePart, pieces: number): SequencePart[] | null {
+  if (!validUnits(part)) return null;
+  const units = part.units as readonly PartUnit[];
+  const k = Math.min(Math.max(2, Math.floor(pieces)), units.length);
+  if (k < 2) return null;
+  const out: SequencePart[] = [];
+  let unit = 0;
+  let action = 0;
+  for (let i = 0; i < k; i++) {
+    const take = Math.floor((units.length * (i + 1)) / k) - Math.floor((units.length * i) / k);
+    const mine = units.slice(unit, unit + take);
+    const n = mine.reduce((t, u) => t + u.actions, 0);
+    const effects = mine.map((u) => u.effect);
+    const kept = effects.filter((e) => e.args["stage"] !== "register");
+    out.push({
+      actions: part.actions.slice(action, action + n),
+      bodies: part.bodies.slice(action, action + n),
+      effects: kept.length ? kept : effects.slice(0, 1),
+      units: mine,
+      ...(part.deadlineSeconds !== undefined ? { deadlineSeconds: part.deadlineSeconds } : {}),
+      splitDepth: (part.splitDepth ?? 0) + 1,
+    });
+    unit += take;
+    action += n;
+  }
+  return out;
+}
+
+/** Every effect's `part` / `parts` arguments (where it has them) set to its part's place in `parts`. */
+function renumber(parts: readonly SequencePart[]): SequencePart[] {
+  const total = String(parts.length);
+  const fix = (e: EffectView, i: number): EffectView =>
+    e.args["part"] !== undefined && e.args["parts"] !== undefined
+      ? { ...e, args: { ...e.args, part: String(i + 1), parts: total } }
+      : e;
+  return parts.map((p, i) => ({
+    ...p,
+    effects: p.effects.map((e) => fix(e, i)),
+    ...(p.units ? { units: p.units.map((u) => ({ ...u, effect: fix(u.effect, i) })) } : {}),
+  }));
+}
+
 const partInput = (p: SequencePart): SequencePartInput => ({
   actions: p.actions,
   bodies: p.bodies,
   effects: p.effects,
+  ...(p.units ? { units: p.units } : {}),
   ...(p.deadlineSeconds !== undefined ? { deadlineSeconds: p.deadlineSeconds } : {}),
   ...(p.gas !== undefined ? { gas: p.gas } : {}),
   ...(p.total !== undefined ? { total: p.total } : {}),

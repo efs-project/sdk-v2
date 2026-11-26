@@ -269,6 +269,7 @@ export interface Reason {
   floor?: { blockNumber: bigint; blockHash?: Hex };              // on BEHIND: the block the read must reach
   served?: readonly { endpoint: string; blockNumber: bigint }[]; // on BEHIND: each endpoint's head
   feeSchedule?: { document: string; chain: string | null; freshSlotGas: bigint }; // the document is not the chain's
+  gas?: { estimate: bigint; cap: bigint; suggestedParts: number }; // on OVER_TX_GAS_CAP: how many publications
 }
 export interface RevertInfo {
   selector: Hex;                // always
@@ -921,6 +922,29 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
       declines the account upgrade (5750).
     - A refusal before anything went out (5740, or a wallet that can't batch) goes on at once in the smaller
       batches. Anything that may have gone out waits for reconcile as always.
+    - A batch whose first part alone is over the per-transaction cap goes part by part from there, where the part
+      can be re-split (below).
+- **A part too large for one transaction is re-split, never lost.** The planners can't see how long the lists a
+  statement lands in are. So a part planned full (say 58 tag masks on lists past the floor's claimed length) can
+  need more execution gas than planned. Its estimate is then over 2^24, and the send is NOT_SENT
+  `OVER_TX_GAS_CAP` before anything is sent.
+  - **When it is cut:** `runSequence` and `resume` cut that part themselves, and go on, only when all of these hold:
+    - **It has units:** the part carries `units`, the runs of actions that must stay together. The folder and tag
+      planners record them. A part has none when it is a file's content (planned to the cap already) or was written
+      before units existed.
+    - **It never reached a wallet:** no attempt of its plan got past PLANNED or NOT_SENT.
+    - **Within the bound:** at most 6 levels of re-splitting (`MAX_SPLIT_DEPTH`).
+  - **How it is cut:** only between units, never inside a folder entry's move or between a statement and its
+    registration, into `reason.gas.suggestedParts` pieces (at least 2) of near-equal unit counts, in order.
+    - Each piece carries its units' effects, renumbered (`args.part` / `args.parts`), and no gas figures.
+    - Each is planned just in time and prompts once. The refused part never reached the wallet.
+    - The pieces' actions differ from each other and from the refused part, so the twin guard never holds one as
+      another.
+  - **What the person sees:** `SequenceProgress.total` grows mid-save ("approve part 4 of 6"). The record's history
+    says why: "part 3 was too large for one transaction: split into 2".
+  - **When it can't be cut:** the save stops as before (NOT_STARTED or PARTIAL), with `reason.gas`
+    `{ estimate, cap, suggestedParts }` so a page can say "this needs N publications". A part of one unit (a single
+    statement or entry over the cap) stops with `retry: "never"`.
 - **Part by part otherwise:** each part is planned just before it is sent and sent only after the previous one
   committed. The EFS native nonce is inside the intent, and the wallet assigns only the transaction nonce, so a
   native-nonce gap cannot happen.
@@ -1649,6 +1673,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `kernelQuote` | function | The kernel's quote (LedgerIngress._foldAndQuote, formula 2), exactly as gas-plan.mjs computes it: fresh slots for each first statement and each new record (with its references and digest specs), rewrites per publish and per bind (more for a later statement), and the prefix floor and final reserve they price. |
 | `localLocks` | function | Locks for this JavaScript context only: callers queue in order, and `wait` is false (BUSY at once if held), true (queue until free) or a number of milliseconds (BUSY if not acquired in time). |
 | `lockKey` | function | The lock key: one submission at a time per (chain, realm, deployment, account). |
+| `MAX_SPLIT_DEPTH` | const | How many times a planned part may be re-split, at most (each level at least doubles its pieces). |
 | `memoryJournal` | function | In-memory journal with an in-process lock. |
 | `openJournal` | function | Open a journal without a writer: what an app shows after a reload, before the person reconnects ("Partially saved (2 of 5) — Continue"). |
 | `planPublication` | function | Plan one publication from its actions and bodies, without a wallet (what `writer.planActions` runs): limits checked, the nonce and acceptance profile read at a pinned basis, the calldata encoded. |
@@ -1678,6 +1703,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `JournalView` | interface | Sequences without a wallet: settle and list them before anyone connects (resume still needs the writer). |
 | `KernelQuote` | interface | The kernel's own quote of a publication's floor (LedgerIngress.indexFloor's four numbers). |
 | `LocalAccountLike` | interface | A viem LocalAccount satisfies this structurally; the SDK holds no private-key code. |
+| `PartUnit` | interface | A run of a part's actions that must stay in one publication (a folder entry's actions, a topic's registration, one tag statement), with the effect that describes it. |
 | `Plan` | interface | Plain, journal-safe data. |
 | `PlanInput` | interface |  |
 | `PlannedAction` | interface |  |
@@ -1693,7 +1719,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `SequenceEvent` | type |  |
 | `SequenceOpts` | interface |  |
 | `SequencePart` | interface |  |
-| `SequencePartInput` | type | A part as a planner made it: PlanInput.gas and .total carry its batching estimate and its whole gas. |
+| `SequencePartInput` | type | A part as a planner made it: PlanInput.gas and .total carry its batching estimate and its whole gas, and `units` where it may be re-split (SequencePart.units). |
 | `SequenceProgress` | interface | What the client shows: N, how many committed, and where the save is now. |
 | `SequenceRecord` | interface |  |
 | `SequenceState` | type | A save split into several publications (writer.runSequence). |
