@@ -47,7 +47,7 @@
 > - topic statements: `planLabel` (a topic's or a home's name in one BCP 47 language, lowercased; the text/1 record
 >   published when new), `planSame` and `planBroader` (both ends registered earlier in the same save, as the
 >   validator's codes 10 and 11 need; a topic is never either of these to itself), each with `remove: true` for a
->   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (contracts 0fb4804): a
+>   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (first measured at contracts 0fb4804; the vendored gas model is now cbf5b78's): a
 >   first label `bindPropertyFresh` (a new text adds the text/1 row), a later one `bindPropertyRebind`, a first
 >   `same` `bindSameFreshWord` (the dearer of the two first-same rows), a first `broader` `bindBroaderFresh`, a later
 >   bind `restoreSame` / `restoreBroader`, and a removal `release*`, as the reference planner prices them; the label
@@ -91,9 +91,7 @@
 > - the fold rule itself (James's ruling: the planners and readers take a `fold` step meanwhile, and check every
 >   word against the chain's grammar);
 > - the junk rule for children (two distinct authors), which needs a per-child author figure the readers don't
->   give;
-> - the reader `frontier` (contracts, in progress): until it lands, a synonym list that returns no rows holds the
->   merge back until it reaches a row or the round cap (slower, never wrong).
+>   give.
 
 ## 1. The model
 
@@ -338,8 +336,16 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   position, so a stranger's "same" merges nothing into anyone's view.
 - **The merge.** A row's `entry` is a binding ordinal from one global counter, unique across lists, and every list
   is stored in rising order. So the lists merge newest first on it:
-  - Each list keeps a floor F: every row of it newer than F has been read. F is the last row's entry after a ROWS
-    stop, the lower of that and the old F after a LIMIT or GAS stop, and 0 at EXHAUSTED.
+  - Each list keeps a floor F: every row of it newer than F has been read. F is the page's `frontier` (the reader's
+    newest entry not yet processed, contracts `cbf5b78`), and 0 at EXHAUSTED. A list that returns no rows still
+    moves its floor, so a padded synonym list never holds the merge back. F is set only from a page the reader
+    served: a refused page carries `frontier` 0 too, so only EXHAUSTED ends a list.
+  - Every served page's `frontier` is checked against the page laws, in `topicItems` too:
+    - it is 0 exactly at EXHAUSTED;
+    - every row of the page is above it;
+    - every row is at or below the frontier of the call before it in the listing;
+    - it falls from call to call.
+    A break is the endpoint's fault (RPC_ERROR).
   - The newest buffered row is decided once no unfinished list's F is above it, and only the lists that block it are
     read again.
   - A list's entries must strictly fall, within a call and across calls; one that doesn't is RPC_ERROR.

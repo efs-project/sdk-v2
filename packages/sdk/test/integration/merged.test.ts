@@ -13,7 +13,11 @@ import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Address, Hex, PrincipalId } from "../../src/core/hex.ts";
-import { topicLookupReaderAbi, topicMineReaderAbi } from "../../src/generated/abis.ts";
+import {
+  topicEveryoneReaderAbi,
+  topicLookupReaderAbi,
+  topicMineReaderAbi,
+} from "../../src/generated/abis.ts";
 import {
   homeId,
   type MergedPage,
@@ -26,7 +30,7 @@ import {
   topicTypesOf,
 } from "../../src/tags/index.ts";
 import { recordingFetch } from "../../src/testing/index.ts";
-import { type Edit, sel, tampered } from "./tamper.ts";
+import { type Edit, sel, tampered, tamperedCalls } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8"));
@@ -493,5 +497,120 @@ describe("topicItemsMerged (fixture)", () => {
         cursor: first.next as never,
       }),
     ).rejects.toMatchObject({ code: "MISUSE" });
+  });
+});
+
+type Info = Record<string, unknown>;
+type Row = Record<string, unknown>;
+/** The fixture behind a fetch that rewrites one place's topic-reader replies: `f(info, rows, n)` for its nth call. */
+const forgeList = (
+  view: "mine" | "everyone",
+  place: Hex,
+  f: (info: Info, rows: Row[], n: number) => [Info, Row[]] | null,
+) => {
+  const abi = view === "mine" ? topicMineReaderAbi : topicEveryoneReaderAbi;
+  let n = 0;
+  return createEfs({
+    rpcs: [fixture.rpcUrl],
+    deployment,
+    fetch: tamperedCalls((data, result) => {
+      if (!data.startsWith(sel(abi, view))) return null;
+      const args = decodeFunctionData({ abi, data } as never).args as unknown[];
+      const at = (view === "mine" ? args[1] : (args[0] as { place: Hex }).place) as Hex;
+      if (at.toLowerCase() !== place) return null;
+      const [info, rows] = decodeFunctionResult({
+        abi,
+        functionName: view,
+        data: result,
+      } as never) as unknown as [Info, Row[]];
+      const out = f(info, [...rows], n++);
+      return out
+        ? (encodeFunctionResult({ abi, functionName: view, result: out } as never) as Hex)
+        : null;
+    }),
+  });
+};
+
+describe("the reader frontier (fixture)", () => {
+  // /mp1 and /mp2 are the same to Ella. In ordinal order: Ella files 130 at /mp2, Gus's four lone negatives pad
+  // /mp2 (131 to 134: entries nobody says yes to), then Ella files 135 and 136 at /mp1.
+  const mp1 = () => pathId(T, ["mp1"]);
+  const mp2 = () => pathId(T, ["mp2"]);
+  beforeAll(async () => {
+    await same(we, ["mp1"], ["mp2"]);
+    await tag(we, ["mp2"], 130);
+    for (let n = 131; n < 135; n++) await deny(wg, ["mp2"], n);
+    await tag(we, ["mp1"], 135);
+    await tag(we, ["mp1"], 136);
+  });
+
+  it("a padded synonym list no longer holds the merge back: its frontier moves the floor with no rows", async () => {
+    // Two entries a list: /mp2 reads two negatives and no row, but its frontier (the next unread entry) is below
+    // 135, so /mp1's rows are decided on the first page.
+    const o = { view: "everyone" as const, lens: lens(E), entries: 4 };
+    const first = present(await topicItemsMerged(efs, ["mp1"], o));
+    expect(first.rows.map((r) => r.thing)).toEqual([136, 135].map(thing));
+    const { rows } = await all(
+      () => topicItemsMerged(efs, ["mp1"], o),
+      (next) => topicItemsMerged(efs, ["mp1"], { ...o, cursor: next }),
+    );
+    expect(rows.map((r) => r.thing)).toEqual([136, 135, 130].map(thing));
+  });
+
+  it("a refused page carries frontier 0 and never ends a list: the synonym is missing, not finished", async () => {
+    const refused = forgeList("everyone", mp2(), (info, rows) => [
+      { ...info, q: { ...(info["q"] as Info), status: 12 }, scanStatus: 1, frontier: 0n },
+      rows,
+    ]);
+    const page = present(
+      await topicItemsMerged(refused, ["mp1"], { view: "everyone", lens: lens(E) }),
+    );
+    expect(rowsOf(page)).toEqual([
+      [thing(136), "self"],
+      [thing(135), "self"],
+    ]);
+    expect(page.missing.map((m) => [m.place, m.status])).toEqual([[mp2(), "INVALID"]]);
+    expect(page.complete).toBe(false);
+  });
+
+  it("a frontier that breaks the page laws is the endpoint's fault: UNKNOWN, never rows", async () => {
+    const reads = [
+      (e: ReturnType<typeof createEfs>, o: object) =>
+        topicItems(e, ["mp1"], { view: "everyone", lens: lens(E), ...o }),
+      (e: ReturnType<typeof createEfs>, o: object) =>
+        topicItemsMerged(e, ["mp1"], { view: "everyone", lens: lens(E), ...o }),
+    ];
+    for (const read of reads) {
+      // 0 on a page that is not the end (one entry a page: /mp1 does not end on the first).
+      const zero = forgeList("everyone", mp1(), (info, rows) =>
+        Number(info["scanStatus"]) === 1 ? null : [{ ...info, frontier: 0n }, rows],
+      );
+      expect(await read(zero, { entries: 1 })).toMatchObject({ status: "UNKNOWN" });
+      // At or above a row of its own page.
+      const above = forgeList("everyone", mp1(), (info, rows) =>
+        rows.length
+          ? [{ ...info, frontier: BigInt(rows[0]?.["bindingOrdinal"] as bigint) }, rows]
+          : null,
+      );
+      expect(await read(above, { entries: 1 })).toMatchObject({ status: "UNKNOWN" });
+      // Not 0 at the end.
+      const atEnd = forgeList("everyone", mp1(), (info, rows) =>
+        Number(info["scanStatus"]) === 1 ? [{ ...info, frontier: 7n }, rows] : null,
+      );
+      expect(await read(atEnd, {})).toMatchObject({ status: "UNKNOWN" });
+      // The honest endpoint: PRESENT.
+      expect(await read(efs, { entries: 1 })).toMatchObject({ status: "PRESENT" });
+    }
+  });
+
+  it("a frontier must fall from call to call of a list within a page", async () => {
+    // /mp2's first call claims frontier 1 (nothing older is unread), then the honest one is higher: a rise. Six
+    // entries: /mp1 ends in two, /mp2 reads three, then once more within the same page.
+    const rising = forgeList("everyone", mp2(), (info, rows, n) =>
+      n === 0 && Number(info["scanStatus"]) !== 1 ? [{ ...info, frontier: 1n }, rows] : null,
+    );
+    expect(
+      await topicItemsMerged(rising, ["mp1"], { view: "everyone", lens: lens(E), entries: 6 }),
+    ).toMatchObject({ status: "UNKNOWN" });
   });
 });

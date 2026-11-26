@@ -40,6 +40,7 @@ import { badReply, callOf, decoded, READ_IDS } from "./plan.js";
 import {
   bounds,
   chainsBelow,
+  frontierFault,
   GAS_RESERVE,
   hiddenBelow,
   type Kinded,
@@ -318,6 +319,8 @@ export async function topicItemsMerged(
         /** The continuation the oldest call with undecided rows started from. */
         resumeFrom: Hex | null;
         lastEntry: bigint | null;
+        /** The frontier of this list's last call on this page. */
+        lastFrontier: bigint | null;
         entryCap: number;
         rowCap: number;
         calls: number;
@@ -333,6 +336,7 @@ export async function topicItemsMerged(
           buffer: [],
           resumeFrom: null,
           lastEntry: null,
+          lastFrontier: null,
           entryCap: callEntries,
           rowCap: b.maxRows,
           calls: 0,
@@ -518,6 +522,10 @@ export async function topicItemsMerged(
             return badReply("a page that is not the end gave no resume point");
           if (Number(info.scanned) === 0 && scan !== "EXHAUSTED")
             return badReply("a page read nothing and did not end");
+          // A served page's frontier (a refused one carries 0 too, and was left above): the page laws, then the floor.
+          const late = frontierFault(scan, info, raw, x.lastFrontier);
+          if (late) return badReply(late);
+          x.lastFrontier = BigInt(info.frontier);
           if (
             x.calls === 1 &&
             !o.cursor &&
@@ -565,12 +573,9 @@ export async function topicItemsMerged(
             x.done = true;
             x.floor = 0n;
           } else {
-            const lastRaw = raw.length
-              ? BigInt((raw[raw.length - 1] as RawMine).bindingOrdinal)
-              : null;
-            if (scan === "ROWS" && lastRaw !== null) x.floor = lastRaw;
-            else if (lastRaw !== null)
-              x.floor = x.floor === null || lastRaw < x.floor ? lastRaw : x.floor;
+            // Every row newer than the frontier has been read: a list that returned no rows still moves its floor.
+            const f = BigInt(info.frontier);
+            x.floor = x.floor === null || f < x.floor ? f : x.floor;
             x.next = info.next;
           }
           if (x.buffer.length === 0) x.resumeFrom = null;
