@@ -140,6 +140,17 @@ describe("gasLimitOf: amsterdam, with the state-gas reservoir", () => {
         blockGasLimit: block,
       });
     expect(over(61_000_000)).toMatchObject({ ok: false, suggestedParts: 2 });
+    // A block gas limit too small to split against (1, or 0 passed in): refused, never a division by zero.
+    for (const tiny of [1n, 0n])
+      expect(
+        gasLimitOf({
+          reservoir: true,
+          cap: CAP,
+          estimate: M(1),
+          model: deepTag,
+          blockGasLimit: tiny,
+        }),
+      ).toMatchObject({ ok: false, suggestedParts: deepTag.total });
     expect(over(110_000_000)).toMatchObject({ ok: false, suggestedParts: 3 });
     expect(
       gasLimitOf({ reservoir: true, cap: CAP, estimate: M(70), blockGasLimit: block }),

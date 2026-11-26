@@ -55,7 +55,11 @@ export type GasLimit =
    */
   | { ok: false; execution: bigint; detail: string; suggestedParts: number };
 
-const partsFor = (gas: bigint, per: bigint): number => Number((gas + per - 1n) / per);
+/** ⌈gas / per⌉, with `per` at least 1: a tiny or zero ceiling (a block gas limit of 1, or 0 passed in) never divides by 0. */
+const partsFor = (gas: bigint, per: bigint): number => {
+  const d = per > 0n ? per : 1n;
+  return Number((gas + d - 1n) / d);
+};
 
 /**
  * The gas limit to sign or ask the wallet for, or a refusal. On a reservoir profile, whether the node's estimate
