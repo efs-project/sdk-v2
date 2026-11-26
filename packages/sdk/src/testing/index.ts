@@ -16,6 +16,15 @@
  * the wallet's result or error. `replayProvider(t)` answers them by the same matching rule, so a fake wallet plus
  * `replayFetch(t)` replays a whole edit (plan, approval, send, settle) with no chain and no wallet.
  *
+ * A replay whose head moves only with the event that moved it: record with `createRecorder(fetch, provider)` (both
+ * halves and the harness's `mark(label)` in one sequence: `seq` on every call, `marks`), and replay with
+ * `createReplay(t)` (`fetch`, `provider`, `mark`, `finish`). Reads are served from the current epoch (repeating it,
+ * never borrowing a later head), so a page that reads "latest" more often than the recording did still lines up;
+ * what that forgives is counted in `extraReads`. Writes stay strict: an unrecorded or repeated write, or a mark out
+ * of order, is a miss, and `finish()` makes every gate never served a miss too. Call `mark` after every head move the
+ * page doesn't make (an actor's write, a mine), in record and replay alike. A transcript without `seq` replays as
+ * `createRpcReplay` always did.
+ *
  * `planLoneHide(efs, writer, { folder, name })` plans, for writer.runSequence, a state the SDK's planners never make
  * on purpose: your hide at a name where you never placed anything (listRemoved's NEVER_BOUND row, which Unhide
  * answers). `planOtherEntry(efs, writer, { folder, name, salt? })` places a subject with no file version at a name in a
@@ -38,6 +47,8 @@ export interface RpcCall {
   request: unknown;
   /** The response body as received. */
   response: unknown;
+  /** createRecorder: when the response came back, in one sequence with the wallet calls and the marks. */
+  seq?: number;
 }
 
 export interface RpcTranscript {
@@ -52,6 +63,14 @@ export interface RpcTranscript {
   calls: readonly RpcCall[];
   /** Write flows only: the wallet half, every EIP-1193 request the writer made of the wallet, in order. */
   wallet?: readonly WalletCall[];
+  /** createRecorder: head moves the page didn't make (a harness's `mark`), in the calls' sequence. */
+  marks?: readonly RecordedMark[];
+}
+
+/** A harness's mark: where the chain's head moved without a page write (an actor's write, a mine). */
+export interface RecordedMark {
+  seq: number;
+  label: string;
 }
 
 /** One EIP-1193 request to the wallet and what the wallet answered (a result, or an error it threw). */
@@ -60,6 +79,8 @@ export interface WalletCall {
   params: unknown;
   result?: unknown;
   error?: { code?: number; message: string };
+  /** createRecorder: when the wallet answered, in one sequence with the RPC calls and the marks. */
+  seq?: number;
 }
 
 interface JsonRpcRequest {
@@ -270,3 +291,6 @@ export function replayProvider(
     },
   };
 }
+
+export type { Replay } from "./replay.js";
+export { createRecorder, createReplay } from "./replay.js";

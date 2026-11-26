@@ -1169,6 +1169,22 @@ logic. The current set:
   `bytes-external-unavailable`, `bytes-external-unsupported`, `bytes-policy-blocked`
 - writes: `send-ambiguous`, `journal-ambiguous-before`, `journal-ambiguous-after`, `reconcile-committed`
 
+**Replays whose head follows its writes** (`@efs/sdk/testing`). `createRecorder(fetch, provider)` records both
+halves and the harness's `mark(label)` in one sequence: each call, wallet call and mark gets a `seq`, in the order its
+answer came back. `createReplay(t)` replays them with the chain's head moving only when the recorded event that moved
+it is served:
+- **What moves the head (a gate):** a wallet write (`eth_sendTransaction`, `wallet_sendCalls`), an
+  `eth_sendRawTransaction`, or a `mark`.
+- **Reads follow the epochs.** Every answer belongs to the epoch it was recorded in, which is the number of gates
+  recorded before it. A read is served from the current epoch, in recorded order, and then repeats that epoch's last
+  answer. So extra "latest" or `finalized` reads get the same head, and a pending receipt stays null until the mark
+  that mined it. Answers left from an earlier epoch are skipped once the head moves. A key recorded only later is
+  served its first answer, which counts as an early read. Both are forgiven and counted in `extraReads`, keyed by
+  `method params-digest`: assert a budget or print them, since nothing fails on them by default.
+- **Writes stay strict.** Each gate is served once, in recorded order. An unrecorded or repeated write, or a mark out
+  of order, is a miss, and `finish()` turns every gate never served into a miss.
+- **Old transcripts:** a transcript without `seq` is one epoch with no gates, and replays as `createRpcReplay` does.
+
 Folder fixtures (root page, partial page, lens conflict, masked entry, lookup absent, history) wait for the folder
 read API.
 
