@@ -379,7 +379,8 @@ export async function topicSynonyms(
           out,
         );
         if (!rec.ok) return rec;
-        if (rec.value[0].length !== want.length) return badReply("records (one per id)");
+        if (rec.value[0].length !== want.length || rec.value[1].length !== want.length)
+          return badReply("records (one per id)");
         for (const [i, x] of want.entries()) {
           const type = lower((rec.value[1][i] as { typeId: Hex }).typeId);
           // The validator admits a first SAME only between topics: anything else is a reply to refuse.
@@ -633,7 +634,8 @@ export async function topicBroader(
           out,
         );
         if (!rec.ok) return rec;
-        if (rec.value[0].length !== others.length) return badReply("records (one per id)");
+        if (rec.value[0].length !== others.length || rec.value[1].length !== others.length)
+          return badReply("records (one per id)");
         for (const [i, x] of others.entries()) {
           const type = lower((rec.value[1][i] as { typeId: Hex }).typeId);
           if (

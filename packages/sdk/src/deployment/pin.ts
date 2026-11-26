@@ -281,10 +281,11 @@ export async function pinDeployment(
         data: desc as Hex,
       }) as unknown as Describe;
     } catch {
+      // One endpoint's garbled reply: another may answer (only a decoded describe() can be a mismatch).
       return {
         ok: false,
-        retryElsewhere: false,
-        reason: reason("NOT_VERIFIED_DEPLOYMENT", "never", "describe() did not decode"),
+        retryElsewhere: true,
+        reason: reason("RPC_ERROR", "transient", "describe() did not decode"),
       };
     }
     const mismatches: PinMismatch[] = [];

@@ -134,16 +134,27 @@ export async function planPublication(
       const bad = outs.find((x) => !x.ok);
       if (bad && !bad.ok)
         return { ok: false, retryElsewhere: bad.kind === "transport", reason: bad.reason };
-      const [nonce] = decodeFunctionResult({
-        abi: ledgerAbi,
-        functionName: "nonceOf",
-        data: (outs[0] as { result: Hex }).result,
-      }) as unknown as [bigint, bigint];
-      const profile = decodeFunctionResult({
-        abi: ingressAbi,
-        functionName: "acceptanceProfileOf",
-        data: (outs[1] as { result: Hex }).result,
-      }) as unknown as Hex;
+      let nonce: bigint;
+      let profile: Hex;
+      try {
+        [nonce] = decodeFunctionResult({
+          abi: ledgerAbi,
+          functionName: "nonceOf",
+          data: (outs[0] as { result: Hex }).result,
+        }) as unknown as [bigint, bigint];
+        profile = decodeFunctionResult({
+          abi: ingressAbi,
+          functionName: "acceptanceProfileOf",
+          data: (outs[1] as { result: Hex }).result,
+        }) as unknown as Hex;
+      } catch {
+        // a reply that doesn't decode is this endpoint's fault, never a thrown error
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason("RPC_ERROR", "transient", "nonceOf / acceptanceProfileOf did not decode"),
+        };
+      }
       return {
         ok: true,
         value: { nonce: input.nonce ?? nonce, profile: lower(profile), timestamp },

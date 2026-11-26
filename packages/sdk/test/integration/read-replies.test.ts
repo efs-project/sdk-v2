@@ -7,7 +7,8 @@ import { readFileSync } from "node:fs";
 import { keccak256, toHex } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
-import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { ACTION, createWriter, memoryJournal } from "../../src/actions/index.ts";
+import type { FetchLike } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Address, Hex, PrincipalId, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { openFile } from "../../src/files/bytes.ts";
@@ -17,6 +18,7 @@ import { listRemoved } from "../../src/files/removed.ts";
 import {
   bitmapStoreAbi,
   filesPageReaderAbi,
+  ledgerAbi,
   ledgerReadsAbi,
   ledgerViewsAbi,
   lensReaderAbi,
@@ -38,6 +40,7 @@ import {
 import { topicPath } from "../../src/tags/read.ts";
 import { pathId } from "../../src/tags/topics.ts";
 import { lyingEfs } from "./lying.ts";
+import { sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -377,5 +380,49 @@ describe("a position's cell is bound to the position asked about", () => {
     // a scope slice shorter than the list it pages: entries would drop silently
     const short = lying(bitmapStoreAbi, "scopeSlice", () => [[]]);
     expect(await listRemoved(short, { folder: root, author })).toMatchObject({ status: "UNKNOWN" });
+  });
+});
+
+describe("a reply that doesn't decode is one endpoint's fault, never the end of the read", () => {
+  const B = "http://endpoint-b.invalid/";
+  /** Endpoint A garbles `name`'s replies; endpoint B is honest (both the fixture chain). */
+  const garbledThenHonest = (abi: readonly unknown[], name: string) => {
+    const fetch: FetchLike = (url, init) =>
+      url === B
+        ? tampered({})(fixture.rpcUrl, init)
+        : tampered({ [sel(abi, name)]: () => "0x1234" as Hex })(fixture.rpcUrl, init);
+    return createEfs({ rpcs: [fixture.rpcUrl, B], deployment, fetch });
+  };
+
+  it("pin: a garbled describe() fails over to the next endpoint (VERIFIED there)", async () => {
+    const p = await garbledThenHonest(ledgerReadsAbi, "describe").pin();
+    expect(p.status).toBe("VERIFIED");
+  });
+
+  it("planning: a garbled nonceOf fails over, never throws", async () => {
+    const e = garbledThenHonest(ledgerAbi, "nonceOf");
+    const writer = await createWriter(e, {
+      authorizer: { kind: "local", profile: "direct", account: me },
+      journal: memoryJournal(),
+    });
+    const ZERO = `0x${"0".repeat(64)}` as Hex;
+    const r = await writer.planActions({
+      actions: [
+        {
+          kind: ACTION.CREATE,
+          typeId: ZERO,
+          bodyHashOrRecordId: ZERO,
+          purpose: ZERO,
+          subject: ZERO,
+          role: ZERO,
+          target: ZERO,
+          expectedRevision: 0n,
+          saltOrStrength: `0x${"0".repeat(63)}7` as Hex,
+        },
+      ],
+      bodies: ["0x"],
+      effects: [{ code: "test.create", args: {} }],
+    });
+    expect(r.status).toBe("PLANNED");
   });
 });
