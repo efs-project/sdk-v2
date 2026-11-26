@@ -766,7 +766,9 @@ describe("runSequence (fixture)", () => {
     const same = parts(w.principal, "seq-batch-twice");
     const first = await w.runSequence(same, { settleMs: 300, pollMs: 50 });
     expect(first).toMatchObject({ state: "IN_FLIGHT", mode: "batch" });
-    await rpc("evm_mine", []); // a block later: new plans (their deadlines moved), the same publications
+    // A later block and timestamp: new plans (their deadlines moved, so their ids too), the same publications.
+    await rpc("evm_increaseTime", [5]);
+    await rpc("evm_mine", []);
     const twice = await w.runSequence(same, { settleMs: 300, pollMs: 50 });
     expect(twice).toMatchObject({ state: "NOT_STARTED", reason: { code: "ALREADY_ATTEMPTED" } });
     expect([pending.batches, pending.sends]).toEqual([1, 0]);

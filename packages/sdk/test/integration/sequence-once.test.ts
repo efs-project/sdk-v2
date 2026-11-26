@@ -152,6 +152,7 @@ describe("a save is planned and sent once (fixture)", () => {
     expect(first.state).toBe("IN_FLIGHT");
     // The same parts again while the first is in flight (a double submit), a block later: a new plan (its deadline
     // moved with the block), and still nothing goes to the wallet. The earlier attempt comes back structured.
+    await rpc("evm_increaseTime", [5]); // a later block timestamp, so the new plan's deadline (and id) moves
     await rpc("evm_mine", []);
     const twice = await writer.runSequence(p.parts, fast);
     expect(w.sends.length).toBe(1);
@@ -204,6 +205,7 @@ describe("a save is planned and sent once (fixture)", () => {
     await w.land();
     const landed = await writer.reconcileSequence(first.sequenceId, fast);
     expect([landed.state, landed.final]).toEqual(["COMPLETE", false]);
+    await rpc("evm_increaseTime", [5]); // a later block timestamp, so the new plan's deadline (and id) moves
     await rpc("evm_mine", []);
     const repeat = await writer.runSequence([part], fast);
     expect(w.sends.length).toBe(1);
