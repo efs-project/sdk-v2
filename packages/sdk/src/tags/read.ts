@@ -71,7 +71,8 @@ export type Decider =
  * tells those apart: "file" when its creator's HEAD names a Files revision, else "other". Anything else is "other".
  */
 export type ThingKind = "file" | "subject" | "folder" | "revision" | "topic" | "address" | "other";
-const THING_KINDS: readonly ThingKind[] = [
+/** @internal */
+export const THING_KINDS: readonly ThingKind[] = [
   "file",
   "subject",
   "folder",
@@ -182,21 +183,23 @@ export type TopicPage =
       evidence: Evidence;
     };
 
-const SCAN: Readonly<Record<number, ScanStatus>> = {
+/** @internal */
+export const SCAN: Readonly<Record<number, ScanStatus>> = {
   1: "EXHAUSTED",
   2: "LIMIT",
   3: "GAS",
   4: "ROWS",
 };
 /** Gas the reader keeps for its return encoding and one more batch of rows. */
-const GAS_RESERVE = 1_000_000n;
+export const GAS_RESERVE = 1_000_000n;
 /** The most reader calls one page makes (each bounded), so a heavily padded list returns a page, never loops. */
 const MAX_CALLS = 8;
 /** How many times one page halves a call's bounds after the node refuses it (out of gas). */
-const MAX_BACKOFFS = 4;
+export const MAX_BACKOFFS = 4;
 /** The things a cursor remembers for de-duplication. */
-const SEEN_MAX = 256;
-const NO_DECIDER = 255;
+export const SEEN_MAX = 256;
+/** @internal */
+export const NO_DECIDER = 255;
 
 const callOf = (
   to: Hex,
@@ -234,6 +237,26 @@ function decoded<T>(
       reason: reason("RPC_ERROR", "transient", `${fn} did not decode`),
     };
   }
+}
+
+/** @internal The `kinds` options, checked: the sorted filter (null for none) and whether the exact tier is on. */
+export function kindsQuery(o: { kinds?: readonly ThingKind[]; kindsExact?: boolean }): {
+  filter: ThingKind[] | null;
+  exact: boolean;
+} {
+  const filter = o.kinds === undefined ? null : [...new Set(o.kinds)].sort();
+  if (filter) {
+    if (filter.length === 0) throw misuse("`kinds` names at least one kind");
+    const bad = filter.find((k) => !THING_KINDS.includes(k));
+    if (bad !== undefined) throw misuse(`"${bad}" is not a kind (${THING_KINDS.join(", ")})`);
+  }
+  // "file" can only be decided by the exact tier, so asking for it turns the tier on.
+  const exact = o.kindsExact === true || (filter?.includes("file") ?? false);
+  if (exact && filter?.includes("subject"))
+    throw misuse(
+      'with the exact tier on (kindsExact, or "file" in kinds) a subject is "file" or "other": "subject" never shows',
+    );
+  return { filter, exact };
 }
 
 /** A place's id (and whether it is a topic). MISUSE for refused words. */
@@ -291,7 +314,8 @@ export function refusal(code: number): { status: "UNKNOWN" | "INVALID"; reason: 
 }
 
 /** The gas model's read bounds for this deployment's schedule. */
-function bounds(efs: Efs): (typeof GAS_READS.recommended)["prague"] {
+/** @internal */
+export function bounds(efs: Efs): (typeof GAS_READS.recommended)["prague"] {
   const g = gasPlanFor(efs.deployment);
   const schedule = g.ok ? g.model.schedule : "prague";
   const rec = GAS_READS.recommended as unknown as Record<
@@ -301,7 +325,8 @@ function bounds(efs: Efs): (typeof GAS_READS.recommended)["prague"] {
   return rec[schedule] ?? GAS_READS.recommended.prague;
 }
 
-type RawInfo = {
+/** @internal */
+export type RawInfo = {
   q: { status: number };
   listingCoverage: number;
   scanStatus: number;
@@ -312,7 +337,8 @@ type RawInfo = {
   repeatsSkipped: bigint;
   next: Hex;
 };
-type RawMine = {
+/** @internal */
+export type RawMine = {
   position: Hex;
   topic: Hex;
   thing: Hex;
@@ -321,7 +347,8 @@ type RawMine = {
   number: number;
   bindingOrdinal: bigint;
 };
-type RawPlace = {
+/** @internal */
+export type RawPlace = {
   position: Hex;
   topic: Hex;
   thing: Hex;
@@ -356,18 +383,7 @@ export async function topicItems(
       ? []
       : (o.lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
   if (view !== "raw" && lensList.length === 0) throw misuse("a Lens names at least one principal");
-  const filter = o.kinds === undefined ? null : [...new Set(o.kinds)].sort();
-  if (filter) {
-    if (filter.length === 0) throw misuse("`kinds` names at least one kind");
-    const bad = filter.find((k) => !THING_KINDS.includes(k));
-    if (bad !== undefined) throw misuse(`"${bad}" is not a kind (${THING_KINDS.join(", ")})`);
-  }
-  // "file" can only be decided by the exact tier, so asking for it turns the tier on.
-  const exact = o.kindsExact === true || (filter?.includes("file") ?? false);
-  if (exact && filter?.includes("subject"))
-    throw misuse(
-      'with the exact tier on (kindsExact, or "file" in kinds) a subject is "file" or "other": "subject" never shows',
-    );
+  const { filter, exact } = kindsQuery(o);
   const query = keccak256(
     utf8Encode(
       JSON.stringify([
@@ -694,7 +710,8 @@ export async function topicItems(
 }
 
 /** Why a reader's row can't be what it says, or null when it holds together. */
-function rowFault(
+/** @internal */
+export function rowFault(
   view: TopicView,
   x: RawMine | RawPlace,
   place: Hex,
@@ -726,7 +743,8 @@ function rowFault(
  * recomputed from its body, so an endpoint can't invent a parent). A topic that never reaches `place` within 64
  * levels is not below it: the endpoint's fault. `parents` caches what was read.
  */
-async function chainsBelow(
+/** @internal */
+export async function chainsBelow(
   s: Session,
   basis: Basis,
   ctx: Ctx,
@@ -786,7 +804,8 @@ async function chainsBelow(
  * The topics hidden from this Lens's roll-up of `place`: those at or below a child topic that the Lens hides where it
  * hangs (the first Lens author with a stance at (TAG, parent, child) says "not this": headsAt's MASKED).
  */
-async function hiddenBelow(
+/** @internal */
+export async function hiddenBelow(
   s: Session,
   basis: Basis,
   ctx: Ctx,
@@ -839,7 +858,8 @@ async function hiddenBelow(
   return { ok: true, value: hidden };
 }
 
-type Kinded = { kind: ThingKind; typeId?: Hex };
+/** @internal */
+export type Kinded = { kind: ThingKind; typeId?: Hex };
 /** A padded address: 12 zero bytes, then a nonzero address. */
 const isAddressWord = (word: Hex): boolean => /^0x0{24}/.test(word) && !/^0x0{64}$/.test(word);
 const unsure = (detail: string): Step<never> => ({
@@ -854,7 +874,8 @@ const unsure = (detail: string): Step<never> => ({
  * (LensReader.resolve under the creator alone) and the record it names follow, one round trip each. Anything the
  * chain can't answer fails the step (the page is UNKNOWN), never a guessed kind.
  */
-async function kindsOf(
+/** @internal */
+export async function kindsOf(
   s: Session,
   basis: Basis,
   ctx: Ctx,
@@ -974,7 +995,8 @@ function recordKinds(
   return { ok: true, value: found };
 }
 
-function rowOf(
+/** @internal */
+export function rowOf(
   view: TopicView,
   x: RawMine | RawPlace,
   lens: readonly PrincipalId[],

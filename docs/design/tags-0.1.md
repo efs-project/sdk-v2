@@ -82,14 +82,18 @@
 > - save effects for every tag planner: `tags.tag` / `tags.deny` (topic, number, targets), `tags.untag`,
 >   `tags.label`, `tags.same`, `tags.broader`, with registration-only parts folded into their save's kind
 >   (`tags.register` when a save is nothing else), on the record and through resume;
+> - `topicItemsMerged(topic, { view, lens, synonyms })` (section 5.3): a topic's items with its Lens's synonyms, a
+>   separate read so topicItems' paging is untouched. Mine or Everyone only (Raw has no Lens, so MISUSE), and a home
+>   has none (MISUSE). Each row names the list it came from (`via`: self, same or swap, with its hops);
+>
 >
 > **Not built yet:**
 > - the fold rule itself (James's ruling: the planners and readers take a `fold` step meanwhile, and check every
 >   word against the chain's grammar);
 > - the junk rule for children (two distinct authors), which needs a per-child author figure the readers don't
 >   give;
-> - merged item reads across synonym lists (a multi-list cursor merged by statement sequence changes `topicItems`'
->   paging, so it is its own reviewed step); `topicSynonyms` gives the lists to merge.
+> - the reader `frontier` (contracts, in progress): until it lands, a synonym list that returns no rows holds the
+>   merge back until it reaches a row or the round cap (slower, never wrong).
 
 ## 1. The model
 
@@ -319,6 +323,44 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   time order (statement sequence), removing duplicates.
 - At most 4 hops, cycle-safe, and at most 16 lists per view. A view that hits a limit says so.
 - Each synonym is one more list read, and the result reports which lists it merged.
+
+`topicItemsMerged` builds it (rulings of 2026-11-26, planning spec 3.5):
+
+- **The lists**, gathered on the first page and frozen in the cursor:
+  - the topic itself;
+  - the places the Lens says are the same (`topicSynonyms`, nearest first);
+  - for a path of two or more words, its word swaps. Each word stays, or takes one of its word-level synonyms, and
+    one swap is one hop, as one path-level synonym is (`/car/tesla_motors` is two hops from `/cars/tesla`). Only
+    registered paths count.
+  - They're ordered by hops, places before swaps at equal hops, swaps that change a later word first. They're cut at
+    `maxLists` (16 with the topic) and `maxHops` (4), and a cut is `limited`.
+- **Synonyms come only from the Lens**, in Mine and Everyone alike: every edge is decided by the Lens law at its
+  position, so a stranger's "same" merges nothing into anyone's view.
+- **The merge.** A row's `entry` is a binding ordinal from one global counter, unique across lists, and every list
+  is stored in rising order. So the lists merge newest first on it:
+  - Each list keeps a floor F: every row of it newer than F has been read. F is the last row's entry after a ROWS
+    stop, the lower of that and the old F after a LIMIT or GAS stop, and 0 at EXHAUSTED.
+  - The newest buffered row is decided once no unfinished list's F is above it, and only the lists that block it are
+    read again.
+  - A list's entries must strictly fall, within a call and across calls; one that doesn't is RPC_ERROR.
+  - A page makes at most 8 rounds and 32 list calls.
+- **Dedupe.** One set of things spans every list and page. A thing is marked seen only when it shows, so the newest
+  filing that shows wins and names its list; a later sighting is `dedup.dropped`.
+- **The viewed topic** (spec 3.1's one walk, with the viewed topic as the viewed place):
+  - A row from a synonym list is hidden when any of lens[0..decider] (the whole Lens for a public-tier row) has a
+    MASKED head at (viewed topic, thing). So an earlier author's yes at `/autos` beats a later author's "not this" at
+    `/cars`.
+  - A "not this" at another synonym hides only that synonym's own row (its reader already applied it).
+  - Rows from the topic's own list need nothing.
+  - A COMPLETE zero from `authorCount` at (viewed topic, thing) skips the heads; any other answer asks them.
+  - A hidden row is never marked seen, and is counted in `counts.hiddenAtViewed`.
+- **A list that can't be read.** A synonym list the chain refuses is named in `missing`, a required field: empty
+  when every list was read, and when it isn't, the client must say "N synonyms couldn't be read". The page stays
+  PRESENT with coverage PARTIAL and `complete: false`, and the list isn't retried in that listing. The topic's own
+  list refused, or a stale basis anywhere, is the page's own status.
+- **The cursor** holds the list set and, per list, the continuation its oldest undecided call started from. On
+  resume a list re-reads that call and leaves out rows at or above `shownTo`, which were decided already. That costs
+  at most one repeated call per list per page, and no buffered rows ride in the cursor.
 
 ### 5.4 Children, word pages and counts
 
