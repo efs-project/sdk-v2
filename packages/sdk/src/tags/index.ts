@@ -17,6 +17,16 @@ export type {
 export { fileNames } from "./filenames.js";
 export type { LensTagsOpts, ThingTagRow, ThingTagsPage } from "./lenstags.js";
 export { lensTagsOf } from "./lenstags.js";
+export type {
+  MergedCursor,
+  MergedHow,
+  MergedItemsOpts,
+  MergedList,
+  MergedPage,
+  MergedRow,
+  MissingList,
+} from "./merged.js";
+export { topicItemsMerged } from "./merged.js";
 export type { Label, LabelResult, NameOpts, SegmentName, TopicNameResult } from "./names.js";
 export { labelOf, topicName } from "./names.js";
 export type {

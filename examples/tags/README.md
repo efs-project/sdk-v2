@@ -25,6 +25,9 @@ What trips people up:
   `subject`, a file or another app's subject, until you ask for the exact tier (`kindsExact: true`, or `"file"` in
   `kinds`), which reads its HEAD. The SDK applies a `kinds` filter itself, so a short filtered page with
   `finished: false` still means "read on".
+- **Synonyms merge only when you ask.** `topicItems` reads one topic. `topicItemsMerged` adds the Lens's synonyms
+  (never a stranger's), and each row names its list (`via`). Its `missing` is never absent: when it isn't empty,
+  say how many synonyms couldn't be read, never "that's everything".
 - **A tag has no name.** A file shown in a topic takes its name from where it is placed (`fileNames`): its tagger's
   own entry, then its creator's, then the first from the Lens. `complete: false` means a missing name is not proven.
 - **Labels are per language.** `planLabel` keys a label by its BCP 47 tag, lowercased (`"EN"` and `"en"` are one).
