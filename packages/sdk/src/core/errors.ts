@@ -17,6 +17,15 @@ export interface Reason {
   revert?: RevertInfo;
   /** Set on WALLET_MISMATCH: the chain and account the plan needs, and what the wallet is on now. */
   wallet?: WalletMismatch;
+  /**
+   * Set on ALREADY_ATTEMPTED for a held-back repeat: the earlier attempt of the same publication that is still open,
+   * and its save when the journal knows it. Settle that one (reconcileSequence(sequenceId), or reconcile(planId)).
+   */
+  twin?: {
+    planId: Hex;
+    stage: "SUBMISSION_POSSIBLE" | "SUBMITTED" | "COMMITTED";
+    sequenceId?: Hex;
+  };
 }
 
 /** A contract revert, decoded only as far as the vendored contracts tables allow. Nothing here is guessed. */

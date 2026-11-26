@@ -797,6 +797,46 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   saved — checking" and `reconcileSequence(sequenceId)` once the cause is fixed: the ledger decides, and nothing is
   sent twice. Journal failures up to and including the write-ahead write are not thrown: they return NOT_SENT
   JOURNAL_UNAVAILABLE. A non-EfsFault error is rethrown as INVARIANT with the original as `cause`.
+- **One publication, one wallet request:** within one `runSequence` or `resume` a part is planned once, and resume never
+  sends a part that is in flight. A second save of the same parts (a double submit, or the same parts saved again)
+  is planned afresh, with a new plan id. Before the wallet, the journal checks it under the account's lock, for
+  single parts and batches alike:
+  - **While the first attempt is open** (SUBMISSION_POSSIBLE or SUBMITTED, or COMMITTED and not yet final):
+    - the send is NOT_SENT and the save is NOT_STARTED, with reason ALREADY_ATTEMPTED (`retry: "after-reconcile"`);
+    - the reason's `twin` names the earlier attempt, `{ planId, stage, sequenceId? }`, with `sequenceId` when the
+      journal holds its save;
+    - settle that one with `reconcileSequence(sequenceId)` (or `reconcile(planId)`), keep it tracked, and abandon the
+      second.
+    A committed attempt is held until it is final because a PUBLISH repeats without a revert: the record only gains
+    an occurrence. A part of PUBLISHes alone would otherwise go out a second time.
+  - **Once the first is final:** the journal lets go. Every planner part that binds, masks, releases or creates is
+    refused by the ledger in simulation, so the save is STALE: E_CAS for BIND, UNBIND and RELEASE (each carries the
+    revision it expects), and E_SUBJECT_EXISTS for a CREATE with the same salt. A part of PUBLISHes alone is not
+    refused: saved again after its first attempt is final, it goes out, and its records gain an occurrence each
+    (their bytes and ids don't change).
+  - **NOT_SENT with ALREADY_ATTEMPTED means "this call sent nothing", never "nothing was saved".** The twin may
+    land, or have landed already.
+  - **When the hold ends:** a twin left at SUBMISSION_POSSIBLE (a tab that crashed, or a wallet popup whose answer
+    was lost) holds the same publication until someone reconciles it. Reconcile then decides it from the ledger:
+    COMMITTED (the ledger refuses the repeat, as above), or NOT_COMMITTED_PROVEN once its deadline has passed, and
+    then the repeat may go out.
+
+  Only the same publication (the same actions and bodies) from the same account is held back. Any other save goes
+  out as usual.
+
+  **Two different saves can share a publication.** A part of PUBLISHes alone is the same publication whenever the
+  same bytes are saved twice: one image into two folders, or a big file uploaded again. The second save's identical
+  part is then held too, until the first save's part is final.
+  - `twin.sequenceId` tells the cases apart: the save the person just started again, or another save of the same
+    bytes.
+  - The planner publishes each record once per save (a repeated chunk or subtree is published at its first
+    occurrence), so a save is never held by its own parts.
+  - Final means the admission's block is at or below the endpoint's `finalized` block. On anvil (the fixture and
+    local chains) that tag is 2 × 32 slots behind the latest block, 64 blocks. Anvil mines one block per transaction,
+    so on a quiet local chain a hold lasts until 64 more blocks are mined. On Sepolia and mainnet it is about two
+    epochs, roughly 13 minutes.
+
+  Plan-time reuse (not built: LIMITATIONS.md) will satisfy such a part without a send.
 - **Each part keeps its `deadlineSeconds`:** it is applied each time the part is planned, including on resume.
 - **Wallet errors:** NOT_SENT only for errors that mean the request was refused before signing; the attempt is
   stamped NOT_SENT, so nothing waits on it. They are 4001 USER_REJECTED and 4100 WALLET_UNAUTHORIZED

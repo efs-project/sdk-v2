@@ -6,15 +6,18 @@ import { getAbiItem, keccak256, toFunctionSelector, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, inject, it } from "vitest";
 import {
+  ACTION,
   createWriter,
   type Journal,
   memoryJournal,
   type SequenceEvent,
   type SequenceProgress,
 } from "../../src/actions/index.ts";
+import { actionsHash } from "../../src/actions/plan.ts";
 import { gasPlanFor, packBatches, TX_GAS_CAP } from "../../src/actions/split.ts";
 import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
+import { CHUNK_PAYLOAD } from "../../src/content/codec.ts";
 import { EfsFault } from "../../src/core/errors.ts";
 import type { Hex } from "../../src/core/hex.ts";
 import { planCreateFile } from "../../src/files/entries.ts";
@@ -753,6 +756,22 @@ describe("runSequence (fixture)", () => {
     expect([batching.batches, batching.sends]).toEqual([1, 0]); // one approval, no per-part prompts
   });
 
+  it("the same parts saved again while their batch is in flight never reach the wallet: ALREADY_ATTEMPTED", async () => {
+    // The wallet takes the batch and runs nothing yet (EIP-5792 status 100: pending), so its parts stay in flight.
+    const pending = wallet(ERIN, { atomic5792: true, failStatus: 100 });
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: pending },
+      journal: memoryJournal(),
+    });
+    const same = parts(w.principal, "seq-batch-twice");
+    const first = await w.runSequence(same, { settleMs: 300, pollMs: 50 });
+    expect(first).toMatchObject({ state: "IN_FLIGHT", mode: "batch" });
+    await rpc("evm_mine", []); // a block later: new plans (their deadlines moved), the same publications
+    const twice = await w.runSequence(same, { settleMs: 300, pollMs: 50 });
+    expect(twice).toMatchObject({ state: "NOT_STARTED", reason: { code: "ALREADY_ATTEMPTED" } });
+    expect([pending.batches, pending.sends]).toEqual([1, 0]);
+  });
+
   it("a refused batch sends nothing; the same save can then go part by part", async () => {
     const journal = memoryJournal();
     const refusing = wallet(FRANK, { atomic5792: true, refuseBatch: true });
@@ -810,6 +829,43 @@ describe("runSequence (fixture)", () => {
     const r = await w.runSequence(p.parts, { pollMs: 50 });
     expect(r).toMatchObject({ state: "COMPLETE", committed: p.review.parts, mode: "sequential" });
     expect([batching.batches, batching.sends]).toEqual([0, p.review.parts]);
+  });
+
+  it("a file that repeats a chunk publishes it once: no two parts of a save are the same publication, so none is held", async () => {
+    // Three identical (zero) chunks among four distinct ones, and a tail: a save of several parts. A part identical
+    // to an earlier one would be held as its twin (the earlier one committed, not yet final) and the save would stall
+    // on itself: the planner publishes each record once.
+    const tail = new TextEncoder().encode("and a tail that differs");
+    const zero = new Uint8Array(CHUNK_PAYLOAD);
+    const own = (k: number) =>
+      new Uint8Array(CHUNK_PAYLOAD).map((_, i) => (i * 7919 + k * 104729) % 251);
+    const blocks = [zero, own(1), zero, own(2), zero, own(3), own(4)];
+    const content = new Uint8Array(blocks.length * CHUNK_PAYLOAD + tail.length);
+    for (const [i, b] of blocks.entries()) content.set(b, i * CHUNK_PAYLOAD);
+    content.set(tail, blocks.length * CHUNK_PAYLOAD);
+    const plain = wallet(ERIN);
+    const w = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: plain, account: ERIN },
+      journal: memoryJournal(),
+    });
+    const p = await planCreateFile(efs, w, {
+      folder: { kind: "folder", directory: docs },
+      name: "seq-repeated-chunks.bin",
+      content,
+    });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect(p.parts.length).toBeGreaterThan(1); // a split save: the case where two parts could be the same
+    const publications = p.parts.map((x) => `${actionsHash(x.actions)}:${x.bodies.join(",")}`);
+    expect(new Set(publications).size).toBe(p.parts.length);
+    const published = p.parts.flatMap((x) =>
+      x.actions.flatMap((a) =>
+        a.kind === ACTION.PUBLISH ? [`${a.typeId}:${a.bodyHashOrRecordId}`] : [],
+      ),
+    );
+    expect(new Set(published).size).toBe(published.length); // the zero chunk once, however often it repeats
+    const r = await w.runSequence(p.parts, { pollMs: 50 });
+    expect(r).toMatchObject({ state: "COMPLETE", committed: p.parts.length });
+    expect(plain.sends).toBe(p.parts.length);
   });
 
   it("a batch the wallet refuses as too large (5740): the save goes on in smaller batches, never the same one", async () => {
