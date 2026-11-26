@@ -1010,7 +1010,12 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
 - **`onProgress(p, e)`** (runSequence and resume) is for live UI only, e.g. "Approve part 2 of 5 in your wallet".
   `e` is `{ kind: "wallet-request"; parts }` just before each wallet prompt (after the write-ahead record, so
   `p.current.stage` is SUBMISSION_POSSIBLE; several parts in one EIP-5792 request; never for a local account or a
-  part that is not sent), or `{ kind: "committed"; index }` as each part commits. It is advisory: not awaited,
+  part that is not sent), `{ kind: "wallet-answer"; parts; reason }` as soon as a send comes back AMBIGUOUS after
+  the wallet or its node answered (INSUFFICIENT_FUNDS above all, so the page can show "Your wallet needs enough to
+  cover the gas limit" at once while the save checks the ledger for its settle window; also WALLET_DISCONNECTED,
+  WALLET_CHAIN_DISCONNECTED and RESPONSE_LOST; never ALREADY_ATTEMPTED or a journal fault), or
+  `{ kind: "committed"; index }` as each part commits. Narrow on `kind` for each: a handler written as
+  "wallet-request, else a part index" must handle the new kind. It is advisory: not awaited,
   anything it throws is ignored, and a missed or extra event changes nothing. The returned `SequenceProgress`, the
   journal and reconcile stay the truth about what was sent.
 - **A wallet that moves:** before each send the wallet's chain and accounts are re-read. If they are not the

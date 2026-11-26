@@ -157,7 +157,7 @@ function progressLog(k: { rejects?: boolean } = {}) {
   const record = (p: SequenceProgress, e: SequenceEvent): void => {
     seen.push([
       e.kind,
-      e.kind === "wallet-request" ? e.parts : e.index,
+      e.kind === "committed" ? e.index : e.parts,
       p.committed,
       p.current?.stage ?? null,
     ]);

@@ -138,6 +138,49 @@ describe("an account that can't cover the gas limit", () => {
     expect((await journal.get(planned.plan.id))?.stage).toBe("SUBMISSION_POSSIBLE");
   });
 
+  it("a save reports the refusal at once (a wallet-answer event), before it finishes checking the ledger", async () => {
+    const w = wallet();
+    const writer = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: w.provider, account: ME },
+      journal: memoryJournal(),
+    });
+    const started = Date.now();
+    const seen: { kind: string; at: number; parts?: readonly number[]; code?: string }[] = [];
+    const stopped = await writer.runSequence([chunkPart(efs)], {
+      settleMs: 3_000,
+      onProgress: (_p, e) =>
+        seen.push({
+          kind: e.kind,
+          at: Date.now() - started,
+          ...("parts" in e ? { parts: e.parts } : {}),
+          ...(e.kind === "wallet-answer" ? { code: e.reason.code } : {}),
+        }),
+    });
+    const ended = Date.now() - started;
+    expect(stopped.reason?.code).toBe("INSUFFICIENT_FUNDS");
+    const answer = seen.find((x) => x.kind === "wallet-answer");
+    expect(answer).toMatchObject({ parts: [0], code: "INSUFFICIENT_FUNDS" });
+    expect(seen.map((x) => x.kind)).toEqual(["wallet-request", "wallet-answer"]);
+    // At once: the save then keeps checking the ledger for its settle window before it returns.
+    expect(ended - (answer?.at ?? ended)).toBeGreaterThanOrEqual(2_500);
+  });
+
+  it("an atomic batch's refusal names every part in one wallet-answer", async () => {
+    const batching = wallet({ atomic: true });
+    const many = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: batching.provider, account: ME },
+      journal: memoryJournal(),
+    });
+    const answers: { parts: readonly number[]; code: string }[] = [];
+    await many.runSequence([chunkPart(efs), chunkPart(efs)], {
+      settleMs: 500,
+      onProgress: (_p, e) => {
+        if (e.kind === "wallet-answer") answers.push({ parts: e.parts, code: e.reason.code });
+      },
+    });
+    expect(answers).toEqual([{ parts: [0, 1], code: "INSUFFICIENT_FUNDS" }]);
+  });
+
   it("a save stops on it after one prompt; an atomic batch names no limit and keeps its batch size", async () => {
     const single = wallet();
     const one = await createWriter(efs, {
