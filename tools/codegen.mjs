@@ -352,7 +352,7 @@ const files = {};
   const env = g.envelope ?? {};
   if (typeof env.txGasCap !== "number" || typeof env.headroomPercent !== "number")
     throw new Error("codegen: gasModel.envelope needs txGasCap and headroomPercent");
-  let src = header(["release/release.json"]);
+  let src = header(["release/release.json", "test/vectors/gas-schedules.json"]);
   src +=
     "/**\n * The contracts' fitted gas model, by fee schedule (release.json gasModel). Planning only; eth_estimateGas on\n * the exact call decides before sending. `executionGas` is set where the per-transaction cap counts execution gas\n * only (then `constants`, all gas, must also fit the block). Never apply one schedule's constants to another.\n */\n";
   src += `export const GAS_SCHEDULES = ${literal(schedules)} as const;\n\n`;
@@ -382,7 +382,23 @@ const files = {};
     throw new Error("codegen: gasModel.reads needs callGasCap and recommended bounds");
   src +=
     "/** The topic readers' bounds (gas/model.json reads): page × Lens per view, rows per call and entries read per call, keeping one call under callGasCap. */\n";
-  src += `export const GAS_READS = ${literal({ callGasCap: rd.callGasCap, marginPercent: rd.marginPercent, recommended: rd.recommended })} as const;\n`;
+  src += `export const GAS_READS = ${literal({ callGasCap: rd.callGasCap, marginPercent: rd.marginPercent, recommended: rd.recommended })} as const;\n\n`;
+  // What a fresh storage slot costs on each schedule (execution + state gas): the chain's own pricing, which the
+  // fee-schedule check measures to confirm the deployment document's schedule (src/chain/schedule.ts).
+  const fees =
+    JSON.parse(readFileSync(join(IN, "test/vectors/gas-schedules.json"), "utf8")).schedules ?? {};
+  const fresh = {};
+  for (const name of Object.keys(schedules)) {
+    const f = fees[name]?.freshSlot;
+    if (typeof f?.executionGas !== "number")
+      throw new Error(
+        `codegen: test/vectors/gas-schedules.json has no freshSlot for schedule ${name}`,
+      );
+    fresh[name] = f.executionGas + (f.stateGas ?? 0);
+  }
+  src +=
+    "/** A fresh storage slot's whole price (execution + state gas) per fee schedule (test/vectors/gas-schedules.json). */\n";
+  src += `export const FRESH_SLOT_GAS = ${literal(fresh)} as const;\n`;
   files["gas.ts"] = src;
 }
 

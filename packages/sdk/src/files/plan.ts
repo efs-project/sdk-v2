@@ -3,6 +3,7 @@
 // and the content records, so every planner encodes content and prices it the same way.
 
 import { keccak256, sha256 } from "viem";
+import { scheduleCheck } from "../actions/schedule.js";
 import {
   floorMismatch,
   type GasModel,
@@ -12,9 +13,10 @@ import {
   typeNamesOf,
 } from "../actions/split.js";
 import type { ActionData } from "../actions/types.js";
+import type { Efs } from "../client.js";
 import { CARRIER, CHUNK_PAYLOAD, chunkTree, encode } from "../content/codec.js";
 import { checkLocator } from "../content/locator.js";
-import { EfsFault, type Reason, reason } from "../core/errors.js";
+import { type CallOpts, EfsFault, type Reason, reason } from "../core/errors.js";
 import { bytesToHex, type Hex, lower, ZERO_WORD } from "../core/hex.js";
 import type { DeploymentInfo } from "../deployment/manifest.js";
 import { ACTION } from "../generated/constants.js";
@@ -105,6 +107,19 @@ export function gasSetup(
       typeNames: g.typeNames,
     },
   };
+}
+
+/**
+ * gasSetup after the fee-schedule check (actions/schedule.ts): a document whose schedule is not the chain's never
+ * plans (UNSUPPORTED_PROFILE, naming both), and a failed check is a failure of this call, measured again next time.
+ */
+export async function checkedGasSetup(
+  efs: Efs,
+  o: GasOpts & CallOpts,
+): Promise<{ ok: true; gas: GasSetup } | { ok: false; reason: Reason }> {
+  const fee = await scheduleCheck(efs, o);
+  if (!fee.ok) return { ok: false, reason: fee.reason };
+  return gasSetup(efs.deployment, o);
 }
 
 const printableAscii = (s: string): boolean => /^[\x20-\x7e]+$/.test(s);

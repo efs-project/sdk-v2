@@ -25,7 +25,7 @@ import type { Efs } from "../client.js";
 import { misuse, type Reason, reason } from "../core/errors.js";
 import { type Hex, lower, type PrincipalId } from "../core/hex.js";
 import type { Ctx } from "../files/bytes.js";
-import { gasSetup } from "../files/plan.js";
+import { checkedGasSetup } from "../files/plan.js";
 import { ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { positionKey } from "../protocol/keys.js";
@@ -392,7 +392,7 @@ async function plan(
   actions.push({ action: statement, body: "0x", firstStatement: first, bindRow: row });
 
   // ---- parts
-  const g = gasSetup(d, o);
+  const g = await checkedGasSetup(efs, o);
   if (!g.ok) return { kind: "efs.topicStatementPlan", status: "UNKNOWN", reason: g.reason, basis };
   const gas = g.gas;
   const split = splitPublications(actions, {

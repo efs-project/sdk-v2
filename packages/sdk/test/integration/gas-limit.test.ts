@@ -18,6 +18,7 @@ import { createEfs } from "../../src/client.ts";
 import { encode } from "../../src/content/codec.ts";
 import { type Hex, ZERO_WORD } from "../../src/core/hex.ts";
 import { ACTION } from "../../src/generated/constants.ts";
+import { pricing } from "./pricing.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8"));
@@ -26,8 +27,13 @@ const account = mnemonicToAccount(MNEMONIC, { addressIndex: 29 });
 const CAP = 16_777_216n;
 
 const prague = createEfs({ rpcs: [fixture.rpcUrl], deployment });
+// The fixture runs prague, so its fee-schedule probe is answered as a chain that prices storage by EIP-8037 would:
+// the fee-schedule check would refuse an amsterdam document on a prague chain (test/integration/fee-schedule.test.ts).
+const asAmsterdam = pricing(fixture.rpcUrl);
+asAmsterdam.state.as = "amsterdam";
 const amsterdam = createEfs({
   rpcs: [fixture.rpcUrl],
+  fetch: asAmsterdam.fetch,
   deployment: {
     ...deployment,
     chain: { ...deployment.chain, hardfork: "amsterdam", feeSchedule: "amsterdam" },

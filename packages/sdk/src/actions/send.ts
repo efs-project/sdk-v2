@@ -13,6 +13,7 @@ import { ERROR_CATALOG } from "../generated/errors.js";
 import { planGasLimit } from "./gaslimit.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
 import { actionsHash } from "./plan.js";
+import { scheduleCheck } from "./schedule.js";
 import { txGasCapOf } from "./split.js";
 import type { Plan, SendResult } from "./types.js";
 
@@ -320,6 +321,10 @@ export async function sendPlan(
       const twin = await inFlightTwin(journal, lock, plan);
       if (twin)
         return { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: twinReason(twin) };
+      // The document's fee schedule must be the chain's: the gas limit is set by it.
+      const fee = await scheduleCheck(efs, o);
+      if (!fee.ok)
+        return { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: fee.reason };
       const est = await estimate(efs, plan, o);
       if ("revert" in est)
         return {

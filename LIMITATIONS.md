@@ -35,7 +35,9 @@ depend on anything in this repository yet.
     (EIP-8037's reservoir: never clamped at 2^24, state gas held above it, at most the block gas limit). That includes
     `eth_estimateGas` returning execution plus state gas.
   - The SDK's own send path has not run there: no v2 deployment exists on Sepolia yet.
-  - A Sepolia deployment document must name the `amsterdam` fee schedule. The fixture runs prague.
+  - A Sepolia deployment document must name the `amsterdam` fee schedule (the fixture runs prague). A document that
+    disagrees with its chain is refused before any plan or send: the fee-schedule check measures how the chain prices a
+    fresh storage slot.
   - Wallets that estimate their own gas (EIP-5792 batches) must not clamp at 2^24 either.
 - **Big files beyond linking elsewhere.** The file planners stop at `maxParts` (default 64) publications of up to
   16 KiB of body each, about 1 MiB, with TOO_LARGE. Raising it costs one wallet prompt and about 13M gas per part: a

@@ -29,12 +29,12 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 1
+          "ms": 2
         },
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 5
+          "ms": 14
         }
       ],
       "requests": 5

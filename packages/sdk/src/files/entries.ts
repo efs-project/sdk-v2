@@ -60,10 +60,10 @@ import {
   buildContent,
   type ContentLayout,
   checkContent,
+  checkedGasSetup,
   type ExternalContent,
   type FilesTypes,
   type GasOpts,
-  gasSetup,
   plain,
   publish,
   randomSalt,
@@ -506,7 +506,7 @@ async function toParts<R extends FolderReviewBase>(
   recordsCount: number,
 ): Promise<FolderPlanResult<R>> {
   const d = efs.deployment;
-  const g = gasSetup(d, o);
+  const g = await checkedGasSetup(efs, o);
   if (!g.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: g.reason, basis };
   const gas = g.gas;
   // Tag each action with its unit so the parts' effects can say what each part carries.
