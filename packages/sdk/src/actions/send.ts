@@ -10,6 +10,7 @@ import { type CallOpts, EfsFault, type Reason, type RevertInfo, reason } from ".
 import { type Address, type Hex, lower } from "../core/hex.js";
 import { errorAbi } from "../generated/abis.js";
 import { ERROR_CATALOG } from "../generated/errors.js";
+import { planGasLimit } from "./gaslimit.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
 import { actionsHash } from "./plan.js";
 import { txGasCapOf } from "./split.js";
@@ -244,7 +245,6 @@ export { TX_GAS_CAP, txGasCapOf } from "./split.js";
 
 /** Gas to aim for per publication when splitting (contracts' guidance: about 14M, headroom under the cap). */
 const SPLIT_TARGET = 14_000_000n;
-const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
 
 /**
  * @internal The open attempt of another plan for the same publication (the same actions and bodies) from this
@@ -332,12 +332,14 @@ export async function sendPlan(
           reasons: [`simulation reverts with ${revertName(est.revert)}`],
           revert: est.revert,
         };
-      // 25% headroom over the estimate, but never a limit above the per-transaction cap (EIP-7825): a node refuses
-      // a transaction by its gas LIMIT, not by the gas it would use.
+      // The limit per fee profile (gasLimitOf): on prague and osaka 25% over the estimate and never above the
+      // per-transaction cap (EIP-7825: a node refuses a transaction by its gas LIMIT, not the gas it would use); on
+      // amsterdam the cap bounds execution only and the state gas rides in the reservoir above it (EIP-8037).
       const cap = txGasCapOf(efs.deployment);
-      if ("gas" in est && est.gas > cap) {
+      const limit = "gas" in est ? planGasLimit(efs.deployment, plan, est.gas) : undefined;
+      if (limit && !limit.ok && "gas" in est) {
         // Too big for one atomic transaction: not a stale plan. Nothing is sent; split, then send each part.
-        const suggestedParts = Number((est.gas + SPLIT_TARGET - 1n) / SPLIT_TARGET);
+        const suggestedParts = Number((limit.execution + SPLIT_TARGET - 1n) / SPLIT_TARGET);
         return {
           kind: "efs.send",
           status: "NOT_SENT",
@@ -345,12 +347,12 @@ export async function sendPlan(
           reason: reason(
             "OVER_TX_GAS_CAP",
             "after-replan",
-            `the publication needs ~${est.gas} gas, over the per-transaction cap of ${cap}: split it into about ${suggestedParts} publications`,
+            `${limit.detail}: split it into about ${suggestedParts} publications`,
           ),
           gas: { estimate: est.gas, cap, suggestedParts },
         };
       }
-      const gas = "gas" in est ? min((est.gas * 5n) / 4n, cap) : undefined;
+      const gas = limit?.ok ? limit.gas : undefined;
       let record: AttemptRecord = {
         schema: "efs-sdk-attempt/1",
         planId: plan.id,

@@ -37,6 +37,12 @@ export interface PlanInput {
    * first part's nonce + i. Default: the principal's next nonce at the basis.
    */
   nonce?: bigint;
+  /**
+   * The planner's estimate of this publication (batchGasOf: intrinsic and calldata included), and with an amsterdam
+   * model its whole gas (state gas included). With both, the plan carries them as `plannedGas`.
+   */
+  gas?: number;
+  total?: number;
 }
 
 export async function planPublication(
@@ -174,6 +180,9 @@ export async function planPublication(
     calldata,
     effects: input.effects,
     basis,
+    ...(input.gas !== undefined && input.total !== undefined
+      ? { plannedGas: { execution: input.gas, total: input.total } }
+      : {}),
   };
   return { kind: "efs.planResult", status: "PLANNED", plan };
 }

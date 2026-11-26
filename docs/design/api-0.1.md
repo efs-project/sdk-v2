@@ -708,6 +708,41 @@ export interface ReconcileResult {
 - Unknown fields are preserved.
 - JSON codecs are exported: `encodeJournalRecord` / `decodeJournalRecord`, with bigint written as decimal strings.
 
+### The gas limit a send sets (0.1)
+
+`send` (and a local account's signature) sets the transaction's gas limit from `eth_estimateGas` on the exact call
+and the deployment's fee profile (`gasLimitOf`). A size refusal is NOT_SENT `OVER_TX_GAS_CAP` (`retry:
+"after-replan"`, `gas: { estimate, cap, suggestedParts }`): nothing is sent, so split the save and send each part.
+- **prague and osaka** (EIP-7825 caps tx.gas itself at 2^24): 25% over the estimate, at most the cap. An estimate
+  over the cap is refused.
+- **amsterdam** (EIP-8037, the state-gas reservoir). `reservoirProfile(deployment)` decides it, by the vendored fee
+  schedule alone: a schedule with `executionGas` has the reservoir; a chain with no vendored schedule does not.
+  - **What the cap bounds:** only the execution part. The rest of tx.gas, above 2^24, is the reservoir that state
+    gas is drawn from first, and tx.gas may go up to 2^32 − 1. So the limit is **never clamped at 2^24**: a deep
+    first tag (about 3.3M execution + 14.4M state) clamped there would pay its state gas out of its execution budget.
+  - **The limit:** at least the estimate × 1.25, and at least the planner's whole gas × 1.15. Once that is over
+    2^24, at least 2^24 + 1.15 × state gas, so the reservoir alone holds the state gas and the execution budget stays
+    whole.
+  - **The ceiling:** at most 2^32 − 1 and the deployment's `chain.blockGasLimit`. A block includes a transaction only
+    while tx.gas is within its state gas still available. Any limit at or above the whole gas runs (state gas spills
+    from the reservoir into execution gas); only the margin is lost.
+  - **Refused:** when the execution part is over the cap (the estimate less the planner's state gas, or the planner's
+    own execution figure), or when the planner's whole gas can't fit the ceiling.
+  - **Why both readings:** whether a Glamsterdam node's eth_estimateGas counts state gas is not confirmed, and the
+    rules are safe under either.
+  - **The planner's figures:** a plan carries them as `plan.plannedGas` `{ execution, total }` (from
+    `PlanInput.gas` / `.total`, which every planner's parts set; `total − execution` is the state gas; not part of
+    the plan's id). A plan without them (`planActions` on bare actions) gets the estimate × 1.25 under the same
+    ceiling and is not refused for size: a node estimates only a limit that runs.
+  - **Funds:** the account must hold limit × maxFeePerGas up front. A large-state save asks for a limit well over
+    2^24 (about 33M for the deep first tag), though only the gas used is paid.
+  - **No chain runs amsterdam yet.** These rules follow the EIP text (EIP-8037 Last Call). They are tested as
+    arithmetic, and through the send path with the fixture's deployment document renamed amsterdam. Foundry's
+    amsterdam profile has no reservoir, so nothing has run them on a chain.
+- **EIP-5792 batches:** `wallet_sendCalls` carries no gas limits; the wallet sets each call's. The SDK refuses only by
+  the same rule, on the first part. On Glamsterdam, a wallet that estimates its own gas must do the same as above:
+  never clamp at 2^24, and leave the state gas room above it. A wallet that clamps runs large-state parts out of gas.
+
 ### Splitting a save into publications (0.1, model-independent part)
 
 `splitPublications(actions, { model, limits, txGasCap, headroom?, blockGasLimit?, firstWrite?, typeNames? })` in

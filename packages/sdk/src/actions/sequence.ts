@@ -115,11 +115,8 @@ export interface SequenceProgress {
   effect?: SequenceEffect;
 }
 
-export type SequencePartInput = Omit<PlanInput, "account" | "nonce"> & {
-  /** The planner's estimate of this part in an atomic batch (batchGasOf), and its whole gas on amsterdam. */
-  gas?: number;
-  total?: number;
-};
+/** A part as a planner made it: PlanInput.gas and .total carry its batching estimate and its whole gas. */
+export type SequencePartInput = Omit<PlanInput, "account" | "nonce">;
 
 interface Deps {
   efs: Efs;
