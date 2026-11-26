@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
-// files-name/2: the exact on-chain grammar (contracts src/profiles/rules/FilesNameRule.sol, ported from the
-// measured naming experiment). Byte-exact and case-sensitive; the contract never normalizes. NFC is an SDK
-// obligation: `normalize` produces it, and `check` reports whether a name is already NFC.
+// files-name/3: the exact on-chain grammar (contracts src/profiles/rules/FilesNameRule.sol, from the measured naming
+// experiment; the list release, contracts 04526b1 item 54). Byte-exact and case-sensitive; the contract never
+// normalizes. NFC is an SDK obligation: `normalize` produces it, and `check` reports whether a name is already NFC.
 import { utf8Encode } from "../core/platform.js";
+import { FILE_NAMES } from "../generated/constants.js";
 
-/** The name profile folder and file names are checked against: files-name/2 (UTF-8, byte-exact, case-sensitive). */
-export const NAME_PROFILE = "files-name/2" as const;
-/** The longest name files-name/2 admits, in UTF-8 bytes. */
+/** The name profile folder and file names are checked against: files-name/3 (UTF-8, byte-exact, case-sensitive). */
+export const NAME_PROFILE: typeof FILE_NAMES.profile = FILE_NAMES.profile;
+/** The longest name files-name/3 admits, in UTF-8 bytes. */
 export const MAX_NAME_BYTES = 255;
 
 export type NameInput = string | Uint8Array;
@@ -16,20 +17,38 @@ export type NameCheck =
   | { status: "INVALID"; rule: NameRule; at?: number }
   | { status: "UNSUPPORTED_BY_PROFILE"; profile: string };
 
+/**
+ * Why a name is refused, the chain's checks in its own order (FilesName.valid): the length (`empty`, `too-long`),
+ * `reserved-prefix` (`~efs`), then scanning from the first byte the first of `reserved-character` (one of
+ * `/ \ # ? % < > " | : *` and `;`: links and EFS URL syntax keep them), `excluded-character` (a control or another
+ * excluded scalar) or `malformed-utf8`, then `trailing-dot` (a name ending in '.', so '.' and '..' too), then
+ * `leading-whitespace` and `trailing-whitespace`.
+ */
 export type NameRule =
   | "empty"
   | "too-long"
-  | "dot-or-dotdot"
   | "reserved-prefix"
-  | "malformed-utf8"
+  | "reserved-character"
   | "excluded-character"
+  | "malformed-utf8"
+  | "trailing-dot"
   | "leading-whitespace"
   | "trailing-whitespace";
 
-/** Scalars the rule refuses anywhere in a name (NameRules.sol `Utf8.excluded`). */
+/** The printable ASCII a name may not hold (FILE_NAMES.asciiRefused), as a 128-entry table. */
+const ASCII_RESERVED: readonly boolean[] = (() => {
+  const t = new Array<boolean>(128).fill(false);
+  for (const ch of FILE_NAMES.asciiRefused) t[ch.charCodeAt(0)] = true;
+  return t;
+})();
+
+/** Printable ASCII the rule refuses anywhere in a name (FILE_NAMES.asciiRefused). */
+const isRefusedAscii = (cp: number): boolean => cp < 0x80 && ASCII_RESERVED[cp] === true;
+
+/** Every scalar the rule refuses anywhere in a name: controls, the reserved ASCII and the excluded scalars (FilesName). */
 export function isExcluded(cp: number): boolean {
   if (cp <= 0x1f) return true; // C0 controls
-  if (cp < 0x7f) return cp === 0x2f || cp === 0x5c; // '/' and '\'
+  if (cp < 0x7f) return cp === 0x2f || cp === 0x5c || isRefusedAscii(cp); // the reserved ASCII
   if (cp <= 0x9f) return true; // DEL and C1
   if (cp === 0xad || cp === 0x061c || cp === 0x180e) return true; // soft hyphen, ALM, Mongolian vowel separator
   if (cp === 0x200b || cp === 0x200e || cp === 0x200f) return true; // ZWSP, LRM, RLM
@@ -64,43 +83,46 @@ export function nameBytes(input: NameInput): Uint8Array {
 /** Strict UTF-8 decode into scalars: no overlong forms, no surrogates, nothing above U+10FFFF. Null if malformed. */
 export function decodeScalars(bytes: Uint8Array): { scalars: number[]; text: string } | null {
   const scalars: number[] = [];
-  let i = 0;
-  while (i < bytes.length) {
-    const b0 = bytes[i] as number;
-    let cp: number;
-    let w: number;
-    if (b0 < 0x80) {
-      cp = b0;
-      w = 1;
-    } else if (b0 >= 0xc2 && b0 <= 0xdf) {
-      w = 2;
-      cp = b0 & 0x1f;
-    } else if (b0 >= 0xe0 && b0 <= 0xef) {
-      w = 3;
-      cp = b0 & 0x0f;
-    } else if (b0 >= 0xf0 && b0 <= 0xf4) {
-      w = 4;
-      cp = b0 & 0x07;
-    } else {
-      return null;
-    }
-    if (i + w > bytes.length) return null;
-    for (let j = 1; j < w; j++) {
-      const c = bytes[i + j] as number;
-      if ((c & 0xc0) !== 0x80) return null;
-      cp = (cp << 6) | (c & 0x3f);
-    }
-    if (w === 3 && (cp < 0x800 || (cp >= 0xd800 && cp <= 0xdfff))) return null;
-    if (w === 4 && (cp < 0x10000 || cp > 0x10ffff)) return null;
-    scalars.push(cp);
-    i += w;
+  for (let i = 0; i < bytes.length; ) {
+    const s = scalarAt(bytes, i);
+    if (!s) return null;
+    scalars.push(s.cp);
+    i += s.w;
   }
   return { scalars, text: String.fromCodePoint(...scalars) };
 }
 
+/** One scalar from a strict UTF-8 decode at `i`, or null (overlong, surrogate, above U+10FFFF, truncated). */
+function scalarAt(bytes: Uint8Array, i: number): { cp: number; w: number } | null {
+  const b0 = bytes[i] as number;
+  let cp: number;
+  let w: number;
+  if (b0 < 0x80) return { cp: b0, w: 1 };
+  if (b0 >= 0xc2 && b0 <= 0xdf) {
+    w = 2;
+    cp = b0 & 0x1f;
+  } else if (b0 >= 0xe0 && b0 <= 0xef) {
+    w = 3;
+    cp = b0 & 0x0f;
+  } else if (b0 >= 0xf0 && b0 <= 0xf4) {
+    w = 4;
+    cp = b0 & 0x07;
+  } else return null;
+  if (i + w > bytes.length) return null;
+  for (let j = 1; j < w; j++) {
+    const c = bytes[i + j] as number;
+    if ((c & 0xc0) !== 0x80) return null;
+    cp = (cp << 6) | (c & 0x3f);
+  }
+  if (w === 3 && (cp < 0x800 || (cp >= 0xd800 && cp <= 0xdfff))) return null;
+  if (w === 4 && (cp < 0x10000 || cp > 0x10ffff)) return null;
+  return { cp, w };
+}
+
 /**
- * Check a name against files-name/2. Strings are encoded as given: the SDK never re-normalizes a caller's text
- * here, so the result is exactly what the contract would decide. Use `normalize` first for new names.
+ * Check a name against files-name/3. Strings are encoded as given: the SDK never re-normalizes a caller's text
+ * here, so the result is exactly what the contract would decide, and `rule` is the chain's first failed check
+ * (NameRule). Use `normalize` first for new names.
  */
 export function checkName(input: NameInput, profile: string = NAME_PROFILE): NameCheck {
   if (profile !== NAME_PROFILE) return { status: "UNSUPPORTED_BY_PROFILE", profile };
@@ -108,22 +130,27 @@ export function checkName(input: NameInput, profile: string = NAME_PROFILE): Nam
   const n = bytes.length;
   if (n === 0) return { status: "INVALID", rule: "empty" };
   if (n > MAX_NAME_BYTES) return { status: "INVALID", rule: "too-long" };
-  if (bytes[0] === 0x2e && (n === 1 || (n === 2 && bytes[1] === 0x2e)))
-    return { status: "INVALID", rule: "dot-or-dotdot" };
   if (n >= 4 && bytes[0] === 0x7e && bytes[1] === 0x65 && bytes[2] === 0x66 && bytes[3] === 0x73) {
     return { status: "INVALID", rule: "reserved-prefix" };
   }
-  const decoded = decodeScalars(bytes);
-  if (!decoded) return { status: "INVALID", rule: "malformed-utf8" };
-  const { scalars, text } = decoded;
-  for (let i = 0; i < scalars.length; i++) {
-    if (isExcluded(scalars[i] as number))
-      return { status: "INVALID", rule: "excluded-character", at: i };
+  // the scan, in byte order: the first refused byte or scalar decides (`at` counts scalars)
+  const scalars: number[] = [];
+  for (let i = 0; i < n; ) {
+    const s = scalarAt(bytes, i);
+    if (!s) return { status: "INVALID", rule: "malformed-utf8" };
+    if (isRefusedAscii(s.cp))
+      return { status: "INVALID", rule: "reserved-character", at: scalars.length };
+    if (isExcluded(s.cp))
+      return { status: "INVALID", rule: "excluded-character", at: scalars.length };
+    scalars.push(s.cp);
+    i += s.w;
   }
+  if (bytes[n - 1] === 0x2e) return { status: "INVALID", rule: "trailing-dot" };
   if (isNameWhitespace(scalars[0] as number))
     return { status: "INVALID", rule: "leading-whitespace" };
   if (isNameWhitespace(scalars[scalars.length - 1] as number))
     return { status: "INVALID", rule: "trailing-whitespace" };
+  const text = String.fromCodePoint(...scalars);
   return { status: "VALID", bytes, text, nfc: text.normalize("NFC") === text };
 }
 

@@ -82,12 +82,12 @@ describe("link grammar vectors", () => {
     expect(link({ kind: "topic", segments: [], words: ["cars", "tesla"] })).toBe("cars/tesla");
     expect(() => link({ kind: "topic", segments: ["Cars"] })).toThrow(/folded words/);
     expect(() => link({ kind: "topic", segments: [], words: ["Cars"] })).toThrow(/unfolded/);
-    expect(() => link({ kind: "topic", segments: [], words: ["~efs"] })).toThrow(/reserved-tilde/);
+    expect(() => link({ kind: "topic", segments: [], words: ["~efs"] })).toThrow(/forbidden-ascii/);
     const address = "0xAbCdEf0123456789aBcDeF0123456789AbCdEf01" as const;
     expect(link({ kind: "home", address, names: ["Photos", "cat 1.jpg"] })).toBe(
       "0xabcdef0123456789abcdef0123456789abcdef01/Photos/cat%201.jpg",
     );
-    expect(() => link({ kind: "home", address, names: ["a/b"] })).toThrow(/files-name\/2/);
+    expect(() => link({ kind: "home", address, names: ["a/b"] })).toThrow(/files-name\/3/);
     expect(() => link({ kind: "home", address: "0x12" as never, names: [] })).toThrow(/20-byte/);
     const lens = { principals: [`0x${"0".repeat(24)}${"11".repeat(20)}` as `0x${string}`] };
     expect(link({ kind: "topic", segments: [], words: ["cars"], lens })).toBe(
@@ -106,7 +106,7 @@ describe("link grammar vectors", () => {
     );
     // No names is an object link, never a second spelling of one.
     expect(() => link({ kind: "path", folder, names: [] })).toThrow(/at least one name/);
-    expect(() => link({ kind: "path", folder, names: ["a/b"] })).toThrow(/files-name\/2/);
+    expect(() => link({ kind: "path", folder, names: ["a/b"] })).toThrow(/files-name\/3/);
     expect(() => link({ kind: "path", folder: "0x12" as never, names: ["a"] })).toThrow(/64 hex/);
   });
 });

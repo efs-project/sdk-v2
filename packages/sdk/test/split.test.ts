@@ -402,7 +402,7 @@ describe("packBatches", () => {
     const shaped: PlannedAction[] = [
       plain(ACTION.CREATE),
       publish(96, "files-root/1 form 0"),
-      publish(12, "files-name/2"),
+      publish(12, "files-name/3"),
       { ...plain(ACTION.BIND), bindRow: "bindHeadFresh" },
       { ...plain(ACTION.BIND), bindRow: "bindFolderFreshFile" },
     ];
@@ -420,11 +420,11 @@ const FLOORED = {
 const releases = (n: number) => Array.from({ length: n }, () => plain(ACTION.RELEASE));
 
 describe("the kernel's floor (formula 3)", () => {
-  it("a 64-entry remove is 58 + 6 on prague: bound by the floor V, as contracts 6d11858 item 43 says (64 at 3ca53ba)", () => {
+  it("a 64-entry remove is 54 + 10 on prague: bound by the floor V, as contracts 04526b1 item 51 says (58 at 6d11858, 64 at 3ca53ba)", () => {
     const limits = { ...LIMITS, maxBindsPerPublication: 64 };
     const r = splitPublications(releases(64), { model: FLOORED, limits, txGasCap: CAP });
     if (!r.ok) throw new Error(r.reason.code);
-    expect(r.parts.map((p) => p.actions.length)).toEqual([58, 6]);
+    expect(r.parts.map((p) => p.actions.length)).toEqual([54, 10]);
     const rule = r.parts[0]?.rule;
     expect(rule?.V).toBeGreaterThan(rule?.E ?? 0);
     expect(Math.max(rule?.E ?? 0, rule?.V ?? 0)).toBeLessThanOrEqual(r.budget);

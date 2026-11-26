@@ -41,7 +41,7 @@ import {
 import { ledgerReadsAbi } from "../generated/abis.js";
 import { ACTION, PURPOSES } from "../generated/constants.js";
 import { bindingKey, positionKey, recordId } from "../protocol/keys.js";
-import { chainStatus } from "../protocol/status.js";
+import { chainStatus, neverBoundHead } from "../protocol/status.js";
 import {
   type Ctx,
   type FileRef,
@@ -230,6 +230,8 @@ export async function planEditFile(
         lensAuthor: PrincipalId;
         myRevision: bigint;
         myState: string;
+        /** Your HEAD here is MASKED or RELEASED and never bound (only a "not this"): the BIND is a yes after a no. */
+        myNeverBound: boolean;
         mediaType: string;
       };
   const r = await onEndpoint<Seen>(
@@ -294,14 +296,16 @@ export async function planEditFile(
         };
       let status: number;
       let revisionNow: bigint;
+      let mine: { state: number; targetKind: number };
       try {
         const [st, head] = decodeFunctionResult({
           abi: ledgerReadsAbi,
           functionName: "head",
           data: out.result as Hex,
-        }) as unknown as [number, { revision: bigint }];
+        }) as unknown as [number, { revision: bigint; state: number; targetKind: number }];
         status = st;
         revisionNow = BigInt(head.revision);
+        mine = { state: Number(head.state), targetKind: Number(head.targetKind) };
       } catch {
         return {
           ok: false,
@@ -327,6 +331,7 @@ export async function planEditFile(
           lensAuthor: h.author,
           myRevision: revisionNow,
           myState: cs,
+          myNeverBound: (cs === "MASKED" || cs === "RELEASED") && neverBoundHead(mine),
           mediaType,
         },
       };
@@ -389,12 +394,16 @@ export async function planEditFile(
     group: FINISH,
     // A first statement only when you never bound this file's HEAD (the kernel's floor charges it fresh slots).
     firstStatement: seen.myState === "ABSENT_PROVEN",
-    // a never-bound HEAD is a fresh bind, a bound one a rebind; a masked or released one is priced at the larger
-    ...(seen.myState === "ABSENT_PROVEN"
-      ? { bindRow: "bindHeadFresh" as const }
-      : seen.myState === "PRESENT"
-        ? { bindRow: "bindHeadRebind" as const }
-        : {}),
+    // your HEAD by its state (gas/model.json laterRows.rule): UNSET a fresh bind, BOUND a re-bind, MASKED or RELEASED a
+    // yes after a no where you never had a version (bindHeadAfterNo), else a restore to this new revision (restoreHead)
+    bindRow:
+      seen.myState === "ABSENT_PROVEN"
+        ? ("bindHeadFresh" as const)
+        : seen.myState === "PRESENT"
+          ? ("bindHeadRebind" as const)
+          : seen.myNeverBound
+            ? ("bindHeadAfterNo" as const)
+            : ("restoreHead" as const),
   });
   const split = splitPublications([...records, ...finish], {
     model,

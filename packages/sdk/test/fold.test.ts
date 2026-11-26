@@ -96,13 +96,17 @@ describe("every all-ASCII vector of the fold evaluation gives both candidate rul
   it("covers every all-ASCII case (24)", () => {
     expect(ascii.length).toBe(24);
   });
-  it.each(ascii)("$label", ({ input, A, B }) => {
+  // The evaluation judged its words by the grammar before the list release; since then the chain also refuses ASCII
+  // punctuation (contracts 04526b1 item 53), so a word a rule makes can still be one the chain refuses (the qualifier
+  // `mercury_(planet)`: code 3). The fold must make each rule's word; the chain's grammar decides the rest.
+  const LIST_RELEASE_REFUSES = new Set(["qualifier"]);
+  it.each(ascii)("$label", ({ label, input, A, B }) => {
     const word = fold(input);
     const checked = checkWord(word);
     for (const rule of [A, B]) {
       if (rule.word !== undefined) {
         expect(word).toBe(rule.word);
-        expect(checked.ok).toBe(true);
+        expect(checked.ok).toBe(!LIST_RELEASE_REFUSES.has(label));
       } else expect(checked.ok).toBe(false);
     }
   });

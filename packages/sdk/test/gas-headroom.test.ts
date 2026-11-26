@@ -102,9 +102,13 @@ describe("the planning headroom covers intrinsic gas, calldata and the model's e
         (r) => r.schedule === name,
       );
     // Tripwires on the spare, one per schedule, never raised: when one fires, report the figure and the headroom
-    // needed. Either fires once its under-prediction passes 10.74%. At contracts 6d11858: prague 0.9710 (9.69%, tag
-    // releases at entry 47 across topics; headroom needed 12.5%), amsterdam 0.9792 (10.65% of execution gas, create
-    // file lists exist; needed 13.3%). At 3ca53ba amsterdam was 0.9789 (10.62%).
+    // needed. Either fires once its under-prediction passes 10.74%. At contracts 04526b1 (the list release): prague
+    // 0.9710 (9.68%, tag releases at entry 47 across topics; headroom needed 12.5%), amsterdam 0.9781 (10.52% of
+    // execution gas, create file lists exist; needed 13.2%), 0.22 points from firing. At 6d11858 they were 0.9710
+    // (9.69%) and 0.9792 (10.65%); at 3ca53ba amsterdam was 0.9789 (10.62%).
+    expect(at("prague")?.fraction).toBeCloseTo(0.971, 3);
+    expect(at("amsterdam")?.fraction).toBeCloseTo(0.9781, 4);
+    expect([at("prague")?.neededPercent, at("amsterdam")?.neededPercent]).toEqual([12.5, 13.2]);
     expect(at("prague")?.fraction).toBeLessThan(0.98);
     expect(at("amsterdam")?.fraction).toBeLessThan(0.98);
   });
@@ -126,16 +130,18 @@ describe("the planning headroom covers intrinsic gas, calldata and the model's e
 
   it("the cap is tested against the under-prediction of the gas it counts, never an over-prediction or the all-gas figure", () => {
     const vendored = GAS_SCHEDULES as unknown as Schedules;
-    // contracts 6d11858 (gas/model.json; release.json carries the maxAbs figures, codegen adds the maxUnder ones)
+    // contracts 04526b1 (gas/model.json; release.json carries the maxAbs figures, codegen adds the maxUnder ones).
+    // Since the list release maxAbs is the larger of under- and over-prediction: amsterdam's 18.42 is an
+    // over-prediction of all gas (tag restores at revision 5), which plans below the cap, never above it.
     expect(vendored["amsterdam"]).toMatchObject({
-      maxUnderExecutionErrorPercent: 10.65,
-      maxUnderErrorPercent: 6.73,
-      maxAbsExecutionErrorPercent: 13.9, // an over-prediction: plans below the cap, never above it
-      maxAbsErrorPercent: 12.05,
+      maxUnderExecutionErrorPercent: 10.52,
+      maxUnderErrorPercent: 6.63,
+      maxAbsExecutionErrorPercent: 13.89, // an over-prediction: plans below the cap, never above it
+      maxAbsErrorPercent: 18.42,
     });
     expect(vendored["prague"]).toMatchObject({
-      maxUnderErrorPercent: 9.69,
-      maxAbsErrorPercent: 11.16,
+      maxUnderErrorPercent: 9.68,
+      maxAbsErrorPercent: 11.15,
     });
     // Figures far over the headroom change nothing while the under-prediction the cap counts fits.
     const others = {
@@ -144,16 +150,16 @@ describe("the planning headroom covers intrinsic gas, calldata and the model's e
         maxAbsErrorPercent: 40,
         maxAbsExecutionErrorPercent: 40,
         maxUnderErrorPercent: 40,
-        maxUnderExecutionErrorPercent: 10.65,
+        maxUnderExecutionErrorPercent: 10.52,
       },
-      prague: { maxAbsErrorPercent: 40, maxUnderErrorPercent: 9.69 },
+      prague: { maxAbsErrorPercent: 40, maxUnderErrorPercent: 9.68 },
     };
     expect(failures(others, GAS_PLANNING.headroomPercent)).toEqual([]);
     // prague has all-gas figures only (its cap counts all gas).
     expect(vendored["prague"]?.maxUnderExecutionErrorPercent).toBeUndefined();
   });
 
-  it("the worst calldata is every action and body at its widest (39,236 bytes at contracts 6d11858)", () => {
+  it("the worst calldata is every action and body at its widest (39,236 bytes at contracts 04526b1)", () => {
     expect(worstCalldataBytes()).toBe(39_236);
   });
 });

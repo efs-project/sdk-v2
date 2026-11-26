@@ -18,7 +18,7 @@ import {
   ledgerViewsAbi,
 } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
-import { decodeScalars } from "../names/name.js";
+import { decodeScalars, NAME_PROFILE } from "../names/name.js";
 import { bindingKey, recordFromHash, scopeKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import type { Ctx, Evidence } from "./bytes.js";
@@ -192,7 +192,7 @@ export async function listRemoved(
       evidence: pin.evidence,
     };
   const dirType = lower(d.typeIds["files-directory/1"] as Hex);
-  const nameType = d.typeIds["files-name/2"] as Hex;
+  const nameType = d.typeIds[NAME_PROFILE] as Hex;
   const scope = scopeKey(author, PURPOSES.folder, subject);
   type Out =
     | { kind: "page"; rows: RemovedRow[]; coverage: FolderCoverage; next?: bigint }
@@ -340,7 +340,7 @@ export async function listRemoved(
           if (hs === "RELEASED" || hs === "MASKED")
             removed.push({ position, role: lower(role), head: hd });
         }
-        // 4. Each removed entry's name (its files-name/2 record) and its last bound target (its history).
+        // 4. Each removed entry's name (its files-name/3 record) and its last bound target (its history).
         if (removed.length > 0) {
           ctx.requests += removed.length;
           const names = await callsAt(

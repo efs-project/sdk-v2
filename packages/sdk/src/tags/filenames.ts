@@ -32,7 +32,7 @@ import {
 } from "../files/folders.js";
 import { indexAbi, ledgerAbi, ledgerReadsAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
-import { checkName, decodeScalars } from "../names/name.js";
+import { checkName, decodeScalars, NAME_PROFILE } from "../names/name.js";
 import { recordFromHash } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import { badReply, callOf, decoded } from "./plan.js";
@@ -153,7 +153,7 @@ export async function fileNames(
   const basis = pin.basis;
   const ctx: Ctx = { efs, requests: 0 };
   const ids = files.map((f) => lower(f.file));
-  const nameType = d.typeIds["files-name/2"] as Hex;
+  const nameType = d.typeIds[NAME_PROFILE] as Hex;
   const r = await onEndpoint<FileNameRow[]>(
     efs._internal.pool,
     async (s) => {

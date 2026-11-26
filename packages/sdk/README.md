@@ -94,6 +94,11 @@ if (edit.status === "BASE_CHANGED") {
   `notes`: say so). Adding a tag refuses a word with a non-ASCII character a candidate rule would change (MISUSE,
   `details.rule: "unstable-until-ruled"`): "can't be used until the tag text rule is chosen". `checkStableWord` lets
   a field say it as the person types.
+- **Words and names keep links working.** A tag word holds only a–z, 0–9, `-`, `_` and `.` after the fold, never
+  ends with `.` and never starts with `-` (`checkWord` gives the chain's code: "c++" is code 3, "inc." 4, "-x" 9). A
+  file or folder name can't use `# ? % / \ < > " | : * ;` or end with `.` (`checkName`: `reserved-character`,
+  `trailing-dot`): "A name can't use # ? % / \ < > " | : * ; or end with a dot." Inner spaces, `& ( ) ! @ ~` and
+  the like are fine.
 - **UNKNOWN is never absence.** Only `ABSENT_PROVEN` means "not there"; a failed or unvouched read is UNKNOWN with a
   reason and a `retry` class.
 

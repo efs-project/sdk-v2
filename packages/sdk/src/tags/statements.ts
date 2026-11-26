@@ -369,37 +369,26 @@ async function plan(
       : spec.purpose === "same"
         ? sameAction(subjectId, otherId as Hex, rev)
         : broaderAction(subjectId, otherId as Hex, rev);
-  // Each statement is priced by its measured row (contracts 0fb4804). A first SAME takes bindSameFreshWord, the
-  // dearer of the two first-SAME rows (word ↔ word and path ↔ path differ by about 100 gas). A later bind (a new
-  // text, or a restore of a masked or released statement) takes the purpose's later row.
+  // Each statement is priced by its measured row, chosen from your head (gas/model.json laterRows.rule; contracts
+  // 0fb4804, 04526b1). A first SAME takes bindSameFreshWord, the dearer of the two first-SAME rows (word ↔ word and
+  // path ↔ path differ by about 100 gas). A later bind on a BOUND head is a re-bind (a label's new text); on a MASKED
+  // or RELEASED one it is a yes after a lone no where you never said yes (bind<P>AfterNo), else a restore.
   const first = !remove && state === "UNSET";
+  const P = spec.purpose === "label" ? "Property" : spec.purpose === "same" ? "Same" : "Broader";
   const row: BindRow = remove
-    ? spec.purpose === "label"
-      ? "releaseProperty"
-      : spec.purpose === "same"
-        ? "releaseSame"
-        : "releaseBroader"
-    : spec.purpose === "label"
-      ? first
+    ? `release${P}`
+    : first
+      ? P === "Property"
         ? "bindPropertyFresh"
-        : "bindPropertyRebind"
-      : spec.purpose === "same"
-        ? first
+        : P === "Same"
           ? "bindSameFreshWord"
-          : "restoreSame"
-        : first
-          ? "bindBroaderFresh"
-          : "restoreBroader";
-  actions.push({
-    action: statement,
-    body: "0x",
-    firstStatement: first,
-    bindRow: row,
-    // INTERIM: fresh slots a later yes writes beyond its row (a never-bound head; a history word it opens)
-    ...(!remove && !first
-      ? { headRevision: head.revision, ...(neverBoundHead(head) ? { neverBound: true } : {}) }
-      : {}),
-  });
+          : "bindBroaderFresh"
+      : state === "BOUND" && P === "Property"
+        ? "bindPropertyRebind"
+        : neverBoundHead(head)
+          ? `bind${P}AfterNo`
+          : `restore${P}`;
+  actions.push({ action: statement, body: "0x", firstStatement: first, bindRow: row });
 
   // ---- parts
   const g = await checkedGasSetup(efs, o);

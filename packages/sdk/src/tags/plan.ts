@@ -535,14 +535,13 @@ async function plan(
             : "bindTagSecondAuthor"
           : state === "BOUND"
             ? "bindTagNumberChange"
-            : "restoreTag",
+            : // a yes where you only ever said no (perhaps released): the kernel writes the target fresh
+              neverBoundHead(head)
+              ? "bindTagAfterNo"
+              : "restoreTag",
         firstStatement: first,
         // a first yes files every roll-up: the author's own and the shared one at each ancestor
         ...(first && ancestors.length ? { levels: levels(true) } : {}),
-        // INTERIM: fresh slots a later yes writes beyond its row (a never-bound head; a history word it opens)
-        ...(!first
-          ? { headRevision: head.revision, ...(neverBoundHead(head) ? { neverBound: true } : {}) }
-          : {}),
       };
     } else {
       first = state === "UNSET";

@@ -5,12 +5,12 @@
 //   ~efs/o/<id>[?lens=<p>,<p>…]        an object link: a subject id (stable across renames). It opens the current
 //                                      head under a Lens: the route's default, or the ordered principals given
 //   ~efs/o/<folder>/<name>/…[?lens=…]  a path link: folder and file names below a folder named by its id, which
-//                                      keep their case (files-name/2). Any folder can start one, the shared root
+//                                      keep their case (files-name/3). Any folder can start one, the shared root
 //                                      included. The string can't say that the id is a folder: the reader checks
 //   ~efs/v/<record>                    a revision link: one immutable revision record (exact bytes; no Lens)
 //   0x<40 hex>[/<name>/…]              a home (an address; 0X and hex of either case read too, as the gateway does),
 //                                      then folder and file names, which keep their case
-//                                      (files-name/2): a lookup, which a rename or a move can break
+//                                      (files-name/3): a lookup, which a rename or a move can break
 //   <word>[/<word>/…]                  a topic, a path of words; one word alone is that word's page. Words are
 //                                      folded before lookup: the fold is the caller's (`ParseLinkOpts.fold`), so
 //                                      the grammar works before the fold rule is chosen
@@ -25,13 +25,15 @@
 // principal id. Names (such as ENS) in a Lens are not supported in 0.1.
 //
 // Ids are 0x + 64 lowercase hex. `~efs` is a prefix the name profile reserves, so no name can look like an object
-// link, and the word rules refuse a leading `~` and the address shape, so no topic can look like one either.
+// link, and the word rules refuse `~` anywhere and the address shape, so no topic can look like one either. A first
+// segment that starts `0x` and is not 0x/0X and 40 hex digits is a word (`0xsplits`), as on the chain.
 import type { Lens } from "../client.js";
 import { misuse } from "../core/errors.js";
 import type { Address, PrincipalId, RecordId, SubjectId } from "../core/hex.js";
 import { utf8Encode } from "../core/platform.js";
+import { TOPICS } from "../generated/constants.js";
 import { foldWord } from "./fold.js";
-import { checkName, decodeScalars, type NameRule } from "./name.js";
+import { checkName, decodeScalars, NAME_PROFILE, type NameRule } from "./name.js";
 import { parseSegment, wireSegment } from "./segment.js";
 import { checkWord } from "./word.js";
 
@@ -71,7 +73,7 @@ export interface HomeLink {
 }
 /**
  * A path from a folder named by its id (`~efs/o/<folder>/<name>/…`): that folder's object link, then at least one
- * folder or file name, which keep their case (files-name/2). Any folder can start one, the shared root included (it
+ * folder or file name, which keep their case (files-name/3). Any folder can start one, the shared root included (it
  * has no named link of its own). It is its own kind, never an object link with names, so a router that only opens
  * objects can't open the folder in place of the entry the link names.
  *
@@ -151,7 +153,7 @@ export type LinkRule =
   | "lens-name-unsupported"
   /** An empty segment (`a//b`); one trailing "/" is ignored. */
   | "empty-segment"
-  /** A home's folder or file name breaks files-name/2 (`detail` is the name rule). */
+  /** A home's folder or file name breaks files-name/3 (`detail` is the name rule). */
   | "bad-name"
   /** A topic segment breaks a word rule, or the caller's fold refused it (`detail` says which). */
   | "bad-word";
@@ -209,12 +211,12 @@ export function link(target: LinkTarget): string {
   return base + lensQuery(target.kind === "object" ? target.lens : undefined);
 }
 
-/** Folder and file names in the canonical wire form, or MISUSE for one that is not a files-name/2 name. */
+/** Folder and file names in the canonical wire form, or MISUSE for one that is not a files-name/3 name. */
 function wireNames(names: readonly string[], what: "home" | "path"): string[] {
   return names.map((n, i) => {
     const c = checkName(n);
     if (c.status !== "VALID")
-      throw misuse(`link: ${what} name ${i} is not a files-name/2 name`, { segment: i });
+      throw misuse(`link: ${what} name ${i} is not a ${NAME_PROFILE} name`, { segment: i });
     return wireSegment(c.bytes);
   });
 }
@@ -330,7 +332,7 @@ function decodeSegments(wire: readonly string[], at: number): string[] | LinkPar
   return out;
 }
 
-/** Folder and file names (files-name/2, case kept), or the first that breaks a name rule (`at` as above). */
+/** Folder and file names (files-name/3, case kept), or the first that breaks a name rule (`at` as above). */
 function checkNames(decoded: readonly string[], at: number): string[] | LinkParse {
   const names: string[] = [];
   for (const [j, n] of decoded.entries()) {
@@ -348,46 +350,53 @@ function checkNames(decoded: readonly string[], at: number): string[] | LinkPars
 }
 
 const ADDRESS_SHAPE = /^0x[0-9a-f]{40}$/i;
-const hasControl = (w: string): boolean =>
-  [...w].some((ch) => {
-    const c = ch.codePointAt(0) as number;
-    return c < 0x20 || c === 0x7f;
-  });
 
 /** The chain's code (checkWord) for each of the link grammar's own word rules, and a name for the codes it lacks. */
 const RULE_CODE: Readonly<Record<string, number>> = {
   length: 1,
   slash: 3,
   control: 3,
+  "forbidden-ascii": 3,
   unfolded: 3,
-  dot: 4,
-  "reserved-tilde": 5,
+  "trailing-dot": 4,
+  "leading-dash": 9,
   "address-shaped": 6,
 };
+// The chain's word codes (topic-word/1, contracts 04526b1 item 53); 5 is unused since the list release.
 const CODE_NAME: Readonly<Record<number, string>> = {
   1: "length",
   2: "malformed-utf8",
   3: "forbidden-ascii",
-  4: "dot",
-  5: "reserved-tilde",
+  4: "trailing-dot",
   6: "address-shaped",
   7: "refused-character",
+  9: "leading-dash",
 };
 
+/** Printable ASCII a word may hold, typed: a word's own (TOPICS.wordAscii), and A–Z and a space, which a fold changes. */
+const TYPED_ASCII = new Set<string>([...TOPICS.wordAscii, ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ "]);
+
 /**
- * The fold-independent word rules (the chain's, on every word of a topic path): 1–255 bytes, no `/`, no ASCII
- * control, not `.` or `..`, not starting with `~`, not address-shaped. `typed` also allows what a fold will remove.
- * What a fold produced must also pass the chain's whole grammar (checkWord), which these rules are a part of.
+ * The fold-independent word rules (the chain's, on every word of a topic path), in the chain's order: 1–255 bytes;
+ * then, scanning from the start, no `/`, no ASCII control and no other ASCII but a–z, 0–9, `-`, `_` and `.` (`~` and
+ * every other punctuation character included: no fold changes them); then not ending with `.`, not starting with
+ * `-`, not address-shaped. `typed` also allows what a fold changes (A–Z, a space). What a fold produced must also
+ * pass the chain's whole grammar (checkWord), which these rules are a part of.
  */
 function wordRule(w: string, typed: boolean): string | null {
   const n = utf8Encode(w).length;
   if (n === 0 || n > 255) return "length";
-  if (w.includes("/")) return "slash";
-  if (hasControl(w)) return "control";
-  if (w === "." || w === "..") return "dot";
-  if (w.startsWith("~")) return "reserved-tilde";
+  for (const ch of w) {
+    const c = ch.codePointAt(0) as number;
+    if (c >= 0x80) continue;
+    if (ch === "/") return "slash";
+    if (c < 0x20 || c === 0x7f) return "control";
+    if (!TYPED_ASCII.has(ch)) return "forbidden-ascii";
+    if (!typed && (ch === " " || (c >= 0x41 && c <= 0x5a))) return "unfolded";
+  }
+  if (w.endsWith(".")) return "trailing-dot";
+  if (w.startsWith("-")) return "leading-dash";
   if (ADDRESS_SHAPE.test(w)) return "address-shaped";
-  if (!typed && /[ A-Z]/.test(w)) return "unfolded";
   return null;
 }
 

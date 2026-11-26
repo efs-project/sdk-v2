@@ -40,7 +40,7 @@ import {
 } from "../generated/abis.js";
 import { FILES, PURPOSES } from "../generated/constants.js";
 import type { HomeLink, PathLink } from "../names/links.js";
-import { checkName, decodeScalars, type NameRule } from "../names/name.js";
+import { checkName, decodeScalars, NAME_PROFILE, type NameRule } from "../names/name.js";
 import { contractPrincipal, keyPrincipal, positionKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import {
@@ -310,7 +310,7 @@ export type PathResolution =
   | {
       kind: "efs.path";
       status: "INVALID";
-      /** The segment that is not a files-name/2 name (`rule`), or the reader refused. */
+      /** The segment that is not a files-name/3 name (`rule`), or the reader refused. */
       segment?: number;
       rule?: NameRule;
       reason: Reason;
@@ -847,7 +847,7 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
         return { ok: true, value: { kind: "refused", ...refused } };
       }
       // Authors: the reader's rows do not carry them. Named rows resolve under the Lens in one call; a row with no
-      // name (an INVALID row: no files-name/2 record for its role) is resolved by its position, so one bad row never
+      // name (an INVALID row: no files-name/3 record for its role) is resolved by its position, so one bad row never
       // costs the rest of the page.
       const shown = page.rows.filter((x) => x.rowKind !== ROW_WHITEOUT);
       const named = shown.filter((x) => x.name !== "0x");
@@ -1313,7 +1313,7 @@ export async function lookupAt(
 const validName = (name: string): Uint8Array => {
   const c = checkName(name);
   if (c.status !== "VALID")
-    throw misuse(`not a files-name/2 name: ${c.status === "INVALID" ? c.rule : c.status}`, {
+    throw misuse(`not a ${NAME_PROFILE} name: ${c.status === "INVALID" ? c.rule : c.status}`, {
       name,
       ...(c.status === "INVALID"
         ? { rule: c.rule, ...(c.at !== undefined ? { at: c.at } : {}) }
@@ -1414,7 +1414,11 @@ export async function resolvePath(
         status: "INVALID",
         segment: i,
         ...(c.status === "INVALID" ? { rule: c.rule } : {}),
-        reason: reason("UNSUPPORTED_PROFILE", "never", `segment ${i} is not a files-name/2 name`),
+        reason: reason(
+          "UNSUPPORTED_PROFILE",
+          "never",
+          `segment ${i} is not a ${NAME_PROFILE} name`,
+        ),
         evidence: none,
       };
     names.push(c.bytes);

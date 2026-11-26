@@ -158,6 +158,7 @@ const files = {};
     "release/efs-deployment.json",
     "test/vectors/topics.json",
     "test/vectors/numbers.json",
+    "test/vectors/names.json",
   ]);
   src += `/** Action kinds (Actions.sol). \`*_RESERVED\` kinds are refused by the ledger. */\n`;
   src += `export const ACTION_KINDS = ${literal(c.actionKinds)} as const;\n\n`;
@@ -207,9 +208,35 @@ const files = {};
   }
   if (!Number.isInteger(nv.maxStrength))
     throw new Error("codegen: numbers.json has no maxStrength");
+  // The ASCII a word may hold (the list release, contracts 04526b1 item 53: exactly a-z 0-9 - _ .); every other ASCII
+  // byte is code 3. Read from the vectors, never kept by hand.
+  const wordAscii = tv.grammar?.wordAscii;
+  if (
+    typeof wordAscii !== "string" ||
+    wordAscii.length === 0 ||
+    [...wordAscii].some((ch) => ch.charCodeAt(0) > 0x7e || ch.charCodeAt(0) < 0x21) ||
+    new Set(wordAscii).size !== wordAscii.length
+  )
+    throw new Error("codegen: topics.json grammar.wordAscii must be distinct printable ASCII");
   src +=
-    "/** Topics: the word and text limits, the refused-scalar classes and their sorted inclusive ranges [lo, hi, class]. */\n";
-  src += `export const TOPICS = ${JSON.stringify({ wordMax: tc.wordMax, textMax: tc.textMax, refusedClasses: tc.refusedClasses, refused })} as const;\n\n`;
+    "/** Topics: the word and text limits, the ASCII a word may hold, the refused-scalar classes and their sorted inclusive ranges [lo, hi, class]. */\n";
+  src += `export const TOPICS = ${JSON.stringify({ wordMax: tc.wordMax, textMax: tc.textMax, wordAscii, refusedClasses: tc.refusedClasses, refused })} as const;\n\n`;
+  // File names (the list release, contracts 04526b1 item 54): the live name profile and the ASCII it refuses beyond
+  // controls and DEL, read from test/vectors/names.json, never kept by hand.
+  const nm = json("test/vectors/names.json");
+  const nameProfiles = Object.keys(nm.typeIds ?? {});
+  const asciiRefused = nm.grammar?.asciiRefused;
+  if (nameProfiles.length !== 1 || !/^files-name\/\d+$/.test(nameProfiles[0]))
+    throw new Error("codegen: names.json typeIds must name exactly one files-name profile");
+  if (
+    typeof asciiRefused !== "string" ||
+    [...asciiRefused].some((ch) => ch.charCodeAt(0) < 0x21 || ch.charCodeAt(0) > 0x7e) ||
+    new Set(asciiRefused).size !== asciiRefused.length
+  )
+    throw new Error("codegen: names.json grammar.asciiRefused must be distinct printable ASCII");
+  src +=
+    "/** File and folder names: the live name profile and the printable ASCII it refuses (controls and DEL are refused too). */\n";
+  src += `export const FILE_NAMES = ${JSON.stringify({ profile: nameProfiles[0], asciiRefused })} as const;\n\n`;
   src +=
     "/** The largest strength a BIND or UNBIND carries (BindingNumber.MAX_STRENGTH): numbers run −(max + 1)..max. */\n";
   src += `export const MAX_STRENGTH = ${nv.maxStrength};\n`;
@@ -262,36 +289,58 @@ const files = {};
     "unbindBroader",
     "releaseBroader",
     "restoreBroader",
+    // The list release (contracts 04526b1 item 57): a BIND on a head that never bound (a yes after a lone no), per
+    // purpose; a label restore and HEAD's later rows; and the history word one position adds or saves (laterRows).
+    "bindHeadAfterNo",
+    "bindFolderAfterNo",
+    "bindTagAfterNo",
+    "bindPropertyAfterNo",
+    "bindSameAfterNo",
+    "bindBroaderAfterNo",
+    "restoreProperty",
+    "unbindHead",
+    "releaseHead",
+    "restoreHead",
+    "historyWordOpen",
   ];
   const TAG_LEVELS = ["mineNew", "mineExisting", "sharedNew", "sharedExisting"];
-  // The list tiers (contracts 6d11858, tools/RELEASE.md item 47): a later statement first at its place in a
-  // publication pays <row>NewPlace (where the row has one), and one in a long or unknown-length list pays
-  // <row>LongNewPlace or <row>LongSamePlace. Every one is required, so a renamed tier fails codegen.
+  // The list tiers (contracts 6d11858, tools/RELEASE.md item 47; the list release's after-no and label-restore tiers,
+  // 04526b1 item 57): a later statement first at its place in a publication pays <row>NewPlace (where the row has one),
+  // and one in a long or unknown-length list pays <row>LongNewPlace or <row>LongSamePlace. Every one is required, so a
+  // renamed tier fails codegen.
   const NEW_PLACE_ROWS = [
     "unbindTag",
     "releaseTag",
     "restoreTag",
     "bindTagNumberChange",
+    "bindTagAfterNo",
     "unbindFolder",
     "releaseFolder",
     "restoreFolder",
     "bindFolderRebind",
+    "bindFolderAfterNo",
   ];
   const LONG_ROWS = [
     "unbindTag",
     "releaseTag",
     "restoreTag",
+    "bindTagAfterNo",
     "unbindFolder",
     "releaseFolder",
     "restoreFolder",
+    "bindFolderAfterNo",
     "unbindProperty",
     "releaseProperty",
+    "restoreProperty",
+    "bindPropertyAfterNo",
     "unbindSame",
     "releaseSame",
     "restoreSame",
+    "bindSameAfterNo",
     "unbindBroader",
     "releaseBroader",
     "restoreBroader",
+    "bindBroaderAfterNo",
   ];
   const TIERS = [
     ...NEW_PLACE_ROWS.map((r) => `${r}NewPlace`),
@@ -438,33 +487,6 @@ const files = {};
         : {}),
     };
   }
-  // INTERIM (until the contracts' list release prices these in gas/model.json; contracts 6d11858, figure (ii)), at the
-  // schedule's fresh slot (test/vectors/gas-schedules.json freshSlot), at or above the measured deltas:
-  // - interimNeverBoundBind: a BIND on a head that never bound writes head.target fresh in the kernel (LedgerApply),
-  //   one slot in E (all gas where the cap counts all gas, execution where it counts execution), one whole slot in
-  //   the all-gas total, and one slot of execution in K (the kernel's own spend; measured about 20.0k prague, 10.1k
-  //   amsterdam);
-  // - interimHistoryWord: a later BIND that opens the binding's next history word in the index (a callback: E and the
-  //   total, never K), where its row's own measurement did not.
-  for (const [name, sch] of Object.entries(schedules)) {
-    const slot = freshSlotOf(name);
-    const whole = slot.executionGas + slot.stateGas;
-    const e = sch.executionGas ? slot.executionGas : whole;
-    (sch.executionGas ?? sch.constants).interimNeverBoundBind = e;
-    (sch.executionGas ?? sch.constants).interimHistoryWord = e;
-    if (sch.executionGas) {
-      sch.constants.interimNeverBoundBind = whole;
-      sch.constants.interimHistoryWord = whole;
-    }
-    sch.floor.kernel.interimNeverBoundBind = slot.executionGas;
-    sch.floor.kernel.interimHistoryWord = 0;
-    // - interimFolderRetarget: a FOLDER BIND on a masked or released head that bound before makes the kernel rewrite
-    //   head.target when the target is new (LedgerApply), which restoreFolder (measured restoring the same target)
-    //   leaves out: one rewrite at the floor's price (floor.limits.floorRewriteGas), in K only (E over-predicts).
-    for (const c of [sch.constants, ...(sch.executionGas ? [sch.executionGas] : [])])
-      c.interimFolderRetarget = 0;
-    sch.floor.kernel.interimFolderRetarget = sch.floor.limits.floorRewriteGas;
-  }
   if (!schedules.prague) throw new Error("codegen: gasModel has no prague schedule");
   const env = g.envelope ?? {};
   if (typeof env.txGasCap !== "number" || typeof env.headroomPercent !== "number")
@@ -496,6 +518,36 @@ const files = {};
   src +=
     "/** The list tiers (gas/model.json laterLists): a later statement in a list of at most `shortTierMaxEntries` known entries takes the short tier; longer or unknown, the long tier, measured at `claimEntries`. */\n";
   src += `export const GAS_LATER_LISTS = ${literal({ shortTierMaxEntries: ll.shortTierMaxEntries, claimEntries: ll.claimEntries })} as const;\n\n`;
+  // The measured position of every later row (gas/model.json laterRows, the list release, contracts 04526b1 item 57):
+  // whether the binding's history word opened for the statement each row was measured as. The planner adds or
+  // subtracts `historyWordOpen` where a statement's own position differs (tools/gas-plan.mjs historyWordAdds).
+  const lr = model.laterRows;
+  if (lr?.historyWordConstant !== "historyWordOpen" || typeof lr?.rows !== "object")
+    throw new Error(
+      "codegen: gas/model.json laterRows needs rows and historyWordConstant historyWordOpen",
+    );
+  const opens = {};
+  for (const [k, v] of Object.entries(lr.rows)) {
+    if (typeof v?.opensHistoryWord !== "boolean" || !Number.isInteger(v?.revisionBefore))
+      throw new Error(
+        `codegen: gas/model.json laterRows.rows.${k} needs revisionBefore and opensHistoryWord`,
+      );
+    // the row's own position must agree with the rule (a word opens at revision 1 or a positive multiple of 5)
+    const r = v.revisionBefore;
+    if (v.opensHistoryWord !== (r === 1 || (r > 0 && r % 5 === 0)))
+      throw new Error(
+        `codegen: gas/model.json laterRows.rows.${k} contradicts the history-word rule`,
+      );
+    for (const sch of Object.values(schedules))
+      if (typeof sch.constants[k] !== "number" && k !== "restoreTagAtHistoryWord")
+        throw new Error(
+          `codegen: gas/model.json laterRows.rows.${k} is not a constant the SDK carries`,
+        );
+    opens[k] = v.opensHistoryWord;
+  }
+  src +=
+    "/** Each later row's measured position (gas/model.json laterRows): whether its statement opened the binding's history word. */\n";
+  src += `export const GAS_LATER_ROWS = ${literal(opens)} as const;\n\n`;
   const pan = g.tagLists?.priceAsNew;
   if (!Array.isArray(pan?.entries) || typeof pan?.entriesMultipleOf !== "number")
     throw new Error("codegen: gasModel.tagLists.priceAsNew needs entries and entriesMultipleOf");

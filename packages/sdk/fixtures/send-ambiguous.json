@@ -1,12 +1,12 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "6d11858bc88b10a25a1f61ab543917fc20827190",
+  "contractsCommit": "04526b1dd42992d8193c4d3c2db4129531dc7bfb",
   "case": "send-ambiguous",
   "note": "writer.send() whose wallet response was lost",
   "result": {
     "kind": "efs.send",
     "status": "AMBIGUOUS",
-    "planId": "0x2816a27994fdd3c8edc772d84cc8b9052618e8e63139876ce3b4e85316e5ced9",
+    "planId": "0x3541519ca65e90bd4e57f30766a516c51297b47e21952df07a2fb10a3adb0d2b",
     "reason": {
       "code": "RESPONSE_LOST",
       "retry": "after-reconcile",
