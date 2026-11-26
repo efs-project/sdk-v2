@@ -21,6 +21,10 @@ What trips people up:
 - **Two tiers, two reads.** `topicItems` and `lensTagsOf` give each row a `decider`: a Lens author (with their number),
   or the public tier (someone says yes, nobody in your Lens has a stance). Label the public tier and hold back its
   media. `tagsOf` is the unfiltered list (every place anyone filed the thing, rows nobody says yes to included).
+- **"subject" is not "file".** Each `topicItems` row has a `kind` (and a record's `typeId`). A created subject is
+  `subject`, a file or another app's subject, until you ask for the exact tier (`kindsExact: true`, or `"file"` in
+  `kinds`), which reads its HEAD. The SDK applies a `kinds` filter itself, so a short filtered page with
+  `finished: false` still means "read on".
 - **A tag has no name.** A file shown in a topic takes its name from where it is placed (`fileNames`): its tagger's
   own entry, then its creator's, then the first from the Lens. `complete: false` means a missing name is not proven.
 - **Labels are per language.** `planLabel` keys a label by its BCP 47 tag, lowercased (`"EN"` and `"en"` are one).
