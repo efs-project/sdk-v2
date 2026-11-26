@@ -5,12 +5,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  CODE_NAME,
   type FoldStep,
   link,
   parseLink,
   WORD_DETAILS,
   type WordDetail,
 } from "../src/names/links.ts";
+import { checkWord } from "../src/names/word.ts";
 
 const vectors = JSON.parse(
   readFileSync(join(import.meta.dirname, "vectors/links.json"), "utf8"),
@@ -161,6 +163,28 @@ describe("bad-word details are a closed union (WordDetail)", () => {
     // 2 (malformed UTF-8) never reaches the word rules through a link: the segment's escape is refused first
     // (bad-escape), and a fold returns a string, which is always well-formed. Every other code does.
     expect([...seen].sort((a, b) => a - b)).toEqual([1, 3, 4, 6, 7, 9]);
+  });
+
+  it("every code checkWord can return has a detail: parseLink's INVARIANT fault is unreachable", () => {
+    const topics = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "../../../protocol-inputs/contracts/test/vectors/topics.json"),
+        "utf8",
+      ),
+    ) as { grammar: { wordCodes: Record<string, string> }; words: { hex: string; code: number }[] };
+    // every code the chain lists (0 is admitted; 8 is TopicWordRule's refs, which checkWord never returns) …
+    const chain = Object.keys(topics.grammar.wordCodes)
+      .map(Number)
+      .filter((n) => n !== 0 && n !== 8);
+    expect(chain.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 6, 7, 9]);
+    // … and every code checkWord returns over the chain's vectors, each named
+    const returned = new Set<number>();
+    for (const w of topics.words) {
+      const c = checkWord(Uint8Array.from(Buffer.from(w.hex.slice(2), "hex")));
+      if (!c.ok) returned.add(c.code);
+    }
+    for (const code of new Set([...chain, ...returned]))
+      expect(WORD_DETAILS, `code ${code}`).toContain(CODE_NAME[code]);
   });
 
   it("a caller's fold that refuses gives detail fold-refused and its own rule, with no code", () => {

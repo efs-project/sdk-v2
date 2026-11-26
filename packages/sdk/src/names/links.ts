@@ -178,20 +178,22 @@ export type WordDetail =
   | "address-shaped"
   | "refused-character"
   | "fold-refused";
+/** Every WordDetail once: a Record over the union, so a member missing here or extra is a type error. */
+const WORD_DETAIL_SET: Readonly<Record<WordDetail, true>> = {
+  length: true,
+  "malformed-utf8": true,
+  slash: true,
+  control: true,
+  "forbidden-ascii": true,
+  unfolded: true,
+  "trailing-dot": true,
+  "leading-dash": true,
+  "address-shaped": true,
+  "refused-character": true,
+  "fold-refused": true,
+};
 /** Every WordDetail, for a client that wants to check its message map at runtime too. */
-export const WORD_DETAILS: readonly WordDetail[] = [
-  "length",
-  "malformed-utf8",
-  "slash",
-  "control",
-  "forbidden-ascii",
-  "unfolded",
-  "trailing-dot",
-  "leading-dash",
-  "address-shaped",
-  "refused-character",
-  "fold-refused",
-];
+export const WORD_DETAILS: readonly WordDetail[] = Object.keys(WORD_DETAIL_SET) as WordDetail[];
 
 export type LinkRule =
   | "empty"
@@ -422,7 +424,8 @@ const RULE_CODE: Readonly<Record<OwnRule, number>> = {
 // The chain's word codes (topic-word/1, contracts 04526b1 item 53); 5 is unused since the list release. Only 2 and 7
 // can reach this table today (wordRule refuses the others first, typed or folded); every code is named anyway, and an
 // unnamed one is an INVARIANT fault, never a raw code in `detail`.
-const CODE_NAME: Readonly<Record<number, WordDetail>> = {
+/** @internal The detail for each of the chain's word codes (exported for the test that every code has one). */
+export const CODE_NAME: Readonly<Record<number, WordDetail>> = {
   1: "length",
   2: "malformed-utf8",
   3: "forbidden-ascii",
