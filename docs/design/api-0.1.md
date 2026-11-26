@@ -271,7 +271,10 @@ string that an app places in its route, for example after `#/files/`:
 - `link()` emits lowercase ids. `parseLink()` accepts any hex case and one percent-decode per segment, and returns
   `canonical` so a router can redirect to the canonical form. `%2F` is never a separator.
 - **The fold:** `foldWord` (from `@efs/sdk` and `@efs/sdk/links`) is the interim fold (docs/design/tags-0.1.md
-  section 2: all-ASCII words trimmed, spaces to underscores, A–Z to a–z; any other word as typed). It is the default
+  section 2). An all-ASCII word goes through the evaluation's white-space step (trimmed; a run of white space with the
+  underscores touching it becomes one underscore), then A–Z become a–z. Any other word is left as typed. It keeps the
+  word's text stable across the ruling, not its id: topic ids can still move when the refused table is regenerated
+  from the pinned Unicode version. It is the default
   fold of the tag planners, the topic reads and `parseLink`, so a typed `Cars/Tesla` opens `cars/tesla` and its
   `canonical` is the folded link. Pass your own `fold` to override it, or `fold: null` to `parseLink` for the grammar
   alone. It is marked interim until Q53: the ruled rule replaces it, extending it and never contradicting it.

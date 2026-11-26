@@ -12,8 +12,8 @@ What trips people up:
 
 - **Words are folded, then checked.** The planners, reads and links fold what people type (`foldWord`, interim until
   the fold rule is ruled), so `"Notes"` saves as `notes` and `"My Notes"` as `my_notes`. Say so ("Saved as notes"),
-  and put the folded form in the address bar. An all-ASCII word is trimmed, its runs of spaces or tabs become one
-  underscore, and A–Z become a–z. Any other word is left exactly as typed and judged by the chain's grammar, which
+  and put the folded form in the address bar. An all-ASCII word is trimmed, a run of white space (with any underscore
+  touching it) becomes one underscore, and A–Z become a–z. Any other word is left exactly as typed and judged by the chain's grammar, which
   still refuses an ASCII capital (`"Straße"`). A topic is its path of words: `/cars/tesla` and `/people/tesla` are
   different topics, and `/tesla` (the word's page) shows every place the word is used.
 - **A page is not a list.** `topicItems`, `lensTagsOf` and the directory reads say `finished: true` only when the chain

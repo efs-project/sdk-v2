@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
-// The interim word fold (PM default D15, until Q53 rules the fold): a word made only of ASCII is trimmed of spaces and
-// tabs, each run of them inside becomes one underscore (ruled: D-B 2026-09-10, spec §6), and A–Z become a–z. Any other
-// word is left exactly as typed. Either candidate rule (NFKC_Casefold, or lowercase) gives the same word for every
-// ASCII input, so no id made here changes when the rule is ruled; a mixed word is left alone because a rule could
-// fold it differently (Straße, École).
+// The interim word fold (PM default D15, until Q53 rules the fold): a word made only of ASCII goes through the fold
+// evaluation's white-space step (trimmed; a run of white space with the underscores touching it becomes one
+// underscore), then A–Z become a–z. Any other word is left exactly as typed. Both candidate rules give this same word
+// for every ASCII input (every all-ASCII vector of the evaluation, below), so the word doesn't change when the rule
+// is ruled (its topic id still can, with the refused table); a mixed word is left alone because a rule could fold it
+// differently (Straße, École).
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FOLD_RULE, foldWord } from "../src/names/fold.ts";
 import { parseLink } from "../src/names/links.ts";
@@ -29,6 +32,14 @@ describe("foldWord (interim, all-ASCII words only)", () => {
     ["a  \t  b", "a_b"],
     ["a b", "a_b"],
     ["a_b", "a_b"],
+    // Underscores touching white space join its run (the evaluation's `pre`); others stay.
+    ["model _ y", "model_y"],
+    ["a_ b", "a_b"],
+    ["a _b", "a_b"],
+    ["_ tesla", "_tesla"],
+    ["model__y", "model__y"],
+    ["__init__", "__init__"],
+    ["a\nb", "a_b"],
     ["already-folded", "already-folded"],
     ["   ", ""],
     // Not all ASCII: exactly as typed, capitals and spaces included.
@@ -64,6 +75,36 @@ describe("foldWord (interim, all-ASCII words only)", () => {
 
   it("is named, so an app can say which fold it applied", () => {
     expect(FOLD_RULE).toBe("efs-sdk/fold/interim-ascii-1");
+  });
+});
+
+describe("every all-ASCII vector of the fold evaluation gives both candidate rules' result", () => {
+  const evaluation = JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, "../../../docs/design/fold-evaluation/vectors.json"),
+      "utf8",
+    ),
+  ) as {
+    vectors: {
+      label: string;
+      input: string;
+      A: { word?: string; refused?: string };
+      B: { word?: string; refused?: string };
+    }[];
+  };
+  const ascii = evaluation.vectors.filter((v) => [...v.input].every((c) => c.charCodeAt(0) < 0x80));
+  it("covers every all-ASCII case (24)", () => {
+    expect(ascii.length).toBe(24);
+  });
+  it.each(ascii)("$label", ({ input, A, B }) => {
+    const word = fold(input);
+    const checked = checkWord(word);
+    for (const rule of [A, B]) {
+      if (rule.word !== undefined) {
+        expect(word).toBe(rule.word);
+        expect(checked.ok).toBe(true);
+      } else expect(checked.ok).toBe(false);
+    }
   });
 });
 
