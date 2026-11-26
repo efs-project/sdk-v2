@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 // The planning headroom must cover what the gas model leaves out: the 21,000 intrinsic cost, calldata (EIP-2028 /
-// EIP-7623) and the model's own error (gas/model.json planning.headroomCovers). A part is planned with
+// EIP-7623) and the model's own error (gas/model.json planning.headroomCovers): the error of the gas the cap counts,
+// all gas on prague (maxAbsErrorPercent), execution gas only on amsterdam (maxAbsExecutionErrorPercent; its all-gas
+// maxAbsErrorPercent bounds the total against the block, never the 2^24 cap). A part is planned with
 // E ≤ ⌊txGasCap × (100 − headroomPercent) / 100⌋. Per the EIP texts (contracts dev, 2026-11-26: EIP-8037 Last Call,
 // EIP-7825 and EIP-7623 Final), intrinsic gas and calldata count against the 2^24 cap on every schedule (the
 // execution budget is TX_MAX_GAS_LIMIT − intrinsic), and EIP-7623's floor is a separate condition. So, for the largest
 // calldata a part can carry (maxActions actions and maxBodyBytesPerPublication of bodies, encoded as `execute`, every
 // byte nonzero: 39,236 bytes today):
 //   intrinsic = 21000 + 16 × bytes (4 per zero byte, 16 per nonzero byte)
-//   intrinsic + E × (1 + maxAbsErrorPercent / 100) ≤ 0.999 × cap      the execution budget, with 0.1% to spare
+//   intrinsic + E × (1 + capError / 100) ≤ 0.999 × cap      the execution budget, with 0.1% to spare
 //   max(intrinsic, 21000 + 10 × tokens) ≤ cap                          the floor, tokens = 4 × bytes
 // on every schedule of the vendored model. When the re-fit raises an error figure, this fails at once and names
 // the headroom that schedule needs.
@@ -45,7 +47,13 @@ function worstCalldataBytes(): number {
   return (data.length - 2) / 2;
 }
 
-type Schedules = Record<string, { maxAbsErrorPercent: number }>;
+type Schedules = Record<
+  string,
+  { maxAbsErrorPercent: number; maxAbsExecutionErrorPercent?: number }
+>;
+/** The error the cap condition is tested against: the execution error where the cap counts execution gas only. */
+const capError = (s: Schedules[string]): number =>
+  s.maxAbsExecutionErrorPercent ?? s.maxAbsErrorPercent;
 
 /** Per schedule: the worst part's gas as a fraction of the cap, the floor's, and the headroom that keeps it in LIMIT. */
 function headroomCheck(schedules: Schedules, headroomPercent: number) {
@@ -55,11 +63,11 @@ function headroomCheck(schedules: Schedules, headroomPercent: number) {
   const floor = INTRINSIC + FLOOR_PER_TOKEN * tokens;
   const budget = Math.floor((cap * (100 - headroomPercent)) / 100);
   return Object.entries(schedules).map(([schedule, s]) => {
-    const err = s.maxAbsErrorPercent / 100;
+    const err = capError(s) / 100;
     const room = (LIMIT * cap - intrinsic) / (1 + err);
     return {
       schedule,
-      maxAbsErrorPercent: s.maxAbsErrorPercent,
+      capErrorPercent: capError(s),
       fraction: (intrinsic + budget * (1 + err)) / cap,
       floorFits: Math.max(intrinsic, floor) <= cap,
       neededPercent: Math.ceil(1000 * (1 - room / cap)) / 10,
@@ -70,7 +78,7 @@ const failures = (schedules: Schedules, headroomPercent: number) =>
   headroomCheck(schedules, headroomPercent).flatMap((r) => [
     ...(r.fraction > LIMIT
       ? [
-          `${r.schedule}: with maxAbsErrorPercent ${r.maxAbsErrorPercent}%, the worst part reaches ${(r.fraction * 100).toFixed(2)}% of the cap; headroomPercent must be at least ${r.neededPercent}% (it is ${headroomPercent}%)`,
+          `${r.schedule}: with a cap error of ${r.capErrorPercent}%, the worst part reaches ${(r.fraction * 100).toFixed(2)}% of the cap; headroomPercent must be at least ${r.neededPercent}% (it is ${headroomPercent}%)`,
         ]
       : []),
     ...(r.floorFits
@@ -87,20 +95,36 @@ describe("the planning headroom covers intrinsic gas, calldata and the model's e
       GAS_SCHEDULES as unknown as Schedules,
       GAS_PLANNING.headroomPercent,
     ).find((r) => r.schedule === "amsterdam");
-    expect(amsterdam?.fraction).toBeLessThan(0.96); // 0.953 at contracts cbf5b78 (7.56%)
+    // A tripwire on the spare: 0.9789 at contracts 3ca53ba (execution error 10.62%, headroom needed 13.2%; it was
+    // 0.953 at cbf5b78 with 7.56%). prague is 0.9380 (5.80%, needed 9.3%).
+    expect(amsterdam?.fraction).toBeLessThan(0.98);
   });
 
   it("an error figure the headroom can't cover fails, naming the schedule and the headroom it needs", () => {
     const worse = {
       ...(GAS_SCHEDULES as unknown as Schedules),
-      amsterdam: { maxAbsErrorPercent: 13 },
+      amsterdam: { maxAbsErrorPercent: 30, maxAbsExecutionErrorPercent: 13 },
     };
     const f = failures(worse, GAS_PLANNING.headroomPercent);
     expect(f).toHaveLength(1);
     expect(f[0]).toMatch(/^amsterdam: .* headroomPercent must be at least 15\.\d% \(it is 15%\)$/);
   });
 
-  it("the worst calldata is every action and body at its widest (39,236 bytes at contracts cbf5b78)", () => {
+  it("on amsterdam the cap is tested against the execution error, never the all-gas error", () => {
+    const vendored = GAS_SCHEDULES as unknown as Schedules;
+    expect(vendored["amsterdam"]?.maxAbsExecutionErrorPercent).toBe(10.62); // contracts 3ca53ba
+    expect(vendored["amsterdam"]?.maxAbsErrorPercent).toBe(12.03);
+    // An all-gas error far over the headroom changes nothing while the execution error fits.
+    const allGasOnly = {
+      ...vendored,
+      amsterdam: { maxAbsErrorPercent: 40, maxAbsExecutionErrorPercent: 10.62 },
+    };
+    expect(failures(allGasOnly, GAS_PLANNING.headroomPercent)).toEqual([]);
+    // prague has one figure (all gas, which its cap counts).
+    expect(vendored["prague"]?.maxAbsExecutionErrorPercent).toBeUndefined();
+  });
+
+  it("the worst calldata is every action and body at its widest (39,236 bytes at contracts 3ca53ba)", () => {
     expect(worstCalldataBytes()).toBe(39_236);
   });
 });
