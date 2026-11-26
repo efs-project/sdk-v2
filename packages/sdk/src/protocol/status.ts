@@ -22,3 +22,18 @@ export type HeadState = (typeof HEAD_STATES)[keyof typeof HEAD_STATES];
 export function headState(code: number | bigint): HeadState | "UNRECOGNIZED" {
   return (HEAD_STATES as Record<number, HeadState>)[Number(code)] ?? "UNRECOGNIZED";
 }
+
+/**
+ * A head with statements that never bound: not UNSET, and `targetKind` 0 (the Head's targetKind is served as stored,
+ * 0 only for a head no BIND ever touched, while its `target` is canonical, 0 unless BOUND; LedgerApply sets targetKind
+ * only in a BIND). A lone no, or a no then a release or another no. A BIND there writes head.target fresh in the
+ * kernel, a slot the gas model's rows don't measure yet (`PlannedAction.neverBound`, INTERIM until the contracts' list
+ * release). A yes after a lone no is also the binding's 2nd statement, which opens its history word: priced on its own
+ * by the head's revision (opensHistoryWord).
+ */
+export function neverBoundHead(h: {
+  state: number | bigint;
+  targetKind: number | bigint;
+}): boolean {
+  return headState(h.state) !== "UNSET" && Number(h.targetKind) === 0;
+}

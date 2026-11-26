@@ -891,6 +891,21 @@ on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedu
     both schedules, count known or not). What it costs: on amsterdam a part's gas limit is at least 1.15 × the
     model's total, so it can be about 25% above what a save of tag masks uses. The person pays only the gas used,
     but the wallet must hold enough for the limit.
+  - **INTERIM: fresh slots a later yes writes beyond its row** (contracts 6d11858, figure (ii); until the contracts'
+    list release prices these shapes in gas/model.json). Each is one fresh slot at the schedule's price
+    (test/vectors/gas-schedules.json `freshSlot`), read from the head the planner already has (headsAt's `targetKind`,
+    served as stored, and `revision`):
+    - **A head that never bound** (not UNSET, `targetKind` 0: a lone no, or a no then a release or another no): the
+      BIND writes `head.target` fresh in the kernel. E and the all-gas total pay one slot, and K (the kernel's own
+      spend) one slot of execution.
+    - **A restore that opens the binding's next history word** (its head revision before it is 1 or a positive
+      multiple of 5: the 2nd, 6th, 11th, 16th … statement): the index writes a fresh word. E and the total pay one
+      slot, K none. The restore rows were measured as a 3rd statement, where no word opens; masks, releases and
+      re-binds were measured as a 2nd, where one does, so they never pay it (and over-price elsewhere by one slot, the
+      safe side).
+    A yes after a lone no pays both, so E stays at or above what the chain measured for every figure (ii) case. A
+    part is planned by max(E, V), and V includes K, so these batches move: a part of yeses after lone noes plans 46 on
+    prague and 48 on amsterdam (51 before). A part of restores at history-word positions moves only when E bounds it.
   - **V**, the visible gas the kernel's floor needs: `max(K + prefixNeed(P), E) + ⌈F·64/63⌉ + kernelTail`. K is the
     kernel's own share of E (`floor.kernel`, the same model fitted with the index's callbacks removed). P and F are
     the kernel's own quote (`kernelQuote`: prefix floor, final reserve, fresh slots, rewrites; work model formula

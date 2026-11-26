@@ -105,6 +105,17 @@ export interface GasConstants extends Readonly<Record<TierConstant, number>> {
   withdraw: number;
   /** Added once to a principal's first publication ever. */
   firstWriteSurcharge: number;
+  /**
+   * INTERIM, until the contracts' list release prices these in gas/model.json (contracts 6d11858, figure (ii)); each a
+   * fresh slot at the schedule's price, generated from test/vectors/gas-schedules.json, and nothing in a model
+   * without them:
+   * - a BIND on a head that never bound (`PlannedAction.neverBound`) writes head.target fresh in the kernel: E, the
+   *   all-gas total and K (the kernel's own spend) each pay one slot;
+   * - a later BIND that opens the binding's next history word in the index, where its row's measurement did not
+   *   (`PlannedAction.headRevision`; opensHistoryWord): E and the total pay one slot, K none (a callback).
+   */
+  interimNeverBoundBind?: number;
+  interimHistoryWord?: number;
   tagLevel: Readonly<Record<TagLevel, number>>;
 }
 
@@ -309,6 +320,17 @@ export interface PlannedAction {
    * later statement's row; an UNBIND is not (a lone negative says so). A RELEASE never is.
    */
   firstStatement?: boolean;
+  /**
+   * For a later BIND: the writer's head never bound (not UNSET, `targetKind` 0: a lone no, or a no then a release or
+   * another no). Priced at its row plus the model's `interimNeverBoundBind` (INTERIM; see GasConstants).
+   */
+  neverBound?: boolean;
+  /**
+   * For a later statement: the writer's head revision before it (how many statements the binding already has). A
+   * later BIND whose row was measured without opening a history word pays `interimHistoryWord` when it opens one
+   * (INTERIM; see opensHistoryWord).
+   */
+  headRevision?: bigint;
 }
 
 export interface BatchLimits {
@@ -428,10 +450,40 @@ export function actionGas(a: PlannedAction, m: GasConstants, firstAtPlace = true
         : Math.max(...rows.flatMap((r) => [m[r], m[tierKey(r, later, firstAtPlace)]]));
     for (const [level, n] of Object.entries(a.levels ?? {}))
       g += m.tagLevel[level as TagLevel] * (n ?? 0);
+    if (k === ACTION.BIND && later) g += interimSlots(a, m);
     return g;
   }
   // an unknown kind: priced high, never zero
   return Math.max(m.create, ...BIND_ROWS.map((r) => m[r]), ...UNBIND_ROWS.map((r) => m[r]));
+}
+
+/**
+ * INTERIM (contracts 6d11858, figure (ii)): whether a statement after `revision` statements opens the binding's next
+ * history word in the index. The history list takes one append per statement (RealmIndex._foldBind), and a list's
+ * append writes a fresh word when its count before is 1 (word 0) or a positive multiple of 5 (PostingStore._append):
+ * the 2nd, 6th, 11th, 16th, 21st … statements, every fifth forever.
+ */
+export const opensHistoryWord = (revision: bigint): boolean =>
+  revision === 1n || (revision > 0n && revision % 5n === 0n);
+/**
+ * The later BIND rows measured where no history word opened (a restore is measured as a binding's 3rd statement), so
+ * they pay one when they open it. Every other later row (masks, releases, re-binds) was measured as a 2nd statement and
+ * already includes one, over-pricing elsewhere: the safe side, so nothing is ever subtracted. Their tiers likewise.
+ */
+const HISTORY_UNMEASURED_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
+  "restoreTag",
+  "restoreFolder",
+  "restoreSame",
+  "restoreBroader",
+]);
+
+/** INTERIM: the fresh slots a later BIND writes beyond its row (the kernel's head.target, the index's history word). */
+function interimSlots(a: PlannedAction, m: GasConstants): number {
+  let g = a.neverBound === true ? (m.interimNeverBoundBind ?? 0) : 0;
+  const opens = a.headRevision !== undefined && opensHistoryWord(a.headRevision);
+  if (opens && (a.bindRow === undefined || HISTORY_UNMEASURED_ROWS.has(a.bindRow)))
+    g += m.interimHistoryWord ?? 0;
+  return g;
 }
 
 /** A later statement's place: (purpose, subject), the author's scope list it changes (gas/model.json laterLists). */

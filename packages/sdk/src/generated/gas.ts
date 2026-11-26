@@ -106,7 +106,9 @@ export const GAS_SCHEDULES = {
         "mineExisting": 22871,
         "sharedNew": 27139,
         "sharedExisting": 15354
-      }
+      },
+      "interimNeverBoundBind": 22100,
+      "interimHistoryWord": 22100
     },
     "floor": {
       "workModel": {
@@ -301,7 +303,9 @@ export const GAS_SCHEDULES = {
           "mineExisting": 3,
           "sharedNew": 3,
           "sharedExisting": -3
-        }
+        },
+        "interimNeverBoundBind": 22100,
+        "interimHistoryWord": 0
       }
     },
     "maxAbsErrorPercent": 11.16,
@@ -405,7 +409,9 @@ export const GAS_SCHEDULES = {
         "mineExisting": 37268,
         "sharedNew": 115156,
         "sharedExisting": 29765
-      }
+      },
+      "interimNeverBoundBind": 110020,
+      "interimHistoryWord": 110020
     },
     "executionGas": {
       "fixed": 289856,
@@ -501,7 +507,9 @@ export const GAS_SCHEDULES = {
         "mineExisting": 37268,
         "sharedNew": 17236,
         "sharedExisting": 29765
-      }
+      },
+      "interimNeverBoundBind": 12100,
+      "interimHistoryWord": 12100
     },
     "floor": {
       "workModel": {
@@ -696,7 +704,9 @@ export const GAS_SCHEDULES = {
           "mineExisting": 0,
           "sharedNew": 0,
           "sharedExisting": 0
-        }
+        },
+        "interimNeverBoundBind": 12100,
+        "interimHistoryWord": 0
       }
     },
     "maxAbsErrorPercent": 12.05,

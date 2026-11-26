@@ -44,7 +44,7 @@ import { indexAbi, ledgerAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { ACTION, FILES, PURPOSES } from "../generated/constants.js";
 import { checkName } from "../names/name.js";
 import { bindingKey, positionKey, recordFromHash, recordId, subjectId } from "../protocol/keys.js";
-import { chainStatus, headState } from "../protocol/status.js";
+import { chainStatus, headState, neverBoundHead } from "../protocol/status.js";
 import type { Ctx, FileRef } from "./bytes.js";
 import {
   checkParent,
@@ -475,6 +475,14 @@ export const folderBindRow = (
   if (state === "MASKED" || state === "RELEASED") return "restoreFolder" as const;
   return undefined;
 };
+/**
+ * INTERIM: the head facts a later FOLDER BIND is priced by beyond its row (contracts 6d11858, figure (ii)): whether
+ * your head never bound (a lone hide, perhaps released) and its revision (a history word the bind opens).
+ */
+const neverBoundOf = (h: RawHead): { neverBound?: true; headRevision?: bigint } =>
+  isUnset(h)
+    ? {}
+    : { headRevision: BigInt(h.revision), ...(neverBoundHead(h) ? { neverBound: true } : {}) };
 /** The writer has never stated anything at this place: a BIND there is a first statement (the kernel's floor). */
 const isUnset = (h: RawHead): boolean => headState(h.state) === "UNSET";
 
@@ -767,6 +775,7 @@ export async function planCreateFile(
           group: FINISH,
           firstStatement: isUnset(st.mine),
           ...(folderRow ? { bindRow: folderRow } : {}),
+          ...neverBoundOf(st.mine),
         },
       ),
     );
@@ -883,7 +892,12 @@ export async function planCreateFolder(
           target: directory,
           expectedRevision: BigInt(st.mine.revision),
         },
-        { group: 1, firstStatement: isUnset(st.mine), ...(row ? { bindRow: row } : {}) },
+        {
+          group: 1,
+          firstStatement: isUnset(st.mine),
+          ...(row ? { bindRow: row } : {}),
+          ...neverBoundOf(st.mine),
+        },
       ),
     ];
     const args = effectArgs(place, { directory });
@@ -1147,7 +1161,12 @@ export async function planMoveEntries(
             target: lower(from.mine.target),
             expectedRevision: BigInt(to.mine.revision),
           },
-          { group, firstStatement: isUnset(to.mine), ...(row ? { bindRow: row } : {}) },
+          {
+            group,
+            firstStatement: isUnset(to.mine),
+            ...(row ? { bindRow: row } : {}),
+            ...neverBoundOf(to.mine),
+          },
         ),
       ];
       if (needName) records++;
@@ -1656,7 +1675,12 @@ export async function planOtherEntry(
           target: subject,
           expectedRevision: BigInt(st.mine.revision),
         },
-        { group: 1, firstStatement: isUnset(st.mine), ...(row ? { bindRow: row } : {}) },
+        {
+          group: 1,
+          firstStatement: isUnset(st.mine),
+          ...(row ? { bindRow: row } : {}),
+          ...neverBoundOf(st.mine),
+        },
       ),
     ];
     const args = effectArgs(p, { subject });
@@ -1874,7 +1898,7 @@ export async function planRestoreEntries(
               expectedRevision: BigInt(st.mine.revision),
             },
             // your own released or masked entry: the head exists (restoreFolder, contracts 6d11858)
-            { firstStatement: false, bindRow: "restoreFolder" },
+            { firstStatement: false, bindRow: "restoreFolder", ...neverBoundOf(st.mine) },
           ),
         ],
         finishes: true,

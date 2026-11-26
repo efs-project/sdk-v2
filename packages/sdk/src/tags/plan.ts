@@ -35,7 +35,7 @@ import { PURPOSES } from "../generated/constants.js";
 import { checkStableWord, foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { positionKey } from "../protocol/keys.js";
-import { chainStatus, headState } from "../protocol/status.js";
+import { chainStatus, headState, neverBoundHead } from "../protocol/status.js";
 import {
   checkWord,
   denyAction,
@@ -267,7 +267,7 @@ export function decoded<T>(
   }
 }
 
-type RawHead = { state: number; revision: bigint; strength: number };
+type RawHead = { state: number; revision: bigint; strength: number; targetKind: number };
 /** The most ids one records() call takes (Limits.maxReadIds). */
 export const READ_IDS = 64;
 
@@ -425,6 +425,7 @@ async function plan(
           state: Number(mine.state),
           revision: BigInt(mine.revision),
           strength: Number(mine.strength),
+          targetKind: Number(mine.targetKind),
         });
       }
       // Counts only price the plan: an unreadable one is priced as the dearer (new) case, never refused.
@@ -538,6 +539,10 @@ async function plan(
         firstStatement: first,
         // a first yes files every roll-up: the author's own and the shared one at each ancestor
         ...(first && ancestors.length ? { levels: levels(true) } : {}),
+        // INTERIM: fresh slots a later yes writes beyond its row (a never-bound head; a history word it opens)
+        ...(!first
+          ? { headRevision: head.revision, ...(neverBoundHead(head) ? { neverBound: true } : {}) }
+          : {}),
       };
     } else {
       first = state === "UNSET";
