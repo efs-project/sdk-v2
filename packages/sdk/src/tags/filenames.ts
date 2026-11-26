@@ -20,6 +20,7 @@ import {
   lower,
   type PrincipalId,
   type RecordId,
+  uniquePrincipals,
 } from "../core/hex.js";
 import type { Ctx, Evidence } from "../files/bytes.js";
 import {
@@ -126,7 +127,7 @@ export async function fileNames(
   const scan = o.scan ?? MAX_SCAN;
   if (!Number.isInteger(scan) || scan < 1 || scan > MAX_SCAN)
     throw misuse(`scan is 1 to ${MAX_SCAN}`);
-  const principals = (o.lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
+  const principals = uniquePrincipals((o.lens ?? efs.lens.default).principals);
   const d = efs.deployment;
   const family = d.index.backlinkFamily;
   const none: Evidence = { attempts: [], requests: 0 };

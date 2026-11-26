@@ -9,7 +9,7 @@
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
-import { type Hex, hexToBytes, lower, type PrincipalId } from "../core/hex.js";
+import { type Hex, hexToBytes, lower, type PrincipalId, uniquePrincipals } from "../core/hex.js";
 import type { Ctx, Evidence } from "../files/bytes.js";
 import { ledgerReadsAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
@@ -99,7 +99,7 @@ export type TopicNameResult =
     };
 
 const lensOf = (efs: Efs, lens: Lens | undefined): PrincipalId[] => {
-  const ps = (lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
+  const ps = uniquePrincipals((lens ?? efs.lens.default).principals);
   if (ps.length === 0) throw misuse("a Lens names at least one principal");
   if (ps.length > 64) throw misuse("a Lens names at most 64 principals");
   return ps;

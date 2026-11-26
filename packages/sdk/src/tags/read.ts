@@ -19,7 +19,14 @@ import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.j
 import type { RpcOutcome } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
-import { type Address, bytesToHex, type Hex, lower, type PrincipalId } from "../core/hex.js";
+import {
+  type Address,
+  bytesToHex,
+  type Hex,
+  lower,
+  type PrincipalId,
+  uniquePrincipals,
+} from "../core/hex.js";
 import { utf8Encode } from "../core/platform.js";
 import { type Ctx, decodeHead, EMPTY_BASIS, type Evidence, headCall } from "../files/bytes.js";
 import { decodeCreator, subjectInfoCall } from "../files/folders.js";
@@ -378,10 +385,7 @@ export async function topicItems(
   const d = efs.deployment;
   const reader = view === "mine" ? d.readers.topicMine : d.readers.topicEveryone;
   if (!reader) throw misuse("this deployment names no topic readers (it predates the tag release)");
-  const lensList =
-    view === "raw"
-      ? []
-      : (o.lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
+  const lensList = view === "raw" ? [] : uniquePrincipals((o.lens ?? efs.lens.default).principals);
   if (view !== "raw" && lensList.length === 0) throw misuse("a Lens names at least one principal");
   const { filter, exact } = kindsQuery(o);
   const query = keccak256(
