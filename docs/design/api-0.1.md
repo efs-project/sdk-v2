@@ -891,7 +891,7 @@ on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedu
     both schedules, count known or not). What it costs: on amsterdam a part's gas limit is at least 1.15 × the
     model's total, so it can be about 25% above what a save of tag masks uses. The person pays only the gas used,
     but the wallet must hold enough for the limit.
-  - **INTERIM: fresh slots a later yes writes beyond its row** (contracts 6d11858, figure (ii); until the contracts'
+  - **INTERIM: what a later yes writes beyond its row** (contracts 6d11858, figure (ii); until the contracts'
     list release prices these shapes in gas/model.json). Each is one fresh slot at the schedule's price
     (test/vectors/gas-schedules.json `freshSlot`), read from the head the planner already has (headsAt's `targetKind`,
     served as stored, and `revision`):
@@ -906,6 +906,14 @@ on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedu
     A yes after a lone no pays both, so E stays at or above what the chain measured for every figure (ii) case. A
     part is planned by max(E, V), and V includes K, so these batches move: a part of yeses after lone noes plans 46 on
     prague and 48 on amsterdam (51 before). A part of restores at history-word positions moves only when E bounds it.
+    Also INTERIM, on the kernel's side only:
+    - **A folder entry placed again where it was removed** (a FOLDER BIND on a masked or released head that bound
+      before: a new file at a removed name, a move into one): the kernel rewrites `head.target` when the target is new,
+      which `restoreFolder` (measured restoring the same target) leaves out. K pays one rewrite at the floor's price
+      (`floorRewriteGas`: 5,000 prague, 12,100 amsterdam), E nothing (it over-predicts this shape). A same-target
+      restore is over-priced by it. Against `restoreFolderLongNewPlace` the kernel's measured share is still 105 gas
+      (prague) and 209 (amsterdam) a statement higher, under 0.03% of V on a full batch. It moves no largest part:
+      moves into removed names stay at 27 entries (prague) and 26 (amsterdam), new files at removed names at 13 and 16.
   - **V**, the visible gas the kernel's floor needs: `max(K + prefixNeed(P), E) + ⌈F·64/63⌉ + kernelTail`. K is the
     kernel's own share of E (`floor.kernel`, the same model fitted with the index's callbacks removed). P and F are
     the kernel's own quote (`kernelQuote`: prefix floor, final reserve, fresh slots, rewrites; work model formula
