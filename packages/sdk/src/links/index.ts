@@ -21,6 +21,7 @@ export type {
   RealmSplit,
   RevisionLink,
   TopicLink,
+  WordDetail,
 } from "../names/links.js";
 export {
   formatRealm,
@@ -29,4 +30,5 @@ export {
   MAX_LINK_LENS,
   parseLink,
   splitRealm,
+  WORD_DETAILS,
 } from "../names/links.js";

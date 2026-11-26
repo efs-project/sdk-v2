@@ -28,7 +28,7 @@
 // link, and the word rules refuse `~` anywhere and the address shape, so no topic can look like one either. A first
 // segment that starts `0x` and is not 0x/0X and 40 hex digits is a word (`0xsplits`), as on the chain.
 import type { Lens } from "../client.js";
-import { misuse } from "../core/errors.js";
+import { EfsFault, misuse } from "../core/errors.js";
 import type { Address, PrincipalId, RecordId, SubjectId } from "../core/hex.js";
 import { utf8Encode } from "../core/platform.js";
 import { TOPICS } from "../generated/constants.js";
@@ -125,21 +125,75 @@ export type LinkParse =
       canonical: string;
     }
   /**
-   * `segment` (0-based) is the segment that breaks `rule`; `detail` is the name rule or the fold's rule. For
-   * `bad-word`, `word` is that segment's text as the link spelled it, percent-decoded and not folded, so a page can
-   * name it ("… doesn't accept: Straße"). It may hold the very characters that broke the rule (a control or bidi
-   * character, a slash): show it escaped or isolated, never as markup. `code` is the chain's own refusal code
-   * (checkWord, TopicProfile: 1 length, 2 malformed UTF-8, 3 a forbidden ASCII byte, 4 a dot word, 5 a leading `~`,
-   * 6 address-shaped, 7 a refused character) whenever the word grammar refused it; absent when the fold refused.
+   * A topic segment the word rules refuse, or the caller's fold refused. `segment` (0-based) is the segment; `word` is
+   * its text as the link spelled it, percent-decoded and not folded, so a page can name it ("… doesn't accept:
+   * Straße"). It may hold the very characters that broke the rule (a control or bidi character, a slash): show it
+   * escaped or isolated, never as markup. `detail` is a closed union (WordDetail), so a client's message map can be
+   * keyed on it and a rename is a type error. `code` is the chain's own refusal code (checkWord, TopicProfile: 1
+   * length, 2 malformed UTF-8, 3 an ASCII byte outside a–z 0–9 - _ ., 4 ends with `.`, 6 address-shaped, 7 a refused
+   * character, 9 starts with `-`; 5 is unused since the list release) whenever the word grammar refused it; absent,
+   * with `detail` "fold-refused" and the fold's own `foldRule`, when the caller's fold refused it (foldWord never does).
    */
   | {
       status: "INVALID";
-      rule: LinkRule;
-      segment?: number;
-      detail?: string;
-      word?: string;
+      rule: "bad-word";
+      segment: number;
+      word: string;
+      detail: WordDetail;
       code?: number;
+      foldRule?: string;
+    }
+  /** A home's or path link's folder or file name breaks files-name/3: `detail` is the name rule. */
+  | {
+      status: "INVALID";
+      rule: "bad-name";
+      segment: number;
+      detail: NameRule | "UNSUPPORTED_BY_PROFILE";
+      word?: undefined;
+      code?: undefined;
+    }
+  /** `segment` (0-based) is the segment that breaks `rule`, where one does. */
+  | {
+      status: "INVALID";
+      rule: PlainRule;
+      segment?: number;
+      detail?: undefined;
+      word?: undefined;
+      code?: undefined;
     };
+
+/**
+ * Why a topic segment is refused (LinkParse `detail` for `bad-word`): the chain's word rules (each with its `code`)
+ * and the link grammar's own fold-independent ones, or "fold-refused" when the caller's fold refused the segment.
+ */
+export type WordDetail =
+  | "length"
+  | "malformed-utf8"
+  | "slash"
+  | "control"
+  | "forbidden-ascii"
+  | "unfolded"
+  | "trailing-dot"
+  | "leading-dash"
+  | "address-shaped"
+  | "refused-character"
+  | "fold-refused";
+/** Every WordDetail once: a Record over the union, so a member missing here or extra is a type error. */
+const WORD_DETAIL_SET: Readonly<Record<WordDetail, true>> = {
+  length: true,
+  "malformed-utf8": true,
+  slash: true,
+  control: true,
+  "forbidden-ascii": true,
+  unfolded: true,
+  "trailing-dot": true,
+  "leading-dash": true,
+  "address-shaped": true,
+  "refused-character": true,
+  "fold-refused": true,
+};
+/** Every WordDetail, for a client that wants to check its message map at runtime too. */
+export const WORD_DETAILS: readonly WordDetail[] = Object.keys(WORD_DETAIL_SET) as WordDetail[];
 
 export type LinkRule =
   | "empty"
@@ -234,7 +288,10 @@ function lensQuery(lens: Lens | undefined): string {
 }
 
 /** The query of a link: nothing, or exactly one `lens=` parameter (the only one defined). */
-function queryLens(query: string | undefined): Lens | undefined | LinkRule {
+/** A refusal that names no segment detail: every LinkRule but the bad-word and bad-name refusals. */
+type PlainRule = Exclude<LinkRule, "bad-word" | "bad-name">;
+
+function queryLens(query: string | undefined): Lens | undefined | PlainRule {
   if (query === undefined) return undefined;
   const m = /^lens=([^&]*)$/.exec(query);
   if (!m) return "unsupported-parameter";
@@ -244,7 +301,7 @@ function queryLens(query: string | undefined): Lens | undefined | LinkRule {
 }
 
 /** Parse a `lens=` value into principal ids, or the rule it breaks. */
-function parseLens(value: string): Lens | LinkRule {
+function parseLens(value: string): Lens | PlainRule {
   const entries = value.split(",");
   if (entries.length > MAX_LINK_LENS || entries.some((e) => e === "")) return "bad-lens";
   const principals: PrincipalId[] = [];
@@ -351,8 +408,10 @@ function checkNames(decoded: readonly string[], at: number): string[] | LinkPars
 
 const ADDRESS_SHAPE = /^0x[0-9a-f]{40}$/i;
 
+/** The link grammar's own fold-independent word rules (wordRule). */
+type OwnRule = Exclude<WordDetail, "malformed-utf8" | "refused-character" | "fold-refused">;
 /** The chain's code (checkWord) for each of the link grammar's own word rules, and a name for the codes it lacks. */
-const RULE_CODE: Readonly<Record<string, number>> = {
+const RULE_CODE: Readonly<Record<OwnRule, number>> = {
   length: 1,
   slash: 3,
   control: 3,
@@ -362,8 +421,11 @@ const RULE_CODE: Readonly<Record<string, number>> = {
   "leading-dash": 9,
   "address-shaped": 6,
 };
-// The chain's word codes (topic-word/1, contracts 04526b1 item 53); 5 is unused since the list release.
-const CODE_NAME: Readonly<Record<number, string>> = {
+// The chain's word codes (topic-word/1, contracts 04526b1 item 53); 5 is unused since the list release. Only 2 and 7
+// can reach this table today (wordRule refuses the others first, typed or folded); every code is named anyway, and an
+// unnamed one is an INVARIANT fault, never a raw code in `detail`.
+/** @internal The detail for each of the chain's word codes (exported for the test that every code has one). */
+export const CODE_NAME: Readonly<Record<number, WordDetail>> = {
   1: "length",
   2: "malformed-utf8",
   3: "forbidden-ascii",
@@ -383,7 +445,7 @@ const TYPED_ASCII = new Set<string>([...TOPICS.wordAscii, ..."ABCDEFGHIJKLMNOPQR
  * `-`, not address-shaped. `typed` also allows what a fold changes (A–Z, a space). What a fold produced must also
  * pass the chain's whole grammar (checkWord), which these rules are a part of.
  */
-function wordRule(w: string, typed: boolean): string | null {
+function wordRule(w: string, typed: boolean): OwnRule | null {
   const n = utf8Encode(w).length;
   if (n === 0 || n > 255) return "length";
   for (const ch of w) {
@@ -420,7 +482,7 @@ function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts)
   }
   const step = o.fold === null ? undefined : (o.fold ?? foldWord);
   const words: string[] = [];
-  const bad = (i: number, seg: string, detail: string, code?: number): LinkParse => ({
+  const bad = (i: number, seg: string, detail: WordDetail, code?: number): LinkParse => ({
     status: "INVALID",
     rule: "bad-word",
     segment: i,
@@ -436,13 +498,18 @@ function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts)
     // planner folds and checks the word in full before it becomes an id.
     if (!step) continue;
     const f = step(seg);
-    if (!f.ok) return bad(i, seg, f.rule);
+    if (!f.ok) return { ...(bad(i, seg, "fold-refused") as object), foldRule: f.rule } as LinkParse;
     // What the fold produced is a word: the link grammar's names first, then the chain's whole grammar, so a link
     // never names a word the chain can't hold (a bidi override, a joiner, a backslash, a no-break space…).
     const after = wordRule(f.word, false);
     if (after) return bad(i, seg, after, RULE_CODE[after]);
     const chain = checkWord(f.word);
-    if (!chain.ok) return bad(i, seg, CODE_NAME[chain.code] ?? `code-${chain.code}`, chain.code);
+    if (!chain.ok) {
+      const detail = CODE_NAME[chain.code];
+      // checkWord returns only the chain's codes, each named here (test/link-vectors.test.ts): never a raw code
+      if (!detail) throw new EfsFault("INVARIANT", `link: word code ${chain.code} has no detail`);
+      return bad(i, seg, detail, chain.code);
+    }
     words.push(f.word);
   }
   const target: TopicLink = {
