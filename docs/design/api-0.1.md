@@ -810,7 +810,7 @@ and the deployment's fee profile (`gasLimitOf`). A size refusal is NOT_SENT `OVE
     from the reservoir into execution gas); only the margin is lost.
   - **Refused:** when the execution part is over the cap (the estimate less the planner's state gas, or the planner's
     own execution figure), or when the planner's whole gas can't fit the ceiling.
-  - **Why both readings:** whether a Glamsterdam node's eth_estimateGas counts state gas is not confirmed, and the
+  - **Why both readings:** a Glamsterdam node's eth_estimateGas counts state gas (measured on Sepolia below), and the
     rules are safe under either.
   - **The planner's figures:** a plan carries them as `plan.plannedGas` `{ execution, total }` (from
     `PlanInput.gas` / `.total`, which every planner's parts set; `total − execution` is the state gas; not part of
@@ -818,9 +818,21 @@ and the deployment's fee profile (`gasLimitOf`). A size refusal is NOT_SENT `OVE
     ceiling and is not refused for size: a node estimates only a limit that runs.
   - **Funds:** the account must hold limit × maxFeePerGas up front. A large-state save asks for a limit well over
     2^24 (about 33M for the deep first tag), though only the gas used is paid.
-  - **No chain runs amsterdam yet.** These rules follow the EIP text (EIP-8037 Last Call). They are tested as
-    arithmetic, and through the send path with the fixture's deployment document renamed amsterdam. Foundry's
-    amsterdam profile has no reservoir, so nothing has run them on a chain.
+  - **Sepolia runs Glamsterdam** (since 2026-11). The contracts dev measured it there on Geth 1.17.9 and reth 2.11.0,
+    with read-only calls (contracts `tools/state-gas-probe.mjs`, results in `docs/GAS-SCHEDULES.md`):
+    - over 2^24, a transaction starts with exactly the cap less intrinsic gas, and its state gas comes from the
+      reservoir;
+    - `eth_estimateGas` returns execution plus state gas, above 2^24 when it needs to be (22,204,258 for 200 fresh
+      slots), the same on both clients;
+    - a plain call's intrinsic gas is 15,000 there, so the headroom check's 21,000 is on the safe side.
+  - **Never read the cap or the reservoir from plain `eth_call`:** Geth does not cap ordinary gas there (reth does).
+    The SDK doesn't: the limit comes from `eth_estimateGas` and the gas model.
+  - **A v2 deployment on Sepolia runs the amsterdam schedule, while the fixture runs prague.** The profile comes from
+    the deployment document's `chain` block, so a Sepolia document must name `amsterdam` (`feeSchedule`, or
+    `hardfork` alone). A name this SDK has no schedule for is refused by the planners (`UNSUPPORTED_PROFILE`), and a
+    send keeps the 2^24 clamp, refusing an estimate over it.
+  - **What hasn't run yet:** the SDK's own send path on Sepolia, because no v2 deployment exists there. The fixture's
+    deployment named amsterdam tests it through the send path, and Foundry's amsterdam profile has no reservoir.
 - **EIP-5792 batches:** `wallet_sendCalls` carries no gas limits; the wallet sets each call's. The SDK refuses only by
   the same rule, on the first part. On Glamsterdam, a wallet that estimates its own gas must do the same as above:
   never clamp at 2^24, and leave the state gas room above it. A wallet that clamps runs large-state parts out of gas.

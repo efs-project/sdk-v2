@@ -4,10 +4,11 @@
 //   amsterdam (EIP-8037 reservoir): the cap bounds the EXECUTION part (intrinsic + execution ≤ 2^24), and state gas is
 //   drawn from the reservoir, the overflow of tx.gas above 2^24. So tx.gas is never clamped at 2^24. It is never below
 //   the model's execution plus state gas (× 1.15), and above the cap it is 2^24 + 1.15 × state gas, giving the full
-//   execution budget with the state gas from the reservoir; at most 2^32 − 1. Whether a Glamsterdam node's
-//   eth_estimateGas counts state gas is unconfirmed, so both readings are safe: refused only when the execution part
-//   is over the cap under either.
-// No chain runs amsterdam yet (the fixture is prague and osaka): these are the EIP-text rules, tested as arithmetic.
+//   execution budget with the state gas from the reservoir; at most 2^32 − 1. A Glamsterdam node's eth_estimateGas
+//   counts state gas (measured on Sepolia, Geth 1.17.9 and reth 2.11.0, 2026-11-26, the contracts'
+//   tools/state-gas-probe.mjs), and both readings stay safe: refused only when the execution part is over the cap.
+// Sepolia runs Glamsterdam (the fixture runs prague and osaka): the EIP-text rules are tested as arithmetic, against
+// the Sepolia measurements, and through the send path with the fixture's document named amsterdam.
 import { describe, expect, it } from "vitest";
 import {
   gasLimitOf,
@@ -212,6 +213,56 @@ describe("the profile comes from the deployment's fee schedule", () => {
     expect(a.ok && a.gas).toBeGreaterThan(CAP + 14_397_066n);
     // Without the planner's figures, the estimate alone.
     expect(planGasLimit(AMSTERDAM, {}, M(14))).toEqual({ ok: true, gas: M(17.5) });
+  });
+});
+
+describe("Sepolia (Glamsterdam live since 2026-11; contracts dev's probe on Geth 1.17.9 and reth 2.11.0)", () => {
+  // A v2 deployment on Sepolia runs the amsterdam schedule, while the fixture's chains run prague: the profile comes
+  // from the document's own chain block, never from how the fixture looks.
+  const sepolia = {
+    chainId: 11_155_111,
+    chain: {
+      hardfork: "amsterdam",
+      feeSchedule: "amsterdam",
+      txGasCap: CAP,
+      blockGasLimit: 60_000_000n,
+    },
+  } as unknown as DeploymentInfo;
+  const byForkOnly = {
+    chainId: 11_155_111,
+    chain: { hardfork: "amsterdam", txGasCap: CAP, blockGasLimit: 60_000_000n },
+  } as unknown as DeploymentInfo;
+
+  it("a Sepolia document naming amsterdam (by fee schedule, or by hardfork alone) is a reservoir profile", () => {
+    expect(reservoirProfile(sepolia)).toBe(true);
+    expect(reservoirProfile(byForkOnly)).toBe(true);
+    expect(gasPlanFor(sepolia)).toMatchObject({ ok: true, model: { schedule: "amsterdam" } });
+    // A name this SDK has no schedule for is not guessed: the planners refuse it, and a send keeps the 2^24 clamp
+    // (an estimate over the cap is refused, never sent under a starved limit).
+    const unknown = {
+      ...sepolia,
+      chain: { hardfork: "glamsterdam", txGasCap: CAP },
+    } as unknown as DeploymentInfo;
+    expect(reservoirProfile(unknown)).toBe(false);
+    expect(gasPlanFor(unknown)).toMatchObject({
+      ok: false,
+      reason: { code: "UNSUPPORTED_PROFILE" },
+    });
+  });
+
+  it("the measured estimate (execution plus state gas, 22,204,258 for 200 fresh slots) is sent unclamped", () => {
+    // eth_estimateGas returned the same figure on both clients, above 2^24; a gas bound passed to it changed nothing.
+    const estimate = 22_204_258n;
+    const g = planGasLimit(sepolia, {}, estimate);
+    expect(g).toEqual({ ok: true, gas: (estimate * 5n) / 4n });
+    expect(g.ok && g.gas).toBeGreaterThan(CAP);
+    // With the planner's figures (state gas known), the reservoir also holds all of it: 2^24 + 1.15 x state.
+    const withModel = planGasLimit(
+      sepolia,
+      { plannedGas: { execution: 1_300_000, total: 22_100_000 } },
+      estimate,
+    );
+    expect(withModel.ok && withModel.gas - CAP).toBeGreaterThanOrEqual((20_800_000n * 115n) / 100n);
   });
 });
 

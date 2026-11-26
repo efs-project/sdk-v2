@@ -30,10 +30,12 @@ depend on anything in this repository yet.
   spends. That shrinks those batches: tag masks and releases 44 per publication, restores and number changes 41,
   folder re-binds 40, edits 23. prague is unchanged. The remedy is one change to the formula: a compute term,
   decided with Q52's per-purpose term (James).
-- **Glamsterdam is unconfirmed on a real client.**
-  - The amsterdam gas limit (EIP-8037's reservoir: never clamped at 2^24, state gas held above it, at most the block
-    gas limit) follows the EIP text, Last Call, and has run on no chain: none runs amsterdam yet.
-  - Whether a Glamsterdam node's `eth_estimateGas` counts state gas is unconfirmed (the limit covers both readings).
+- **Glamsterdam: measured on Sepolia, not yet run by the SDK there.**
+  - Sepolia runs Glamsterdam. The contracts dev measured its rules on Geth and reth, and they match the SDK's gas limit
+    (EIP-8037's reservoir: never clamped at 2^24, state gas held above it, at most the block gas limit). That includes
+    `eth_estimateGas` returning execution plus state gas.
+  - The SDK's own send path has not run there: no v2 deployment exists on Sepolia yet.
+  - A Sepolia deployment document must name the `amsterdam` fee schedule. The fixture runs prague.
   - Wallets that estimate their own gas (EIP-5792 batches) must not clamp at 2^24 either.
 - **Big files beyond linking elsewhere.** The file planners stop at `maxParts` (default 64) publications of up to
   16 KiB of body each, about 1 MiB, with TOO_LARGE. Raising it costs one wallet prompt and about 13M gas per part: a

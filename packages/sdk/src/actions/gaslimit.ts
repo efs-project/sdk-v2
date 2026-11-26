@@ -14,8 +14,12 @@
 // A block includes a transaction only while tx.gas ≤ the block's state gas still available (the block gas limit
 // less its state gas used), so the limit is also never above the block gas limit when the deployment states it:
 // any tx.gas ≥ the whole gas runs (state gas spills from the reservoir into gas_left), the margin is what is lost.
-// No chain runs amsterdam yet: these rules follow the EIP text and are tested as arithmetic and through the send
-// path with the fixture's deployment named amsterdam.
+// Sepolia runs Glamsterdam (2026-11), and the contracts dev measured it there on Geth 1.17.9 and reth 2.11.0
+// (tools/state-gas-probe.mjs, docs/GAS-SCHEDULES.md): over 2^24 a transaction starts with exactly the cap less
+// intrinsic gas and draws state gas from the reservoir, and eth_estimateGas returns execution plus state gas, above
+// 2^24 where it needs to be. Plain eth_call is not the rule on Geth (it does not cap ordinary gas), so nothing here
+// reads the cap or the reservoir from it. Tested as arithmetic, against those measurements, and through the send
+// path with the fixture's deployment named amsterdam (the fixture runs prague).
 import type { DeploymentInfo } from "../deployment/manifest.js";
 import { feeScheduleOf, txGasCapOf } from "./split.js";
 
@@ -62,8 +66,8 @@ const partsFor = (gas: bigint, per: bigint): number => {
 };
 
 /**
- * The gas limit to sign or ask the wallet for, or a refusal. On a reservoir profile, whether the node's estimate
- * counts state gas is not known yet (no Glamsterdam node to ask), so both readings are covered: the limit is at
+ * The gas limit to sign or ask the wallet for, or a refusal. On a reservoir profile the node's estimate counts state
+ * gas (measured on Sepolia), and the rule stays safe if a node's did not: the limit is at
  * least the estimate × 1.25 and at least the model's whole gas × 1.15, and the send is refused when the execution
  * part is over the cap under the reading that leaves it smallest (the estimate less the model's state gas) or by the
  * model's own execution figure, or when the model's whole gas can't fit under 2^32 − 1 or the block gas limit. The
