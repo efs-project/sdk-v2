@@ -335,7 +335,7 @@ string that an app places in its route, for example after `#/files/`:
 | object | `~efs/o/0x<64 hex subject id>[?lens=<p>,<p>…]` | the current head of that subject (a file today; folders reuse the form) | the route default, or the given ordered principals |
 | path | `~efs/o/0x<64 hex folder id>/<name>[/<name>…][?lens=…]` | a folder or file by name below a folder named by its id (files-name/2, case kept). Any folder, the shared root included | the given principals, else the reader then the folder's creator (`efs.lens.place`) |
 | revision | `~efs/v/0x<64 hex revision record id>` | exactly that revision's bytes | no |
-| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address, then folder and file names (files-name/2, case kept) | the given principals, else the reader then the address's own identity at the read (`openHome`: the key principal of a key account, a contract's Realm principal) |
+| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address (parsed from `0x` or `0X` and hex of either case, as the gateway reads it; written lowercase), then folder and file names (files-name/2, case kept) | the given principals, else the reader then the address's own identity at the read (`openHome`: the key principal of a key account, a contract's Realm principal) |
 | topic | `<word>[/<word>/…][?lens=…]` | a topic; one word alone is that word's page. Words are folded before lookup | the route default, or the given ordered principals |
 
 - The first segment is `~efs`. The name profile reserves that prefix, so no path can look like a link. This
