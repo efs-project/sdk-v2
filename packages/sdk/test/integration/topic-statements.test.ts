@@ -27,7 +27,7 @@ import { lensTagsOf } from "../../src/tags/lenstags.ts";
 import { labelOf, topicName } from "../../src/tags/names.ts";
 import { planDeny, planTag, planUntag } from "../../src/tags/plan.ts";
 import { planBroader, planLabel, planSame } from "../../src/tags/statements.ts";
-import { topicSynonyms } from "../../src/tags/synonyms.ts";
+import { topicBroader, topicSynonyms } from "../../src/tags/synonyms.ts";
 import {
   labelKey,
   pathId,
@@ -543,8 +543,23 @@ describe("synonyms: gathering at both levels (fixture)", () => {
     if (r.status !== "PRESENT") throw new Error(r.status);
     expect([...r.places].sort((a, b) => a.id.localeCompare(b.id))).toEqual(
       [
-        { id: pid(["sycompanies", "sytesla_motors"]), kind: "path", hops: 1, author: C },
-        { id: pid(["sytsla"]), kind: "word", hops: 1, author: D },
+        {
+          id: pid(["sycompanies", "sytesla_motors"]),
+          kind: "path",
+          hops: 1,
+          author: C,
+          said: {
+            subject: pid(["sybrands", "sytesla"]),
+            other: pid(["sycompanies", "sytesla_motors"]),
+          },
+        },
+        {
+          id: pid(["sytsla"]),
+          kind: "word",
+          hops: 1,
+          author: D,
+          said: { subject: pid(["sytsla"]), other: pid(["sybrands", "sytesla"]) },
+        },
       ].sort((a, b) => a.id.localeCompare(b.id)),
     );
     expect(r.words.map((w) => [w.word, w.synonyms.length])).toEqual([
@@ -772,5 +787,65 @@ describe("lensTagsOf: a thing's tags as a Lens sees them (fixture)", () => {
       fetch: tampered({ [sel(ledgerViewsAbi, "headsAt")]: fail }),
     });
     expect(await lensTagsOf(sick, X(), { lens: lens(C) })).toMatchObject({ status: "UNKNOWN" });
+  });
+});
+
+describe("synonym direction and broader reads (fixture)", () => {
+  const pid = (words: string[]) => lower(pathId(T, words));
+  it("a joined place says which way its deciding statement points", async () => {
+    // Dov said sycars is the same as syauto; Cleo said sycar is the same as sycars.
+    const r = await topicSynonyms(efs, ["syauto"], { lens: lens(C, D) });
+    if (r.status !== "PRESENT") throw new Error(r.status);
+    const at = (id: string) => r.places.find((x) => x.id === id);
+    expect(at(pid(["sycars"]))).toMatchObject({
+      hops: 1,
+      author: D,
+      said: { subject: pid(["sycars"]), other: pid(["syauto"]) },
+    });
+    expect(at(pid(["sycar"]))).toMatchObject({
+      hops: 2,
+      author: C,
+      said: { subject: pid(["sycar"]), other: pid(["sycars"]) },
+    });
+  });
+
+  it("topicBroader lists what a topic is under and what is under it, each decided by the Lens", async () => {
+    // Dov said /nmcars/nmtesla is narrower than /nmcars (an earlier test).
+    const up = await topicBroader(efs, ["nmcars", "nmtesla"], { lens: lens(D) });
+    expect(up).toMatchObject({
+      status: "PRESENT",
+      broader: [
+        {
+          id: pid(["nmcars"]),
+          kind: "word",
+          author: D,
+          said: { subject: pid(["nmcars", "nmtesla"]), other: pid(["nmcars"]) },
+        },
+      ],
+      narrower: [],
+      limited: false,
+      complete: true,
+    });
+    const down = await topicBroader(efs, ["nmcars"], { lens: lens(D) });
+    if (down.status !== "PRESENT") throw new Error(down.status);
+    expect(down.narrower.find((x) => x.id === pid(["nmcars", "nmtesla"]))).toMatchObject({
+      kind: "path",
+      author: D,
+      said: { subject: pid(["nmcars", "nmtesla"]), other: pid(["nmcars"]) },
+    });
+    // Nobody in the Lens said it: nothing, proven.
+    expect(await topicBroader(efs, ["nmcars", "nmtesla"], { lens: lens(STRANGER) })).toMatchObject({
+      broader: [],
+      narrower: [],
+      complete: true,
+    });
+    // The release a row offers its author: planBroader with the row's own ends.
+    expect(
+      await planBroader(efs, wd, {
+        topic: ["nmcars", "nmtesla"],
+        broader: ["nmcars"],
+        remove: true,
+      }),
+    ).toMatchObject({ status: "PLANNED" });
   });
 });

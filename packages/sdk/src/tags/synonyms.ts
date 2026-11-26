@@ -53,6 +53,11 @@ export interface Joined {
   hops: number;
   /** The Lens author whose "same" decided the last edge in. */
   author: PrincipalId;
+  /**
+   * That deciding statement's own direction, "subject is the same as other" (an edge is found from either side): the
+   * two topics to name for its author's release, planSame({ topic: words of subject, other: words of other, remove }).
+   */
+  said: { subject: TopicId; other: TopicId };
 }
 export interface WordSynonyms {
   word: string;
@@ -87,19 +92,30 @@ export type SynonymsResult =
       evidence: Evidence;
     };
 
-type Edge = { from: Hex; to: Hex; author: PrincipalId };
+/** One Lens-decided statement at a topic: the other end, its author, and the statement's own ends. */
+type Edge = {
+  from: Hex;
+  to: Hex;
+  author: PrincipalId;
+  /** The statement's subject and role: "subject is the same as (or narrower than) other". */
+  subject: Hex;
+  other: Hex;
+  /** out: the topic asked about is the statement's subject; in: it is the statement's role. */
+  side: "out" | "in";
+};
 
 /**
- * @internal Every SAME edge the Lens keeps at these topics, on one endpoint at the basis, from both sides. `complete`
- * is false when a list was longer than `scan` or the index does not vouch for it.
+ * @internal Every SAME (or BROADER) edge the Lens keeps at these topics, on one endpoint at the basis, from both
+ * sides. `complete` is false when the index does not vouch for a list; `truncated` when one held more than `scan`.
  */
-async function sameEdges(
+async function topicEdges(
   ctx: Ctx,
   s: Session,
   basis: Basis,
   principals: readonly PrincipalId[],
   topics: readonly Hex[],
   scan: number,
+  statement: Hex = PURPOSES.same,
 ): Promise<Step<{ edges: Edge[]; complete: boolean; truncated: boolean }>> {
   const d = ctx.efs.deployment;
   const { address: index, scopeFamily, bitmapStore, backlinkFamily } = d.index;
@@ -111,7 +127,7 @@ async function sameEdges(
     };
   const at = basis.blockHash;
   const scopes = topics.flatMap((x) =>
-    principals.map((p) => ({ x, scope: lower(scopeKey(p, PURPOSES.same, x)) })),
+    principals.map((p) => ({ x, scope: lower(scopeKey(p, statement, x)) })),
   );
   // 1. Heads and coverage: each author's own statements about each topic, and each topic's "what names it" list.
   const calls1 = [
@@ -120,7 +136,7 @@ async function sameEdges(
       callOf(index, indexAbi, "coverage", [scopeFamily, c.scope]),
     ]),
     ...topics.map((x) =>
-      callOf(index, indexAbi, "postingHeadOf", [backlinkFamily, PURPOSES.same, 0, x]),
+      callOf(index, indexAbi, "postingHeadOf", [backlinkFamily, statement, 0, x]),
     ),
   ];
   ctx.requests += calls1.length;
@@ -171,14 +187,7 @@ async function sameEdges(
       callOf(bitmapStore, bitmapStoreAbi, "scopeSlice", [c.scope, c.from, c.n]),
     ),
     ...backWant.map((c) =>
-      callOf(index, indexAbi, "postingSliceOf", [
-        backlinkFamily,
-        PURPOSES.same,
-        0,
-        c.x,
-        c.from,
-        c.n,
-      ]),
+      callOf(index, indexAbi, "postingSliceOf", [backlinkFamily, statement, 0, c.x, c.from, c.n]),
     ),
   ];
   ctx.requests += calls2.length;
@@ -259,9 +268,9 @@ async function sameEdges(
     // The list said this position is about x (as its subject, or named by it as its role): it must be.
     if (
       chainStatus(cst) !== "PRESENT" ||
-      lower(purpose) !== lower(PURPOSES.same) ||
+      lower(purpose) !== lower(statement) ||
       (side === "out" ? sub !== x : rol !== x) ||
-      lower(positionKey(PURPOSES.same, sub, rol)) !== pos
+      lower(positionKey(statement, sub, rol)) !== pos
     )
       return badReply("positionCell (a SAME list entry that is not about its topic)");
     const h = decoded<[number, unknown, number, readonly { state: number; target: Hex }[]]>(
@@ -283,6 +292,9 @@ async function sameEdges(
           from: x,
           to: side === "out" ? rol : sub,
           author: principals[i] as PrincipalId,
+          subject: sub,
+          other: rol,
+          side,
         });
         break;
       }
@@ -314,37 +326,9 @@ export async function topicSynonyms(
     throw misuse(`maxTopics is 2 to ${MAX_TOPICS}`);
   if (!Number.isInteger(scan) || scan < 1 || scan > MAX_SCAN)
     throw misuse(`scan is 1 to ${MAX_SCAN}`);
-  const extra: Evidence = { attempts: [], requests: 0 };
-  let words: string[];
-  if (Array.isArray(topic)) {
-    if (topic.length === 0) throw misuse("a topic is at least one word");
-    words = (topic as readonly string[]).map((typed, i) => {
-      const w = o.fold
-        ? (() => {
-            const f = (o.fold as FoldStep)(typed);
-            if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`);
-            return f.word;
-          })()
-        : typed;
-      const c = checkWord(w);
-      if (!c.ok)
-        throw misuse(`word ${i} is not a word the chain admits (code ${c.code}: ${c.rule})`);
-      return w;
-    });
-  } else {
-    const p = await topicPath(efs, (topic as { id: Hex }).id, o);
-    extra.attempts = [...p.evidence.attempts];
-    extra.requests = p.evidence.requests;
-    if (p.status !== "PRESENT")
-      return {
-        kind: "efs.synonyms",
-        status: p.status,
-        ...(p.reason ? { reason: p.reason } : {}),
-        ...(p.basis ? { basis: p.basis } : {}),
-        evidence: extra,
-      };
-    words = [...p.words];
-  }
+  const named = await wordsOf(efs, topic, o);
+  if (!named.ok) return { kind: "efs.synonyms", ...named.failed };
+  const { words, extra } = named;
   const id = lower(pathIds(t, words)[words.length - 1] as Hex) as TopicId;
   const pages = words.map((w) => lower(wordPageId(t, w)) as TopicId);
   const pin = await efs.at("latest", o);
@@ -409,7 +393,7 @@ export async function topicSynonyms(
         const seen = new Map<Hex, Joined | null>([[start, null]]);
         let frontier: Hex[] = [start];
         for (let hop = 1; hop <= maxHops && frontier.length; hop++) {
-          const e = await sameEdges(ctx, s, basis, principals, frontier, scan);
+          const e = await topicEdges(ctx, s, basis, principals, frontier, scan);
           if (!e.ok) return e;
           if (!e.value.complete) complete = false;
           if (e.value.truncated) limited = true;
@@ -424,7 +408,13 @@ export async function topicSynonyms(
               limited = true;
               break;
             }
-            seen.set(edge.to, { id: edge.to as TopicId, kind, hops: hop, author: edge.author });
+            seen.set(edge.to, {
+              id: edge.to as TopicId,
+              kind,
+              hops: hop,
+              author: edge.author,
+              said: { subject: edge.subject as TopicId, other: edge.other as TopicId },
+            });
             next.push(edge.to);
           }
           frontier = next;
@@ -489,6 +479,200 @@ export async function topicSynonyms(
     words: r.value.words,
     limited: r.value.limited,
     complete: r.value.complete,
+    basis,
+    evidence,
+  };
+}
+
+/** @internal A topic's words: given words (folded, then checked), or an id's (read back by topicPath). */
+async function wordsOf(
+  efs: Efs,
+  topic: readonly string[] | { kind: "topic"; id: Hex },
+  o: CallOpts & { fold?: FoldStep },
+): Promise<
+  | { ok: true; words: string[]; extra: Evidence }
+  | {
+      ok: false;
+      failed: {
+        status: "ABSENT_PROVEN" | "INVALID" | "UNKNOWN";
+        reason?: Reason;
+        basis?: Basis;
+        evidence: Evidence;
+      };
+    }
+> {
+  const extra: Evidence = { attempts: [], requests: 0 };
+  if (Array.isArray(topic)) {
+    if (topic.length === 0) throw misuse("a topic is at least one word");
+    const words = (topic as readonly string[]).map((typed, i) => {
+      const w = o.fold
+        ? (() => {
+            const f = (o.fold as FoldStep)(typed);
+            if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`);
+            return f.word;
+          })()
+        : typed;
+      const c = checkWord(w);
+      if (!c.ok)
+        throw misuse(`word ${i} is not a word the chain admits (code ${c.code}: ${c.rule})`);
+      return w;
+    });
+    return { ok: true, words, extra };
+  }
+  const p = await topicPath(efs, (topic as { id: Hex }).id, o);
+  extra.attempts = [...p.evidence.attempts];
+  extra.requests = p.evidence.requests;
+  if (p.status !== "PRESENT")
+    return {
+      ok: false,
+      failed: {
+        status: p.status,
+        ...(p.reason ? { reason: p.reason } : {}),
+        ...(p.basis ? { basis: p.basis } : {}),
+        evidence: extra,
+      },
+    };
+  return { ok: true, words: [...p.words], extra };
+}
+
+/** One topic a Lens says the asked one is under (broader), or that is under it (narrower). */
+export interface Related {
+  id: TopicId;
+  kind: "word" | "path";
+  /** The Lens author whose statement decided it. */
+  author: PrincipalId;
+  /** The statement's own direction: "subject is narrower than other". */
+  said: { subject: TopicId; other: TopicId };
+}
+export type BroaderResult =
+  | {
+      kind: "efs.broader";
+      status: "PRESENT";
+      topic: { words: readonly string[]; id: TopicId };
+      /** The topics this one is under: statements (this topic, BROADER, X). */
+      broader: readonly Related[];
+      /** The topics under this one: statements (Y, BROADER, this topic). */
+      narrower: readonly Related[];
+      /** A list held more than `scan` entries: there may be more. */
+      limited: boolean;
+      /** Every list was read to its start, the index vouches for it, and none was cut: an absence is proven. */
+      complete: boolean;
+      basis: Basis;
+      evidence: Evidence;
+    }
+  | {
+      kind: "efs.broader";
+      status: "ABSENT_PROVEN" | "INVALID" | "UNKNOWN";
+      reason?: Reason;
+      basis?: Basis;
+      evidence: Evidence;
+    };
+
+/**
+ * "Under…" and "Over…" for a topic, one hop each way, under a Lens: the topics it is narrower than, and the topics
+ * narrower than it. Found from both sides (each Lens author's own statements, and the list of statements naming the
+ * topic), each decided by the Lens law at its position (an earlier "not this" decides it). No closure: a broader
+ * topic's own broader topics are its own read.
+ */
+export async function topicBroader(
+  efs: Efs,
+  topic: readonly string[] | { kind: "topic"; id: Hex },
+  o: CallOpts & { lens?: Lens; fold?: FoldStep; scan?: number } = {},
+): Promise<BroaderResult> {
+  const d = efs.deployment;
+  const t = topicTypesOf(d);
+  const principals = (o.lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
+  if (principals.length === 0) throw misuse("a Lens names at least one principal");
+  const scan = o.scan ?? MAX_SCAN;
+  if (!Number.isInteger(scan) || scan < 1 || scan > MAX_SCAN)
+    throw misuse(`scan is 1 to ${MAX_SCAN}`);
+  const named = await wordsOf(efs, topic, o);
+  if (!named.ok) return { kind: "efs.broader", ...named.failed };
+  const { words, extra } = named;
+  const id = lower(pathIds(t, words)[words.length - 1] as Hex) as TopicId;
+  const pin = await efs.at("latest", o);
+  if (pin.status !== "VERIFIED")
+    return {
+      kind: "efs.broader",
+      status: "UNKNOWN",
+      reason: pin.status === "UNKNOWN" ? pin.reason : reason("NOT_VERIFIED_DEPLOYMENT", "never"),
+      evidence: pin.evidence,
+    };
+  const basis = pin.basis;
+  const ctx: Ctx = { efs, requests: 0 };
+  const r = await onEndpoint(
+    efs._internal.pool,
+    async (s: Session) => {
+      ctx.requests += 1;
+      const [ix] = await callsIn(s, basis.blockHash, [callOf(d.ledger, ledgerAbi, "index", [])]);
+      const live = decoded<Hex>(ledgerAbi, "index", ix);
+      if (!live.ok) return live;
+      if (lower(live.value) !== d.index.address)
+        return {
+          ok: false as const,
+          retryElsewhere: false,
+          reason: reason(
+            "UNSUPPORTED_PROFILE",
+            "never",
+            "the live index is not the one the deployment names",
+          ),
+        };
+      const e = await topicEdges(ctx, s, basis, principals, [id], scan, PURPOSES.broader);
+      if (!e.ok) return e;
+      // Each other end's kind (word page or path record): the validator admits a first BROADER only between topics.
+      const others = [...new Set(e.value.edges.map((x) => x.to))];
+      const kinds = new Map<Hex, "word" | "path">();
+      if (others.length) {
+        ctx.requests += 1;
+        const [out] = await callsIn(s, basis.blockHash, [
+          callOf(d.readers.ledgerViews, ledgerViewsAbi, "records", [d.ledger, others]),
+        ]);
+        const rec = decoded<[readonly number[], readonly { typeId: Hex }[]]>(
+          ledgerViewsAbi,
+          "records",
+          out,
+        );
+        if (!rec.ok) return rec;
+        if (rec.value[0].length !== others.length) return badReply("records (one per id)");
+        for (const [i, x] of others.entries()) {
+          const type = lower((rec.value[1][i] as { typeId: Hex }).typeId);
+          if (
+            chainStatus(rec.value[0][i] as number) !== "PRESENT" ||
+            (type !== t.word && type !== t.path)
+          )
+            return badReply("records (a BROADER end that is not a topic)");
+          kinds.set(x, type === t.word ? "word" : "path");
+        }
+      }
+      const row = (x: Edge): Related => ({
+        id: x.to as TopicId,
+        kind: kinds.get(x.to) as "word" | "path",
+        author: x.author,
+        said: { subject: x.subject as TopicId, other: x.other as TopicId },
+      });
+      const limited = e.value.truncated;
+      return {
+        ok: true as const,
+        value: {
+          broader: e.value.edges.filter((x) => x.side === "out").map(row),
+          narrower: e.value.edges.filter((x) => x.side === "in").map(row),
+          limited,
+          complete: e.value.complete && !limited,
+        },
+      };
+    },
+    o,
+  );
+  const evidence: Evidence = {
+    attempts: [...extra.attempts, ...pin.evidence.attempts, ...r.attempts],
+    requests: extra.requests + ctx.requests,
+  };
+  if (!r.ok) return { kind: "efs.broader", status: "UNKNOWN", reason: r.reason, basis, evidence };
+  return {
+    kind: "efs.broader",
+    status: "PRESENT",
+    topic: { words, id },
+    ...r.value,
     basis,
     evidence,
   };
