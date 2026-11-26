@@ -39,8 +39,10 @@ export type {
   SequenceOpts,
   SequencePartInput,
   SequenceProgress,
+  WalletAnswerCode,
+  WalletAnswerReason,
 } from "./sequence.js";
-export { MAX_SPLIT_DEPTH, openJournal } from "./sequence.js";
+export { MAX_SPLIT_DEPTH, openJournal, WALLET_ANSWER_CODES } from "./sequence.js";
 export type {
   BatchLimits,
   BindRow,

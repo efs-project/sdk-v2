@@ -74,7 +74,37 @@ export type SequenceEvent =
   /** The wallet is being asked to approve these parts (0-based indexes; several in one EIP-5792 request). */
   | { kind: "wallet-request"; parts: readonly number[] }
   /** The ledger decided this part (0-based): committed. */
-  | { kind: "committed"; index: number };
+  | { kind: "committed"; index: number }
+  /**
+   * The wallet or its node answered these parts' send (0-based indexes) with a named reason, and it may have gone out
+   * (the send is AMBIGUOUS): emitted at once, before the save checks the ledger for its settle window. Above all
+   * INSUFFICIENT_FUNDS, so a page can say "Your wallet needs enough to cover the gas limit" while the save keeps
+   * checking; also WALLET_DISCONNECTED, WALLET_CHAIN_DISCONNECTED and RESPONSE_LOST.
+   */
+  | { kind: "wallet-answer"; parts: readonly number[]; reason: WalletAnswerReason };
+
+/** The reasons a "wallet-answer" event carries: exactly these, the ones meaning the wallet or its node answered. */
+export const WALLET_ANSWER_CODES = [
+  "INSUFFICIENT_FUNDS",
+  "WALLET_DISCONNECTED",
+  "WALLET_CHAIN_DISCONNECTED",
+  "RESPONSE_LOST",
+] as const;
+export type WalletAnswerCode = (typeof WALLET_ANSWER_CODES)[number];
+export type WalletAnswerReason = Reason & { code: WalletAnswerCode };
+
+/**
+ * @internal The reason a send's "wallet-answer" event carries, or null: an AMBIGUOUS send whose reason is one of
+ * WALLET_ANSWER_CODES. An allow-list, so a new AMBIGUOUS code reports nothing until someone decides it should.
+ */
+export function walletAnswer(sent: { status: string; reason?: Reason }): WalletAnswerReason | null {
+  const why = sent.reason;
+  return sent.status === "AMBIGUOUS" &&
+    why !== undefined &&
+    (WALLET_ANSWER_CODES as readonly string[]).includes(why.code)
+    ? (why as WalletAnswerReason)
+    : null;
+}
 
 /** What the client shows: N, how many committed, and where the save is now. */
 export interface SequenceProgress {
@@ -655,6 +685,23 @@ export function sequenceOps(d: Deps) {
         }
       : o;
 
+  /** Report a send that came back AMBIGUOUS after the wallet or node answered (a "wallet-answer"), before the settle wait. */
+  const answered = (
+    o: SequenceOpts,
+    r: SequenceRecord,
+    parts: readonly number[],
+    mode: "batch" | "sequential",
+    sent: { status: string; reason?: Reason },
+  ): void => {
+    const why = walletAnswer(sent);
+    if (!o.onProgress || !why) return;
+    tell(o, () => snapshot(r, { mode, reason: why }, "SUBMISSION_POSSIBLE"), {
+      kind: "wallet-answer",
+      parts,
+      reason: why,
+    });
+  };
+
   /** Report each part that `after` has committed and `before` had not. */
   const committedSince = (
     o: SequenceOpts,
@@ -729,6 +776,7 @@ export function sequenceOps(d: Deps) {
           attempt.plan,
           asking(o, r, [i], "sequential"),
         );
+        answered(o, r, [i], "sequential", sent);
         if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o, settleMs);
         const sentAt = r;
         r = await reconcileParts(
@@ -790,6 +838,7 @@ export function sequenceOps(d: Deps) {
         planned.plans,
         asking(o, r, g, "batch"),
       );
+      answered(o, r, g, "batch", sent);
       const status =
         sent.status === "SUBMITTED"
           ? await waitForBatch(a.provider, sent.batchId, { timeoutMs: settleMs })
@@ -890,6 +939,7 @@ export function sequenceOps(d: Deps) {
       );
       if (sent.status === "NOT_SENT" && sent.reason.code === "OVER_TX_GAS_CAP")
         return overCap(i, planned.plan.id, sent.reason);
+      answered(o, r, [i], "sequential", sent);
       // Bounded by settleMs, like the batch wait: when it runs out the part stays SUBMITTED (in flight, journaled),
       // never failed; reconcile settles it later from the ledger.
       if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o, settleMs);

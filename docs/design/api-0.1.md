@@ -335,7 +335,7 @@ string that an app places in its route, for example after `#/files/`:
 | object | `~efs/o/0x<64 hex subject id>[?lens=<p>,<p>…]` | the current head of that subject (a file today; folders reuse the form) | the route default, or the given ordered principals |
 | path | `~efs/o/0x<64 hex folder id>/<name>[/<name>…][?lens=…]` | a folder or file by name below a folder named by its id (files-name/2, case kept). Any folder, the shared root included | the given principals, else the reader then the folder's creator (`efs.lens.place`) |
 | revision | `~efs/v/0x<64 hex revision record id>` | exactly that revision's bytes | no |
-| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address, then folder and file names (files-name/2, case kept) | the given principals, else the reader then the address's own identity at the read (`openHome`: the key principal of a key account, a contract's Realm principal) |
+| home | `0x<40 hex address>[/<name>/…][?lens=…]` | a place under an address (parsed from `0x` or `0X` and hex of either case, as the gateway reads it; written lowercase), then folder and file names (files-name/2, case kept) | the given principals, else the reader then the address's own identity at the read (`openHome`: the key principal of a key account, a contract's Realm principal) |
 | topic | `<word>[/<word>/…][?lens=…]` | a topic; one word alone is that word's page. Words are folded before lookup | the route default, or the given ordered principals |
 
 - The first segment is `~efs`. The name profile reserves that prefix, so no path can look like a link. This
@@ -1010,7 +1010,13 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
 - **`onProgress(p, e)`** (runSequence and resume) is for live UI only, e.g. "Approve part 2 of 5 in your wallet".
   `e` is `{ kind: "wallet-request"; parts }` just before each wallet prompt (after the write-ahead record, so
   `p.current.stage` is SUBMISSION_POSSIBLE; several parts in one EIP-5792 request; never for a local account or a
-  part that is not sent), or `{ kind: "committed"; index }` as each part commits. It is advisory: not awaited,
+  part that is not sent), `{ kind: "wallet-answer"; parts; reason }` as soon as a send comes back AMBIGUOUS after
+  the wallet or its node answered (INSUFFICIENT_FUNDS above all, so the page can show "Your wallet needs enough to
+  cover the gas limit" at once while the save checks the ledger for its settle window; also WALLET_DISCONNECTED,
+  WALLET_CHAIN_DISCONNECTED and RESPONSE_LOST, and only these: `WALLET_ANSWER_CODES`, an allow-list, so a new
+  AMBIGUOUS code reports nothing until someone decides it should; `reason.code` is typed `WalletAnswerCode`), or
+  `{ kind: "committed"; index }` as each part commits. Narrow on `kind` for each: a handler written as
+  "wallet-request, else a part index" must handle the new kind. It is advisory: not awaited,
   anything it throws is ignored, and a missed or extra event changes nothing. The returned `SequenceProgress`, the
   journal and reconcile stay the truth about what was sent.
 - **A wallet that moves:** before each send the wallet's chain and accounts are re-read. If they are not the
@@ -1758,6 +1764,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `TX_GAS_CAP` | const | EIP-7825's per-transaction gas cap (2^24): the default when the deployment document states none. |
 | `TX_GAS_HARD_MAX` | const | EIP-8037's ceiling on tx.gas (2^32 − 1): the reservoir profile's limit never goes above it. |
 | `txGasCapOf` | const | The cap of this deployment's chain (efs-deployment.chain.txGasCap). |
+| `WALLET_ANSWER_CODES` | const | The reasons a "wallet-answer" event carries: exactly these, the ones meaning the wallet or its node answered. |
 | `ActionData` | interface | One ledger action (contracts src/interfaces/Actions.sol), as plain data. |
 | `AttemptRecord` | interface |  |
 | `AttemptStage` | type |  |
@@ -1800,6 +1807,8 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `SplitOptions` | interface |  |
 | `SplitPart` | interface |  |
 | `SplitResult` | type |  |
+| `WalletAnswerCode` | type |  |
+| `WalletAnswerReason` | type |  |
 | `WithLock` | type |  |
 | `WriterConfig` | interface |  |
 

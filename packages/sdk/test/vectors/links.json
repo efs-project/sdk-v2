@@ -275,13 +275,41 @@
       }
     },
     {
-      "label": "uppercase 0X is not a home and not a word",
+      "label": "uppercase 0X and hex is a home, as the gateway serves it",
       "input": "0XABCDEF0123456789ABCDEF0123456789ABCDEF01",
       "fold": "none",
       "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "home",
+          "address": "0xabcdef0123456789abcdef0123456789abcdef01",
+          "names": []
+        },
+        "canonical": "0xabcdef0123456789abcdef0123456789abcdef01"
+      }
+    },
+    {
+      "label": "0X and mixed-case hex is a home",
+      "input": "0XaBcDeF0123456789AbCdEf0123456789aBcDeF01/notes",
+      "fold": "none",
+      "expect": {
+        "status": "OK",
+        "target": {
+          "kind": "home",
+          "address": "0xabcdef0123456789abcdef0123456789abcdef01",
+          "names": ["notes"]
+        },
+        "canonical": "0xabcdef0123456789abcdef0123456789abcdef01/notes"
+      }
+    },
+    {
+      "label": "0X and 40 hex after the first segment is an address-shaped word",
+      "input": "people/0XABCDEF0123456789ABCDEF0123456789ABCDEF01",
+      "fold": "ascii-test",
+      "expect": {
         "status": "INVALID",
         "rule": "bad-word",
-        "segment": 0,
+        "segment": 1,
         "detail": "address-shaped",
         "word": "0XABCDEF0123456789ABCDEF0123456789ABCDEF01",
         "code": 6

@@ -8,7 +8,8 @@
 //                                      keep their case (files-name/2). Any folder can start one, the shared root
 //                                      included. The string can't say that the id is a folder: the reader checks
 //   ~efs/v/<record>                    a revision link: one immutable revision record (exact bytes; no Lens)
-//   0x<40 hex>[/<name>/…]              a home (an address), then folder and file names, which keep their case
+//   0x<40 hex>[/<name>/…]              a home (an address; 0X and hex of either case read too, as the gateway does),
+//                                      then folder and file names, which keep their case
 //                                      (files-name/2): a lookup, which a rename or a move can break
 //   <word>[/<word>/…]                  a topic, a path of words; one word alone is that word's page. Words are
 //                                      folded before lookup: the fold is the caller's (`ParseLinkOpts.fold`), so
@@ -159,6 +160,8 @@ export type LinkRule =
 export const LINK_PREFIX = "~efs";
 const ID = /^0x[0-9a-fA-F]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+/** A link's first segment that names a home: `0x` or `0X` and 40 hex digits of either case, as the gateway reads it. */
+const HOME_SEGMENT = /^0[xX][0-9a-fA-F]{40}$/;
 /** The most principals a link's Lens may name (the deployment may allow fewer; reads enforce its limit). */
 export const MAX_LINK_LENS = 64;
 const KEY_PREFIX = `0x${"0".repeat(24)}`;
@@ -395,12 +398,12 @@ function parsePlace(wire: string[], query: string | undefined, o: ParseLinkOpts)
   const decoded = decodeSegments(wire, 0);
   if (!Array.isArray(decoded)) return decoded;
   const first = decoded[0] as string;
-  if (ADDRESS.test(first)) {
+  if (HOME_SEGMENT.test(first)) {
     const names = checkNames(decoded.slice(1), 1);
     if (!Array.isArray(names)) return names;
     const target: HomeLink = {
       kind: "home",
-      address: first.toLowerCase() as Address,
+      address: first.toLowerCase() as Address, // 0X… becomes 0x…
       names,
       ...(lens ? { lens } : {}),
     };
