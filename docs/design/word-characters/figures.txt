@@ -1,0 +1,332 @@
+== Unicode 18.0 (ICU) ; Python UCD 17.0.0
+admitted by class: {'Ll': 2339, 'Lm': 472, 'Lo': 153376, 'Lt': 31, 'Lu': 1879, 'Mc': 477, 'Me': 13, 'Mn': 1827, 'Nd': 760, 'Nl': 35, 'No': 106, 'Pc': 6, 'Pd': 2, 'Po': 7, 'Sc': 2, 'Sk': 5, 'So': 2185} total 163522
+refused by class: {'Cf': 32, 'Ll': 1, 'Lm': 1, 'Lo': 16, 'Lu': 1, 'Nl': 527, 'No': 809, 'Pc': 3, 'Pd': 24, 'Pe': 75, 'Pf': 10, 'Pi': 12, 'Po': 621, 'Ps': 77, 'Sc': 64, 'Sk': 120, 'Sm': 999, 'So': 5376, 'Zl': 1, 'Zp': 1, 'Zs': 16} total 8786
+admitted delimiter lookalikes (skeleton is the delimiter):
+  '/': 8: U+2CC6(Lu,Copt) U+2CC7(Ll,Copt) U+2F03(So,Hani) U+3033(Lm,Zyyy) U+30CE(Lo,Kana) U+32E8(So,Kana) U+4E3F(Lo,Hani) U+FF89(Lo,Kana)
+  '\\': 2: U+2F02(So,Hani) U+4E36(Lo,Hani)
+  '?': 4: U+0294(Lo,Latn) U+097D(Lo,Deva) U+13AE(Lu,Cher) U+AB7E(Ll,Cher)
+  ':': 12: U+02D0(Lm,Zyyy) U+0903(Mc,Deva) U+0A83(Mc,Gujr) U+A4FD(Lm,Lisu) U+10781(Lm,Latn) U+11002(Mc,Brah) U+11082(Mc,Kthi) U+11182(Mc,Shrd) U+115BE(Mc,Sidd) U+116AC(Mc,Takr) U+11838(Mc,Dogr) U+11DD9(Lm,Tols)
+  '<': 9: U+1438(Lo,Cans) U+1444(Lo,Cans) U+1445(Lo,Cans) U+16B2(Lo,Runr) U+2CB4(Lu,Copt) U+2CB5(Ll,Copt) U+2D66(Lo,Tfng) U+1032D(Lo,Ital) U+16AEC(Lo,Bass)
+  '>': 5: U+1433(Lo,Cans) U+1437(Lo,Cans) U+1440(Lo,Cans) U+1441(Lo,Cans) U+16F3F(Lo,Plrd)
+  '*': 2: U+156F(Lo,Cans) U+1031F(Lo,Ital)
+  "'": 24: U+02B9(Lm,Zyyy) U+02BA(Lm,Zyyy) U+02BB(Lm,Zyyy) U+02BC(Lm,Zyyy) U+02BD(Lm,Zyyy) U+02BE(Lm,Zyyy) U+02C8(Lm,Zyyy) U+02CA(Lm,Zyyy) U+02CB(Lm,Zyyy) U+02EE(Lm,Zyyy) U+0374(Lm,Zyyy) U+05D9(Lo,Hebr) U+05F2(Lo,Hebr) U+07F4(Lm,Nkoo) U+07F5(Lm,Nkoo) U+144A(Lo,Cans) U+16CC(Lo,Runr) U+A78B(Lu,Latn) U+A78C(Ll,Latn) U+FB1D(Lo,Hebr) U+FB39(Lo,Hebr) U+16F51(Mc,Plrd) U+16F52(Mc,Plrd) U+1E94B(Lm,Adlm)
+  ',': 3: U+A4F9(Lm,Lisu) U+A4FB(Lm,Lisu) U+16F53(Mc,Plrd)
+  '.': 11: U+0660(Nd,Arab) U+06F0(Nd,Arab) U+2024(Po,Zyyy) U+2025(Po,Zyyy) U+A4F8(Lm,Lisu) U+A4FA(Lm,Lisu) U+ABEC(Mc,Mtei) U+FE30(Po,Zyyy) U+FE52(Po,Zyyy) U+FF0E(Po,Zyyy) U+1D16D(Mc,Zyyy)
+  '-': 10: U+174D(Lo,Buhd) U+1BF3(Mc,Batk) U+2796(So,Zyyy) U+2CB2(Lu,Copt) U+2CB3(Ll,Copt) U+2CBA(Lu,Copt) U+2CBB(Ll,Copt) U+AA7D(Mc,Mymr) U+FE63(Pd,Zyyy) U+FF0D(Pd,Zyyy)
+  '&': 1: U+A778(Ll,Latn)
+  '+': 6: U+1429(Lo,Cans) U+1540(Lo,Cans) U+2795(So,Zyyy) U+1029B(Lo,Lyci) U+16869(Lo,Bamu) U+1E6E9(Lo,Tayo)
+  '=': 1: U+A60C(Lm,Vaii)
+  '!': 2: U+01C3(Lo,Latn) U+2D51(Lo,Tfng)
+  '^': 2: U+02C6(Lm,Zyyy) U+18D4(Lo,Cans)
+  '$': 2: U+0556(Lu,Armn) U+0586(Ll,Armn)
+  U+2044 Sm Zyyy folds to U+2044: refused; skeleton U+002F
+  U+2215 Sm Zyyy folds to U+2215: refused; skeleton U+002F
+  U+29F8 Sm Zyyy folds to U+29F8: refused; skeleton U+002F
+  U+2216 Sm Zyyy folds to U+2216: refused; skeleton U+005C
+  U+29F5 Sm Zyyy folds to U+29F5: refused; skeleton U+005C
+  U+2010 Pd Zyyy folds to U+2010: refused; skeleton U+002D
+  U+2011 Pd Zyyy folds to U+2010: refused; skeleton U+002D
+  U+2012 Pd Zyyy folds to U+2012: refused; skeleton U+002D
+  U+2013 Pd Zyyy folds to U+2013: refused; skeleton U+002D
+  U+2014 Pd Zyyy folds to U+2014: refused; skeleton U+30FC
+  U+2015 Pd Zyyy folds to U+2015: refused; skeleton U+30FC
+  U+2212 Sm Zyyy folds to U+2212: refused; skeleton U+002D
+  U+FE63 Pd Zyyy folds to U+002D: admitted; skeleton U+002D
+  U+FF0D Pd Zyyy folds to U+002D: admitted; skeleton U+002D
+  U+FF0F Po Zyyy folds to U+002F: refused; skeleton U+002F
+  U+FF3C Po Zyyy folds to U+005C: refused; skeleton U+005C
+  U+3030 Pd Zyyy folds to U+3030: refused; skeleton U+3030
+  U+30FC Lm Zyyy folds to U+30FC: admitted; skeleton U+30FC
+  U+4E00 Lo Hani folds to U+4E00: admitted; skeleton U+30FC
+  U+30CE Lo Kana folds to U+30CE: admitted; skeleton U+002F
+  U+4E3F Lo Hani folds to U+4E3F: admitted; skeleton U+002F
+  U+01C0 Lo Latn folds to U+01C0: admitted; skeleton U+006C
+  U+0338 Mn Zinh folds to U+0338: admitted; skeleton U+0338
+  U+02D0 Lm Zyyy folds to U+02D0: admitted; skeleton U+003A
+  U+A4FD Lm Lisu folds to U+A4FD: admitted; skeleton U+003A
+Extended_Pictographic assigned (non-ASCII): 1404 ; of them P*/Sm/Sc/Z* (refused): U+203C(Po) U+2049(Po) U+2194(Sm) U+25FB(Sm) U+25FC(Sm) U+25FD(Sm) U+25FE(Sm) U+2934(Sm) U+2935(Sm) U+3030(Pd) U+303D(Po)
+  fold to something else: U+203C->!! U+2049->!? U+2122->tm U+2139->i U+24C2->m U+3297->祝 U+3299->秘 U+1F201->ココ U+1F202->サ U+1F21A->無 U+1F22F->指 U+1F232->禁 U+1F233->空 U+1F234->合 U+1F235->満 U+1F236->有 U+1F237->月 U+1F238->申 U+1F239->割 U+1F23A->営 U+1F250->得 U+1F251->可
+Emoji but not Extended_Pictographic (non-ASCII): 31 classes {'So': 26, 'Sk': 5} RI 26 modifiers 5
+Emoji ASCII: #*0123456789
+assigned in 18.0, not 17.0: 13007 {'Ll': 83, 'Lm': 63, 'Lo': 12334, 'Lu': 20, 'Mc': 6, 'Mn': 31, 'Nl': 323, 'Pe': 1, 'Po': 2, 'Ps': 1, 'Sc': 3, 'Sk': 2, 'Sm': 45, 'So': 93}
+  of them refused by the proposal's classes: 461 {'Sc': 3, 'Po': 2, 'Ps': 1, 'Pe': 1, 'Sk': 2, 'Nl': 323, 'So': 84, 'Sm': 45}
+  of them with NFKC_Casefold(c) != c: 88 U+0558(Lm) U+058B(Lm) U+058C(Lm) U+209D(Lm) U+209E(Lm) U+209F(Lm) U+A7DD(Lu) U+A7E2(Lu) U+AB6C(Lu) U+AB6D(Lu) U+107BB(Lm) U+107BC(Lm) U+107BD(Lm) U+107BE(Lm) U+107BF(Lm) U+1B123(Lo) U+1B124(Lo) U+1B125(Lo) U+1B126(Lo) U+1D6A6(Ll)
+  new symbols and punctuation whose skeleton is an ASCII delimiter: U+2E62(Ps)->'(' U+2E63(Pe)->')'
+  chain table, refused (recommended, unassigned included): 982 ranges (about 5,892 bytes as 3-byte lo/hi pairs)
+  chain table, refused (recommended, unassigned admitted): 483 ranges (about 2,898 bytes as 3-byte lo/hi pairs)
+  chain table, refused or changed by the fold: 1438 ranges (about 8,628 bytes as 3-byte lo/hi pairs)
+exemplar items refused (proposal): 103
+  ৲ (U+09F2) folds to ৲: U+09F2 Sc; 2 languages: as bn
+  · (U+00B7) folds to ·: U+00B7 Po; 1 languages: ca
+  ŀ (U+0140) folds to l·: U+00B7 Po; 1 languages: ca
+  ৳ (U+09F3) folds to ৳: U+09F3 Sc; 1 languages: bn
+  ৴ (U+09F4) folds to ৴: U+09F4 No; 1 languages: bn
+  ৵ (U+09F5) folds to ৵: U+09F5 No; 1 languages: bn
+  ৶ (U+09F6) folds to ৶: U+09F6 No; 1 languages: bn
+  ৷ (U+09F7) folds to ৷: U+09F7 No; 1 languages: bn
+  ৸ (U+09F8) folds to ৸: U+09F8 No; 1 languages: bn
+  ৹ (U+09F9) folds to ৹: U+09F9 No; 1 languages: bn
+  ৺ (U+09FA) folds to ৺: U+09FA So; 1 languages: bn
+  ႞ (U+109E) folds to ႞: U+109E So; 1 languages: shn
+  ႟ (U+109F) folds to ႟: U+109F So; 1 languages: shn
+  ܀ (U+0700) folds to ܀: U+0700 Po; 1 languages: syr
+  ܁ (U+0701) folds to ܁: U+0701 Po; 1 languages: syr
+  ܂ (U+0702) folds to ܂: U+0702 Po; 1 languages: syr
+  ܃ (U+0703) folds to ܃: U+0703 Po; 1 languages: syr
+  ܄ (U+0704) folds to ܄: U+0704 Po; 1 languages: syr
+  ܅ (U+0705) folds to ܅: U+0705 Po; 1 languages: syr
+  ܆ (U+0706) folds to ܆: U+0706 Po; 1 languages: syr
+  ܇ (U+0707) folds to ܇: U+0707 Po; 1 languages: syr
+  ܈ (U+0708) folds to ܈: U+0708 Po; 1 languages: syr
+  ܉ (U+0709) folds to ܉: U+0709 Po; 1 languages: syr
+  ܊ (U+070A) folds to ܊: U+070A Po; 1 languages: syr
+  ܋ (U+070B) folds to ܋: U+070B Po; 1 languages: syr
+  ܌ (U+070C) folds to ܌: U+070C Po; 1 languages: syr
+  ܍ (U+070D) folds to ܍: U+070D Po; 1 languages: syr
+  ܏ (U+070F) folds to ܏: U+070F Cf; 1 languages: syr
+  ᎐ (U+1390) folds to ᎐: U+1390 So; 1 languages: ti
+  ᎑ (U+1391) folds to ᎑: U+1391 So; 1 languages: ti
+  ᎒ (U+1392) folds to ᎒: U+1392 So; 1 languages: ti
+  ᎓ (U+1393) folds to ᎓: U+1393 So; 1 languages: ti
+  ᎔ (U+1394) folds to ᎔: U+1394 So; 1 languages: ti
+  ᎕ (U+1395) folds to ᎕: U+1395 So; 1 languages: ti
+  ᎖ (U+1396) folds to ᎖: U+1396 So; 1 languages: ti
+  ᎗ (U+1397) folds to ᎗: U+1397 So; 1 languages: ti
+  ᎘ (U+1398) folds to ᎘: U+1398 So; 1 languages: ti
+  ᎙ (U+1399) folds to ᎙: U+1399 So; 1 languages: ti
+  ؀ (U+0600) folds to ؀: U+0600 Cf; 1 languages: ur
+  ؁ (U+0601) folds to ؁: U+0601 Cf; 1 languages: ur
+  ؂ (U+0602) folds to ؂: U+0602 Cf; 1 languages: ur
+  ؃ (U+0603) folds to ؃: U+0603 Cf; 1 languages: ur
+  ૰ (U+0AF0) folds to ૰: U+0AF0 Po; 1 languages: gu
+  ״ (U+05F4) folds to ״: U+05F4 Po; 1 languages: he
+  ꒐ (U+A490) folds to ꒐: U+A490 So; 1 languages: ii
+  ꒑ (U+A491) folds to ꒑: U+A491 So; 1 languages: ii
+  ꒒ (U+A492) folds to ꒒: U+A492 So; 1 languages: ii
+  ꒓ (U+A493) folds to ꒓: U+A493 So; 1 languages: ii
+  ꒔ (U+A494) folds to ꒔: U+A494 So; 1 languages: ii
+  ꒕ (U+A495) folds to ꒕: U+A495 So; 1 languages: ii
+  ꒖ (U+A496) folds to ꒖: U+A496 So; 1 languages: ii
+  ꒗ (U+A497) folds to ꒗: U+A497 So; 1 languages: ii
+  ꒘ (U+A498) folds to ꒘: U+A498 So; 1 languages: ii
+  ꒙ (U+A499) folds to ꒙: U+A499 So; 1 languages: ii
+  ꒚ (U+A49A) folds to ꒚: U+A49A So; 1 languages: ii
+  ꒛ (U+A49B) folds to ꒛: U+A49B So; 1 languages: ii
+  ꒜ (U+A49C) folds to ꒜: U+A49C So; 1 languages: ii
+  ꒝ (U+A49D) folds to ꒝: U+A49D So; 1 languages: ii
+  ꒞ (U+A49E) folds to ꒞: U+A49E So; 1 languages: ii
+  ꒟ (U+A49F) folds to ꒟: U+A49F So; 1 languages: ii
+  ꒠ (U+A4A0) folds to ꒠: U+A4A0 So; 1 languages: ii
+  ꒡ (U+A4A1) folds to ꒡: U+A4A1 So; 1 languages: ii
+  ꒢ (U+A4A2) folds to ꒢: U+A4A2 So; 1 languages: ii
+  ꒣ (U+A4A3) folds to ꒣: U+A4A3 So; 1 languages: ii
+  ꒤ (U+A4A4) folds to ꒤: U+A4A4 So; 1 languages: ii
+  ꒥ (U+A4A5) folds to ꒥: U+A4A5 So; 1 languages: ii
+  ꒦ (U+A4A6) folds to ꒦: U+A4A6 So; 1 languages: ii
+  ꒧ (U+A4A7) folds to ꒧: U+A4A7 So; 1 languages: ii
+  ꒨ (U+A4A8) folds to ꒨: U+A4A8 So; 1 languages: ii
+  ꒩ (U+A4A9) folds to ꒩: U+A4A9 So; 1 languages: ii
+  ꒪ (U+A4AA) folds to ꒪: U+A4AA So; 1 languages: ii
+  ꒫ (U+A4AB) folds to ꒫: U+A4AB So; 1 languages: ii
+  ꒬ (U+A4AC) folds to ꒬: U+A4AC So; 1 languages: ii
+  ꒭ (U+A4AD) folds to ꒭: U+A4AD So; 1 languages: ii
+  ꒮ (U+A4AE) folds to ꒮: U+A4AE So; 1 languages: ii
+  ꒯ (U+A4AF) folds to ꒯: U+A4AF So; 1 languages: ii
+  ꒰ (U+A4B0) folds to ꒰: U+A4B0 So; 1 languages: ii
+  ꒱ (U+A4B1) folds to ꒱: U+A4B1 So; 1 languages: ii
+  ꒲ (U+A4B2) folds to ꒲: U+A4B2 So; 1 languages: ii
+  ꒳ (U+A4B3) folds to ꒳: U+A4B3 So; 1 languages: ii
+  ꒴ (U+A4B4) folds to ꒴: U+A4B4 So; 1 languages: ii
+  ꒵ (U+A4B5) folds to ꒵: U+A4B5 So; 1 languages: ii
+  ꒶ (U+A4B6) folds to ꒶: U+A4B6 So; 1 languages: ii
+  ꒷ (U+A4B7) folds to ꒷: U+A4B7 So; 1 languages: ii
+  ꒸ (U+A4B8) folds to ꒸: U+A4B8 So; 1 languages: ii
+  ꒹ (U+A4B9) folds to ꒹: U+A4B9 So; 1 languages: ii
+  ꒺ (U+A4BA) folds to ꒺: U+A4BA So; 1 languages: ii
+  ꒻ (U+A4BB) folds to ꒻: U+A4BB So; 1 languages: ii
+  ꒼ (U+A4BC) folds to ꒼: U+A4BC So; 1 languages: ii
+  ꒽ (U+A4BD) folds to ꒽: U+A4BD So; 1 languages: ii
+  ꒾ (U+A4BE) folds to ꒾: U+A4BE So; 1 languages: ii
+  ꒿ (U+A4BF) folds to ꒿: U+A4BF So; 1 languages: ii
+  ꓀ (U+A4C0) folds to ꓀: U+A4C0 So; 1 languages: ii
+  ꓁ (U+A4C1) folds to ꓁: U+A4C1 So; 1 languages: ii
+  ꓂ (U+A4C2) folds to ꓂: U+A4C2 So; 1 languages: ii
+  ꓃ (U+A4C3) folds to ꓃: U+A4C3 So; 1 languages: ii
+  ꓄ (U+A4C4) folds to ꓄: U+A4C4 So; 1 languages: ii
+  ꓅ (U+A4C5) folds to ꓅: U+A4C5 So; 1 languages: ii
+  ꓆ (U+A4C6) folds to ꓆: U+A4C6 So; 1 languages: ii
+  ଅ: (U+0B05 U+003A) folds to ଅ:: U+003A Po; 1 languages: kxv
+  ଆ: (U+0B06 U+003A) folds to ଆ:: U+003A Po; 1 languages: kxv
+  ଏ: (U+0B0F U+003A) folds to ଏ:: U+003A Po; 1 languages: kxv
+  ၏ (U+104F) folds to ၏: U+104F Po; 1 languages: my
+exemplar items refused (recommended): 95
+  ـ (U+0640) folds to ـ: U+0640 Lm; 2 languages: ar fa
+  ৲ (U+09F2) folds to ৲: U+09F2 Sc; 2 languages: as bn
+  ৳ (U+09F3) folds to ৳: U+09F3 Sc; 1 languages: bn
+  ৺ (U+09FA) folds to ৺: U+09FA So; 1 languages: bn
+  ႞ (U+109E) folds to ႞: U+109E So; 1 languages: shn
+  ႟ (U+109F) folds to ႟: U+109F So; 1 languages: shn
+  ܀ (U+0700) folds to ܀: U+0700 Po; 1 languages: syr
+  ܁ (U+0701) folds to ܁: U+0701 Po; 1 languages: syr
+  ܂ (U+0702) folds to ܂: U+0702 Po; 1 languages: syr
+  ܃ (U+0703) folds to ܃: U+0703 Po; 1 languages: syr
+  ܄ (U+0704) folds to ܄: U+0704 Po; 1 languages: syr
+  ܅ (U+0705) folds to ܅: U+0705 Po; 1 languages: syr
+  ܆ (U+0706) folds to ܆: U+0706 Po; 1 languages: syr
+  ܇ (U+0707) folds to ܇: U+0707 Po; 1 languages: syr
+  ܈ (U+0708) folds to ܈: U+0708 Po; 1 languages: syr
+  ܉ (U+0709) folds to ܉: U+0709 Po; 1 languages: syr
+  ܊ (U+070A) folds to ܊: U+070A Po; 1 languages: syr
+  ܋ (U+070B) folds to ܋: U+070B Po; 1 languages: syr
+  ܌ (U+070C) folds to ܌: U+070C Po; 1 languages: syr
+  ܍ (U+070D) folds to ܍: U+070D Po; 1 languages: syr
+  ܏ (U+070F) folds to ܏: U+070F Cf; 1 languages: syr
+  ᎐ (U+1390) folds to ᎐: U+1390 So; 1 languages: ti
+  ᎑ (U+1391) folds to ᎑: U+1391 So; 1 languages: ti
+  ᎒ (U+1392) folds to ᎒: U+1392 So; 1 languages: ti
+  ᎓ (U+1393) folds to ᎓: U+1393 So; 1 languages: ti
+  ᎔ (U+1394) folds to ᎔: U+1394 So; 1 languages: ti
+  ᎕ (U+1395) folds to ᎕: U+1395 So; 1 languages: ti
+  ᎖ (U+1396) folds to ᎖: U+1396 So; 1 languages: ti
+  ᎗ (U+1397) folds to ᎗: U+1397 So; 1 languages: ti
+  ᎘ (U+1398) folds to ᎘: U+1398 So; 1 languages: ti
+  ᎙ (U+1399) folds to ᎙: U+1399 So; 1 languages: ti
+  ؀ (U+0600) folds to ؀: U+0600 Cf; 1 languages: ur
+  ؁ (U+0601) folds to ؁: U+0601 Cf; 1 languages: ur
+  ؂ (U+0602) folds to ؂: U+0602 Cf; 1 languages: ur
+  ؃ (U+0603) folds to ؃: U+0603 Cf; 1 languages: ur
+  ૰ (U+0AF0) folds to ૰: U+0AF0 Po; 1 languages: gu
+  ꒐ (U+A490) folds to ꒐: U+A490 So; 1 languages: ii
+  ꒑ (U+A491) folds to ꒑: U+A491 So; 1 languages: ii
+  ꒒ (U+A492) folds to ꒒: U+A492 So; 1 languages: ii
+  ꒓ (U+A493) folds to ꒓: U+A493 So; 1 languages: ii
+  ꒔ (U+A494) folds to ꒔: U+A494 So; 1 languages: ii
+  ꒕ (U+A495) folds to ꒕: U+A495 So; 1 languages: ii
+  ꒖ (U+A496) folds to ꒖: U+A496 So; 1 languages: ii
+  ꒗ (U+A497) folds to ꒗: U+A497 So; 1 languages: ii
+  ꒘ (U+A498) folds to ꒘: U+A498 So; 1 languages: ii
+  ꒙ (U+A499) folds to ꒙: U+A499 So; 1 languages: ii
+  ꒚ (U+A49A) folds to ꒚: U+A49A So; 1 languages: ii
+  ꒛ (U+A49B) folds to ꒛: U+A49B So; 1 languages: ii
+  ꒜ (U+A49C) folds to ꒜: U+A49C So; 1 languages: ii
+  ꒝ (U+A49D) folds to ꒝: U+A49D So; 1 languages: ii
+  ꒞ (U+A49E) folds to ꒞: U+A49E So; 1 languages: ii
+  ꒟ (U+A49F) folds to ꒟: U+A49F So; 1 languages: ii
+  ꒠ (U+A4A0) folds to ꒠: U+A4A0 So; 1 languages: ii
+  ꒡ (U+A4A1) folds to ꒡: U+A4A1 So; 1 languages: ii
+  ꒢ (U+A4A2) folds to ꒢: U+A4A2 So; 1 languages: ii
+  ꒣ (U+A4A3) folds to ꒣: U+A4A3 So; 1 languages: ii
+  ꒤ (U+A4A4) folds to ꒤: U+A4A4 So; 1 languages: ii
+  ꒥ (U+A4A5) folds to ꒥: U+A4A5 So; 1 languages: ii
+  ꒦ (U+A4A6) folds to ꒦: U+A4A6 So; 1 languages: ii
+  ꒧ (U+A4A7) folds to ꒧: U+A4A7 So; 1 languages: ii
+  ꒨ (U+A4A8) folds to ꒨: U+A4A8 So; 1 languages: ii
+  ꒩ (U+A4A9) folds to ꒩: U+A4A9 So; 1 languages: ii
+  ꒪ (U+A4AA) folds to ꒪: U+A4AA So; 1 languages: ii
+  ꒫ (U+A4AB) folds to ꒫: U+A4AB So; 1 languages: ii
+  ꒬ (U+A4AC) folds to ꒬: U+A4AC So; 1 languages: ii
+  ꒭ (U+A4AD) folds to ꒭: U+A4AD So; 1 languages: ii
+  ꒮ (U+A4AE) folds to ꒮: U+A4AE So; 1 languages: ii
+  ꒯ (U+A4AF) folds to ꒯: U+A4AF So; 1 languages: ii
+  ꒰ (U+A4B0) folds to ꒰: U+A4B0 So; 1 languages: ii
+  ꒱ (U+A4B1) folds to ꒱: U+A4B1 So; 1 languages: ii
+  ꒲ (U+A4B2) folds to ꒲: U+A4B2 So; 1 languages: ii
+  ꒳ (U+A4B3) folds to ꒳: U+A4B3 So; 1 languages: ii
+  ꒴ (U+A4B4) folds to ꒴: U+A4B4 So; 1 languages: ii
+  ꒵ (U+A4B5) folds to ꒵: U+A4B5 So; 1 languages: ii
+  ꒶ (U+A4B6) folds to ꒶: U+A4B6 So; 1 languages: ii
+  ꒷ (U+A4B7) folds to ꒷: U+A4B7 So; 1 languages: ii
+  ꒸ (U+A4B8) folds to ꒸: U+A4B8 So; 1 languages: ii
+  ꒹ (U+A4B9) folds to ꒹: U+A4B9 So; 1 languages: ii
+  ꒺ (U+A4BA) folds to ꒺: U+A4BA So; 1 languages: ii
+  ꒻ (U+A4BB) folds to ꒻: U+A4BB So; 1 languages: ii
+  ꒼ (U+A4BC) folds to ꒼: U+A4BC So; 1 languages: ii
+  ꒽ (U+A4BD) folds to ꒽: U+A4BD So; 1 languages: ii
+  ꒾ (U+A4BE) folds to ꒾: U+A4BE So; 1 languages: ii
+  ꒿ (U+A4BF) folds to ꒿: U+A4BF So; 1 languages: ii
+  ꓀ (U+A4C0) folds to ꓀: U+A4C0 So; 1 languages: ii
+  ꓁ (U+A4C1) folds to ꓁: U+A4C1 So; 1 languages: ii
+  ꓂ (U+A4C2) folds to ꓂: U+A4C2 So; 1 languages: ii
+  ꓃ (U+A4C3) folds to ꓃: U+A4C3 So; 1 languages: ii
+  ꓄ (U+A4C4) folds to ꓄: U+A4C4 So; 1 languages: ii
+  ꓅ (U+A4C5) folds to ꓅: U+A4C5 So; 1 languages: ii
+  ꓆ (U+A4C6) folds to ꓆: U+A4C6 So; 1 languages: ii
+  ଅ: (U+0B05 U+003A) folds to ଅ:: U+003A Po; 1 languages: kxv
+  ଆ: (U+0B06 U+003A) folds to ଆ:: U+003A Po; 1 languages: kxv
+  ଏ: (U+0B0F U+003A) folds to ଏ:: U+003A Po; 1 languages: kxv
+  ၏ (U+104F) folds to ၏: U+104F Po; 1 languages: my
+  U+00B7 middle-dot in the punctuation exemplars of: gd ii ko sc vec yue zh
+  U+05F3 hebrew-geresh in the punctuation exemplars of: he yi
+  U+05F4 hebrew-gershayim in the punctuation exemplars of: he yi
+  U+0F0B tibetan-tsheg in the punctuation exemplars of: (none)
+  U+30FB katakana-middle-dot in the punctuation exemplars of: ja ko
+  col·lecció             -> col·lecció           proposal: character U+00B7 Po                recommended: ok
+  coŀlecció              -> col·lecció           proposal: character U+00B7 Po                recommended: ok
+  paral·lel              -> paral·lel            proposal: character U+00B7 Po                recommended: ok
+  a·b                    -> a·b                  proposal: character U+00B7 Po                recommended: middle-dot U+00B7
+  ジョン・スミス                -> ジョン・スミス              proposal: character U+30FB Po                recommended: ok
+  ﾊﾘｰ･ﾎﾟｯﾀｰ              -> ハリー・ポッター             proposal: character U+30FB Po                recommended: ok
+  列夫·托尔斯泰                -> 列夫·托尔斯泰              proposal: character U+00B7 Po                recommended: ok
+  列夫・托尔斯泰                -> 列夫・托尔斯泰              proposal: character U+30FB Po                recommended: ok
+  a・b                    -> a・b                  proposal: character U+30FB Po                recommended: katakana-middle-dot U+30FB
+  צה״ל                   -> צה״ל                 proposal: character U+05F4 Po                recommended: ok
+  ג׳ירפה                 -> ג׳ירפה               proposal: character U+05F3 Po                recommended: ok
+  צה"ל                   -> צה"ל                 proposal: ascii-character U+0022             recommended: ascii-character U+0022
+  a׳                     -> a׳                   proposal: character U+05F3 Po                recommended: hebrew-geresh U+05F3
+  བོད་ཡིག                -> བོད་ཡིག              proposal: character U+0F0B Po                recommended: ok
+  ལྷ་ས                   -> ལྷ་ས                 proposal: character U+0F0B Po                recommended: ok
+  don't                  -> don't                proposal: ascii-character U+0027             recommended: ascii-character U+0027
+  don’t                  -> don’t                proposal: character U+2019 Pf                recommended: character U+2019 Pf
+  donʼt                  -> donʼt                proposal: ok                                 recommended: ok
+  aujourd'hui            -> aujourd'hui          proposal: ascii-character U+0027             recommended: ascii-character U+0027
+  l'amour                -> l'amour              proposal: ascii-character U+0027             recommended: ascii-character U+0027
+  o'brien                -> o'brien              proposal: ascii-character U+0027             recommended: ascii-character U+0027
+  м'ясо                  -> м'ясо                proposal: ascii-character U+0027             recommended: ascii-character U+0027
+  мʼясо                  -> мʼясо                proposal: ok                                 recommended: ok
+  hawaiʻi                -> hawaiʻi              proposal: ok                                 recommended: ok
+  hawai'i                -> hawai'i              proposal: ascii-character U+0027             recommended: ascii-character U+0027
+  كتاب                   -> كتاب                 proposal: ok                                 recommended: ok
+  كتـــاب                -> كتـــاب              proposal: ok                                 recommended: arabic-tatweel U+0640
+  می‌خواهم               -> میخواهم              proposal: ok                                 recommended: ok
+  डॉ॰                    -> डॉ॰                  proposal: character U+0970 Po                recommended: character U+0970 Po
+  ٤٥                     -> ٤٥                   proposal: ok                                 recommended: ok
+  ٤۵                     -> ٤۵                   proposal: ok                                 recommended: mixed-arabic-indic-digits
+  二〇二六                   -> 二〇二六                 proposal: character U+3007 Nl                recommended: ok
+  Ⅻ                      -> xii                  proposal: ok                                 recommended: ok
+  🎉                      -> 🎉                    proposal: ok                                 recommended: ok
+  ❤️                     -> ❤                    proposal: ok                                 recommended: ok
+  👍🏽                     -> 👍🏽                   proposal: ok                                 recommended: ok
+  🇺🇸                     -> 🇺🇸                   proposal: ok                                 recommended: ok
+  👨‍👩‍👧                  -> 👨👩👧                  proposal: ok                                 recommended: ok
+  1️⃣                    -> 1⃣                   proposal: ok                                 recommended: ok
+  ©                      -> ©                    proposal: ok                                 recommended: ok
+  ™                      -> tm                   proposal: ok                                 recommended: ok
+  〰                      -> 〰                    proposal: character U+3030 Pd                recommended: character U+3030 Pd
+  ↔                      -> ↔                    proposal: character U+2194 Sm                recommended: character U+2194 Sm
+  🏴󠁧󠁢󠁳󠁣󠁴󠁿                -> 🏴                    proposal: ok                                 recommended: ok
+  c♯                     -> c♯                   proposal: character U+266F Sm                recommended: character U+266F Sm
+  25℃                    -> 25°c                 proposal: character U+00B0 So                recommended: character U+00B0 So
+  €uro                   -> €uro                 proposal: character U+20AC Sc                recommended: character U+20AC Sc
+  ½                      -> 1⁄2                  proposal: character U+2044 Sm                recommended: character U+2044 Sm
+  x²                     -> x2                   proposal: ok                                 recommended: ok
+  µm                     -> μm                   proposal: ok                                 recommended: ok
+  a⁄b                    -> a⁄b                  proposal: character U+2044 Sm                recommended: character U+2044 Sm
+  a∕b                    -> a∕b                  proposal: character U+2215 Sm                recommended: character U+2215 Sm
+  a⧸b                    -> a⧸b                  proposal: character U+29F8 Sm                recommended: character U+29F8 Sm
+  a∖b                    -> a∖b                  proposal: character U+2216 Sm                recommended: character U+2216 Sm
+  a⧵b                    -> a⧵b                  proposal: character U+29F5 Sm                recommended: character U+29F5 Sm
+  e‐mail                 -> e‐mail               proposal: character U+2010 Pd                recommended: character U+2010 Pd
+  e‑mail                 -> e‐mail               proposal: character U+2010 Pd                recommended: character U+2010 Pd
+  a－b                    -> a-b                  proposal: ok                                 recommended: ok
+  a／b                    -> a/b                  proposal: ascii-character U+002F             recommended: ascii-character U+002F
+  aノb                    -> aノb                  proposal: ok                                 recommended: ok
+  aǀb                    -> aǀb                  proposal: ok                                 recommended: ok
+  aːb                    -> aːb                  proposal: ok                                 recommended: ok
+  a̸b                    -> a̸b                  proposal: ok                                 recommended: delimiter-overlay U+0338
+  inc.                   -> inc.                 proposal: trailing-dot                       recommended: trailing-dot
+  .net                   -> .net                 proposal: ok                                 recommended: ok
+  -x                     -> -x                   proposal: leading-hyphen                     recommended: leading-hyphen
+  x-                     -> x-                   proposal: ok                                 recommended: ok
+  c++                    -> c++                  proposal: ascii-character U+002B             recommended: ascii-character U+002B
+  mercury_(planet)       -> mercury_(planet)     proposal: ascii-character U+0028             recommended: ascii-character U+0028
+  node.js                -> node.js              proposal: ok                                 recommended: ok

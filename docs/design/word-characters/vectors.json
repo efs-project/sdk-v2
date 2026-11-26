@@ -1,0 +1,762 @@
+{
+  "schema": "efs-sdk/word-characters-evaluation/1",
+  "unicode": "18.0.0 (ICU 79)",
+  "note": "Typed word, its fold (NFKC_Casefold after the whitespace step), and the verdict under the proposal and under the README's recommended contextual exceptions and refusals (null: admitted). Invisible characters are written as escapes.",
+  "vectors": [
+    {
+      "typed": "col·lecció",
+      "note": "Catalan, U+00B7 between l and l",
+      "folded": "col·lecció",
+      "proposal": {
+        "rule": "character",
+        "char": "U+00B7",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "coŀlecció",
+      "note": "Catalan, U+0140 (folds to l + U+00B7)",
+      "folded": "col·lecció",
+      "proposal": {
+        "rule": "character",
+        "char": "U+00B7",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "paral·lel",
+      "note": "Catalan",
+      "folded": "paral·lel",
+      "proposal": {
+        "rule": "character",
+        "char": "U+00B7",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "a·b",
+      "note": "U+00B7 outside l·l",
+      "folded": "a·b",
+      "proposal": {
+        "rule": "character",
+        "char": "U+00B7",
+        "class": "Po"
+      },
+      "recommended": {
+        "rule": "middle-dot",
+        "char": "U+00B7"
+      }
+    },
+    {
+      "typed": "ジョン・スミス",
+      "note": "Japanese foreign name, U+30FB",
+      "folded": "ジョン・スミス",
+      "proposal": {
+        "rule": "character",
+        "char": "U+30FB",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "ﾊﾘｰ･ﾎﾟｯﾀｰ",
+      "note": "halfwidth katakana and U+FF65 (fold to U+30FB)",
+      "folded": "ハリー・ポッター",
+      "proposal": {
+        "rule": "character",
+        "char": "U+30FB",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "列夫·托尔斯泰",
+      "note": "Chinese foreign name with U+00B7",
+      "folded": "列夫·托尔斯泰",
+      "proposal": {
+        "rule": "character",
+        "char": "U+00B7",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "列夫・托尔斯泰",
+      "note": "Chinese foreign name with U+30FB",
+      "folded": "列夫・托尔斯泰",
+      "proposal": {
+        "rule": "character",
+        "char": "U+30FB",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "a・b",
+      "note": "U+30FB between Latin letters",
+      "folded": "a・b",
+      "proposal": {
+        "rule": "character",
+        "char": "U+30FB",
+        "class": "Po"
+      },
+      "recommended": {
+        "rule": "katakana-middle-dot",
+        "char": "U+30FB"
+      }
+    },
+    {
+      "typed": "צה״ל",
+      "note": "Hebrew acronym, gershayim U+05F4",
+      "folded": "צה״ל",
+      "proposal": {
+        "rule": "character",
+        "char": "U+05F4",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "ג׳ירפה",
+      "note": "Hebrew, geresh U+05F3",
+      "folded": "ג׳ירפה",
+      "proposal": {
+        "rule": "character",
+        "char": "U+05F3",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "צה\"ל",
+      "note": "Hebrew acronym typed with ASCII \"",
+      "folded": "צה\"ל",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+0022"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+0022"
+      }
+    },
+    {
+      "typed": "a׳",
+      "note": "geresh after Latin",
+      "folded": "a׳",
+      "proposal": {
+        "rule": "character",
+        "char": "U+05F3",
+        "class": "Po"
+      },
+      "recommended": {
+        "rule": "hebrew-geresh",
+        "char": "U+05F3"
+      }
+    },
+    {
+      "typed": "བོད་ཡིག",
+      "note": "Tibetan, tsheg U+0F0B",
+      "folded": "བོད་ཡིག",
+      "proposal": {
+        "rule": "character",
+        "char": "U+0F0B",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "ལྷ་ས",
+      "note": "Tibetan, Lhasa",
+      "folded": "ལྷ་ས",
+      "proposal": {
+        "rule": "character",
+        "char": "U+0F0B",
+        "class": "Po"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "don't",
+      "note": "ASCII apostrophe",
+      "folded": "don't",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      }
+    },
+    {
+      "typed": "don’t",
+      "note": "U+2019",
+      "folded": "don’t",
+      "proposal": {
+        "rule": "character",
+        "char": "U+2019",
+        "class": "Pf"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+2019",
+        "class": "Pf"
+      }
+    },
+    {
+      "typed": "donʼt",
+      "note": "U+02BC modifier letter apostrophe",
+      "folded": "donʼt",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "aujourd'hui",
+      "note": "French",
+      "folded": "aujourd'hui",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      }
+    },
+    {
+      "typed": "l'amour",
+      "note": "French",
+      "folded": "l'amour",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      }
+    },
+    {
+      "typed": "o'brien",
+      "note": "Irish name",
+      "folded": "o'brien",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      }
+    },
+    {
+      "typed": "м'ясо",
+      "note": "Ukrainian, ASCII apostrophe",
+      "folded": "м'ясо",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      }
+    },
+    {
+      "typed": "мʼясо",
+      "note": "Ukrainian, U+02BC",
+      "folded": "мʼясо",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "hawaiʻi",
+      "note": "Hawaiian, okina U+02BB",
+      "folded": "hawaiʻi",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "hawai'i",
+      "note": "Hawaiian, ASCII apostrophe",
+      "folded": "hawai'i",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+0027"
+      }
+    },
+    {
+      "typed": "كتاب",
+      "note": "Arabic",
+      "folded": "كتاب",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "كتـــاب",
+      "note": "Arabic with tatweel U+0640",
+      "folded": "كتـــاب",
+      "proposal": null,
+      "recommended": {
+        "rule": "arabic-tatweel",
+        "char": "U+0640"
+      }
+    },
+    {
+      "typed": "می\u200cخواهم",
+      "note": "Persian with ZWNJ (the fold removes it)",
+      "folded": "میخواهم",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "डॉ॰",
+      "note": "Devanagari abbreviation sign U+0970",
+      "folded": "डॉ॰",
+      "proposal": {
+        "rule": "character",
+        "char": "U+0970",
+        "class": "Po"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+0970",
+        "class": "Po"
+      }
+    },
+    {
+      "typed": "٤٥",
+      "note": "Arabic-Indic digits",
+      "folded": "٤٥",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "٤۵",
+      "note": "mixed Arabic-Indic and extended Arabic-Indic digits",
+      "folded": "٤۵",
+      "proposal": null,
+      "recommended": {
+        "rule": "mixed-arabic-indic-digits"
+      }
+    },
+    {
+      "typed": "二〇二六",
+      "note": "CJK numerals with U+3007 (Nl)",
+      "folded": "二〇二六",
+      "proposal": {
+        "rule": "character",
+        "char": "U+3007",
+        "class": "Nl"
+      },
+      "recommended": null
+    },
+    {
+      "typed": "Ⅻ",
+      "note": "Roman numeral (folds to xii)",
+      "folded": "xii",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "🎉",
+      "note": "emoji",
+      "folded": "🎉",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "❤\ufe0f",
+      "note": "emoji with VS16 (the fold removes it)",
+      "folded": "❤",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "👍🏽",
+      "note": "emoji with a skin tone",
+      "folded": "👍🏽",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "🇺🇸",
+      "note": "flag (regional indicators)",
+      "folded": "🇺🇸",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "👨\u200d👩\u200d👧",
+      "note": "ZWJ sequence (the fold removes the joiners)",
+      "folded": "👨👩👧",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "1\ufe0f⃣",
+      "note": "keycap",
+      "folded": "1⃣",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "©",
+      "note": "copyright sign",
+      "folded": "©",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "™",
+      "note": "trade mark (folds to tm)",
+      "folded": "tm",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "〰",
+      "note": "wavy dash U+3030 (emoji, Pd)",
+      "folded": "〰",
+      "proposal": {
+        "rule": "character",
+        "char": "U+3030",
+        "class": "Pd"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+3030",
+        "class": "Pd"
+      }
+    },
+    {
+      "typed": "↔",
+      "note": "left right arrow U+2194 (emoji, Sm)",
+      "folded": "↔",
+      "proposal": {
+        "rule": "character",
+        "char": "U+2194",
+        "class": "Sm"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+2194",
+        "class": "Sm"
+      }
+    },
+    {
+      "typed": "🏴\udb40\udc67\udb40\udc62\udb40\udc73\udb40\udc63\udb40\udc74\udb40\udc7f",
+      "note": "subdivision flag (tags fold away)",
+      "folded": "🏴",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "c♯",
+      "note": "music sharp U+266F (So)",
+      "folded": "c♯",
+      "proposal": {
+        "rule": "character",
+        "char": "U+266F",
+        "class": "Sm"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+266F",
+        "class": "Sm"
+      }
+    },
+    {
+      "typed": "25℃",
+      "note": "folds to 25°c",
+      "folded": "25°c",
+      "proposal": {
+        "rule": "character",
+        "char": "U+00B0",
+        "class": "So"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+00B0",
+        "class": "So"
+      }
+    },
+    {
+      "typed": "€uro",
+      "note": "euro sign (Sc)",
+      "folded": "€uro",
+      "proposal": {
+        "rule": "character",
+        "char": "U+20AC",
+        "class": "Sc"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+20AC",
+        "class": "Sc"
+      }
+    },
+    {
+      "typed": "½",
+      "note": "folds to 1⁄2",
+      "folded": "1⁄2",
+      "proposal": {
+        "rule": "character",
+        "char": "U+2044",
+        "class": "Sm"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+2044",
+        "class": "Sm"
+      }
+    },
+    {
+      "typed": "x²",
+      "note": "folds to x2",
+      "folded": "x2",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "µm",
+      "note": "micro sign (folds to μ)",
+      "folded": "μm",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "a⁄b",
+      "note": "fraction slash U+2044",
+      "folded": "a⁄b",
+      "proposal": {
+        "rule": "character",
+        "char": "U+2044",
+        "class": "Sm"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+2044",
+        "class": "Sm"
+      }
+    },
+    {
+      "typed": "a∕b",
+      "note": "division slash U+2215",
+      "folded": "a∕b",
+      "proposal": {
+        "rule": "character",
+        "char": "U+2215",
+        "class": "Sm"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+2215",
+        "class": "Sm"
+      }
+    },
+    {
+      "typed": "a⧸b",
+      "note": "big solidus U+29F8",
+      "folded": "a⧸b",
+      "proposal": {
+        "rule": "character",
+        "char": "U+29F8",
+        "class": "Sm"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+29F8",
+        "class": "Sm"
+      }
+    },
+    {
+      "typed": "a∖b",
+      "note": "set minus U+2216",
+      "folded": "a∖b",
+      "proposal": {
+        "rule": "character",
+        "char": "U+2216",
+        "class": "Sm"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+2216",
+        "class": "Sm"
+      }
+    },
+    {
+      "typed": "a⧵b",
+      "note": "reverse solidus operator U+29F5",
+      "folded": "a⧵b",
+      "proposal": {
+        "rule": "character",
+        "char": "U+29F5",
+        "class": "Sm"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+29F5",
+        "class": "Sm"
+      }
+    },
+    {
+      "typed": "e‐mail",
+      "note": "hyphen U+2010",
+      "folded": "e‐mail",
+      "proposal": {
+        "rule": "character",
+        "char": "U+2010",
+        "class": "Pd"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+2010",
+        "class": "Pd"
+      }
+    },
+    {
+      "typed": "e‑mail",
+      "note": "non-breaking hyphen U+2011 (folds to U+2010)",
+      "folded": "e‐mail",
+      "proposal": {
+        "rule": "character",
+        "char": "U+2010",
+        "class": "Pd"
+      },
+      "recommended": {
+        "rule": "character",
+        "char": "U+2010",
+        "class": "Pd"
+      }
+    },
+    {
+      "typed": "a－b",
+      "note": "fullwidth hyphen-minus (folds to -)",
+      "folded": "a-b",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "a／b",
+      "note": "fullwidth solidus (folds to /)",
+      "folded": "a/b",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+002F"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+002F"
+      }
+    },
+    {
+      "typed": "aノb",
+      "note": "katakana no U+30CE, a slash lookalike",
+      "folded": "aノb",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "aǀb",
+      "note": "U+01C0 dental click, a | lookalike",
+      "folded": "aǀb",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "aːb",
+      "note": "U+02D0 length mark, a : lookalike",
+      "folded": "aːb",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "a̸b",
+      "note": "U+0338 combining long solidus overlay",
+      "folded": "a̸b",
+      "proposal": null,
+      "recommended": {
+        "rule": "delimiter-overlay",
+        "char": "U+0338"
+      }
+    },
+    {
+      "typed": "inc.",
+      "note": "trailing dot",
+      "folded": "inc.",
+      "proposal": {
+        "rule": "trailing-dot"
+      },
+      "recommended": {
+        "rule": "trailing-dot"
+      }
+    },
+    {
+      "typed": ".net",
+      "note": "leading dot",
+      "folded": ".net",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "-x",
+      "note": "leading hyphen",
+      "folded": "-x",
+      "proposal": {
+        "rule": "leading-hyphen"
+      },
+      "recommended": {
+        "rule": "leading-hyphen"
+      }
+    },
+    {
+      "typed": "x-",
+      "note": "trailing hyphen",
+      "folded": "x-",
+      "proposal": null,
+      "recommended": null
+    },
+    {
+      "typed": "c++",
+      "note": "ASCII +",
+      "folded": "c++",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+002B"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+002B"
+      }
+    },
+    {
+      "typed": "mercury_(planet)",
+      "note": "ASCII parentheses",
+      "folded": "mercury_(planet)",
+      "proposal": {
+        "rule": "ascii-character",
+        "char": "U+0028"
+      },
+      "recommended": {
+        "rule": "ascii-character",
+        "char": "U+0028"
+      }
+    },
+    {
+      "typed": "node.js",
+      "note": "ASCII dot inside",
+      "folded": "node.js",
+      "proposal": null,
+      "recommended": null
+    }
+  ]
+}
