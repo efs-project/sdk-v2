@@ -387,12 +387,28 @@ function sequenceFault(e: unknown, at: SequenceFault): EfsFault {
   return new EfsFault("INVARIANT", `unexpected error: ${message}`, { cause: e, sequence: at });
 }
 
-/** The highest block a committed part of `r` was seen committed at, or undefined. */
+/** A stored block that can be a floor: a 32-byte hash and a block number from 0 to 2^53 - 1 (anything else is damage). */
+const MAX_BLOCK = BigInt(Number.MAX_SAFE_INTEGER);
+const plausibleBlock = (b: unknown): b is { blockNumber: bigint; blockHash: Hex } => {
+  const x = b as { blockNumber?: unknown; blockHash?: unknown } | null | undefined;
+  return (
+    typeof x?.blockNumber === "bigint" &&
+    x.blockNumber >= 0n &&
+    x.blockNumber <= MAX_BLOCK &&
+    isWord(x.blockHash)
+  );
+};
+
+/** The highest well-formed block a committed part of `r` was seen committed at, or undefined. */
 function lastCommittedAt(r: SequenceRecord): { blockNumber: bigint; blockHash: Hex } | undefined {
   let best: { blockNumber: bigint; blockHash: Hex } | undefined;
   for (const p of r.parts)
-    if (p.committed && p.committedAt && (!best || p.committedAt.blockNumber > best.blockNumber))
-      best = p.committedAt;
+    if (
+      p.committed &&
+      plausibleBlock(p.committedAt) &&
+      (!best || p.committedAt.blockNumber > best.blockNumber)
+    )
+      best = { blockNumber: p.committedAt.blockNumber, blockHash: lower(p.committedAt.blockHash) };
   return best;
 }
 
@@ -484,14 +500,11 @@ function sequenceCore(efs: Efs, journal: Journal) {
   ): Promise<SequenceProgress> => {
     // A save read back from the journal (another tab, a reload) is a read floor on this client, on its own chain
     // only: same chain id and ledger here, the genesis hash when a pin would read below it (chain/floor.ts).
-    // The record is stored data: only a well-formed one is a floor (32-byte words and a block number).
+    // The record is stored data: only well-formed parts count (lastCommittedAt), with a well-formed genesis.
     const seen = lastCommittedAt(r);
     const d = efs.deployment;
     if (
       seen &&
-      typeof seen.blockNumber === "bigint" &&
-      seen.blockNumber >= 0n &&
-      isWord(seen.blockHash) &&
       isWord(r.genesisHash) &&
       r.chainId === d.chainId &&
       typeof r.ledger === "string" &&
@@ -499,8 +512,7 @@ function sequenceCore(efs: Efs, journal: Journal) {
     )
       efs._internal.pool.floor.seed({
         key: r.sequenceId,
-        blockNumber: seen.blockNumber,
-        blockHash: lower(seen.blockHash),
+        ...seen,
         genesisHash: lower(r.genesisHash),
       });
     const part = r.parts.find((p) => !p.committed);

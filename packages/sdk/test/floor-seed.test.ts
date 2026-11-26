@@ -78,6 +78,22 @@ describe("a journal record seeds the floor only when it is well formed", () => {
       expect(await seedsFrom(bad), JSON.stringify(bad.sequenceId)).toBeUndefined();
   });
 
+  it("an implausible block number (above 2^53 - 1) seeds nothing", async () => {
+    const huge = record("h", {
+      committedAt: { blockNumber: 2n ** 53n, blockHash: GOOD.blockHash },
+    });
+    expect(await seedsFrom(huge)).toBeUndefined();
+  });
+
+  it("one damaged part never hides the others: the highest well-formed part seeds", async () => {
+    const r = record("i");
+    const parts = [
+      { ...(r.parts[0] as object), committedAt: { blockNumber: 900n, blockHash: "0x12" } },
+      r.parts[0],
+    ];
+    expect(await seedsFrom({ ...r, parts } as SequenceRecord)).toMatchObject({ blockNumber: 500n });
+  });
+
   it("another chain id or ledger seeds nothing", async () => {
     expect(await seedsFrom(record("g", { chainId: deployment.chainId + 1 }))).toBeUndefined();
   });

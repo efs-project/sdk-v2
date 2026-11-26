@@ -225,8 +225,9 @@ state from before the save, and the new tag would quietly not be there.
     - a mismatch makes a journal floor not count, rather than holding reads (that is what keeps a reset dev chain
       usable);
     - the floor compares heights, not ancestry (ancestry would cost a request on every read).
-  - A journal record seeds a floor only when it is well formed: 32-byte genesis and block hashes, a block number,
-    this chain id and ledger.
+  - A journal record seeds a floor only when it is well formed: 32-byte genesis and block hashes, a block number
+    from 0 to 2^53 − 1, this chain id and ledger. A damaged part is skipped, and the highest well-formed part still
+    counts.
 - **Replay:** the floor follows a transcript's recorded heads (epoch replay repeats an epoch's last head, never a
   lower one). The recorded edit flows include the one genesis read.
 
