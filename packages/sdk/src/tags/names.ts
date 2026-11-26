@@ -8,15 +8,16 @@
 
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs, Lens } from "../client.js";
+import { readRecords } from "../content/records.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
-import { type Hex, hexToBytes, lower, type PrincipalId, uniquePrincipals } from "../core/hex.js";
+import { type Hex, lower, type PrincipalId, uniquePrincipals } from "../core/hex.js";
 import type { Ctx, Evidence } from "../files/bytes.js";
-import { ledgerReadsAbi, ledgerViewsAbi } from "../generated/abis.js";
+import { ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
-import { positionKey, recordId } from "../protocol/keys.js";
+import { positionKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import { callsIn } from "./filenames.js";
 import { badReply, callOf, decoded } from "./plan.js";
@@ -193,26 +194,21 @@ export async function labelsAt(
     ];
     if (want.length) {
       ctx.requests += want.length;
-      const got = await callsIn(
-        s,
-        basis.blockHash,
-        want.map((id) =>
-          callOf(d.readers.ledgerReads, ledgerReadsAbi, "bodySlice", [d.ledger, id, 0, 256]),
-        ),
-      );
+      // Each target's type and body, hash-checked against its id (readRecords fails over on a body that doesn't hash):
+      // only a verified record that isn't an admitted text is skipped, never a forged one.
+      const got = await readRecords(s, d, basis.blockHash, want, ctx.efs._internal.cache.bytes);
+      if (!got.ok) return got;
       for (const [k, id] of want.entries()) {
-        const b = decoded<[number, Hex]>(ledgerReadsAbi, "bodySlice", got[k]);
-        if (!b.ok) return b;
+        const rec = got.value[k];
         // The kernel admits a BIND only to an existing record: anything but PRESENT is a reply to refuse.
-        if (chainStatus(b.value[0]) !== "PRESENT")
+        if (rec?.status !== "PRESENT" || !rec.body)
           return {
             ok: false,
             retryElsewhere: true,
             reason: reason("RPC_ERROR", "transient", "a label names no record"),
           };
-        const bytes = hexToBytes(b.value[1]);
-        const isText = lower(recordId(textType, bytes)) === id && checkText(bytes).ok;
-        bodies.set(id, isText ? (decodeScalars(bytes)?.text ?? null) : null);
+        const isText = lower(rec.typeId) === lower(textType) && checkText(rec.body).ok;
+        bodies.set(id, isText ? (decodeScalars(rec.body)?.text ?? null) : null);
       }
     }
     for (const [i] of cells.entries()) {

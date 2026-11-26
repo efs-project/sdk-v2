@@ -12,10 +12,8 @@ import { createEfs } from "../../src/client.ts";
 import type { Address, Hex, PrincipalId, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { openFile } from "../../src/files/bytes.ts";
 import { planCreateFile, planRemoveEntries } from "../../src/files/entries.ts";
-import { listRemoved } from "../../src/files/removed.ts";
-import { PURPOSES } from "../../src/generated/constants.ts";
-import { positionKey } from "../../src/protocol/keys.ts";
 import { type FolderRef, listFolder } from "../../src/files/folders.ts";
+import { listRemoved } from "../../src/files/removed.ts";
 import {
   filesPageReaderAbi,
   ledgerReadsAbi,
@@ -24,8 +22,11 @@ import {
   topicEveryoneReaderAbi,
   topicLookupReaderAbi,
 } from "../../src/generated/abis.ts";
+import { PURPOSES } from "../../src/generated/constants.ts";
+import { positionKey } from "../../src/protocol/keys.ts";
 import {
   fileNames,
+  labelOf,
   placeCount,
   planLabel,
   planSame,
@@ -218,6 +219,21 @@ describe("topic readers", () => {
     await expect(topicItems(efs, ["rr-tags"], { lens: many })).rejects.toMatchObject({
       code: "MISUSE",
     });
+  });
+});
+
+describe("a label's text record is read hash-checked", () => {
+  it("labelOf: a body that doesn't hash to its record is the endpoint's fault, never a label skipped", async () => {
+    const honest = await labelOf(efs, ["rr-label"], { lens: mine(), langs: ["en"] });
+    expect(honest).toMatchObject({ status: "PRESENT", label: { text: "one" } });
+    const lie = lying(ledgerReadsAbi, "record", ([st, h, , ...rest]) => [
+      st,
+      h,
+      toHex("forged"),
+      ...rest,
+    ]);
+    const r = await labelOf(lie, ["rr-label"], { lens: mine(), langs: ["en"] });
+    expect(r).toMatchObject({ status: "UNKNOWN" });
   });
 });
 
