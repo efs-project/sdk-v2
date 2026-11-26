@@ -34,7 +34,7 @@ import { indexAbi, ledgerAbi, ledgerReadsAbi, ledgerViewsAbi } from "../generate
 import { PURPOSES } from "../generated/constants.js";
 import { checkName, decodeScalars, NAME_PROFILE } from "../names/name.js";
 import { positionKey, recordFromHash } from "../protocol/keys.js";
-import { chainStatus, headState, headsAtServed } from "../protocol/status.js";
+import { chainStatus, headState, headsAtServed, strictlyIncreasing } from "../protocol/status.js";
 import { badReply, callOf, decoded } from "./plan.js";
 
 const MAX_FILES = 32;
@@ -241,6 +241,8 @@ export async function fileNames(
         if (!sl.ok) return sl;
         if (sl.value[1].length !== (slices[i] as { n: number }).n)
           return badReply("postingSliceOf (length)");
+        if (!strictlyIncreasing(sl.value[1]))
+          return badReply("postingSliceOf (entries out of order)");
         covered.push(
           Number(sl.value[0]) === 3 && (heads[i] as { coverage: number }).coverage === 3,
         ); // COMPLETE

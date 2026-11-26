@@ -15,6 +15,7 @@ import { planCreateFile, planRemoveEntries } from "../../src/files/entries.ts";
 import { type FolderRef, listFolder, openObject } from "../../src/files/folders.ts";
 import { listRemoved } from "../../src/files/removed.ts";
 import {
+  bitmapStoreAbi,
   filesPageReaderAbi,
   ledgerReadsAbi,
   ledgerViewsAbi,
@@ -373,5 +374,8 @@ describe("a position's cell is bound to the position asked about", () => {
     expect(honest.status).toBe("PRESENT");
     const r = await listRemoved(forgedRole(), { folder: root, author });
     expect(r).toMatchObject({ status: "UNKNOWN" });
+    // a scope slice shorter than the list it pages: entries would drop silently
+    const short = lying(bitmapStoreAbi, "scopeSlice", () => [[]]);
+    expect(await listRemoved(short, { folder: root, author })).toMatchObject({ status: "UNKNOWN" });
   });
 });

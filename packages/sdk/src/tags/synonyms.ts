@@ -26,7 +26,7 @@ import { foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
 import { positionKey, scopeKey } from "../protocol/keys.js";
-import { chainStatus, headState, headsAtServed } from "../protocol/status.js";
+import { chainStatus, headState, headsAtServed, strictlyIncreasing } from "../protocol/status.js";
 import { callsIn } from "./filenames.js";
 import { badReply, callOf, decoded } from "./plan.js";
 import { topicPath } from "./read.js";
@@ -198,6 +198,7 @@ async function topicEdges(
     const sl = decoded<readonly bigint[]>(bitmapStoreAbi, "scopeSlice", out2[k]);
     if (!sl.ok) return sl;
     if (sl.value.length !== c.n) return badReply("scopeSlice (length)");
+    if (!strictlyIncreasing(sl.value)) return badReply("scopeSlice (entries out of order)");
     for (const ord of sl.value) bindings.push({ x: c.x, ordinal: BigInt(ord), side: "out" });
   }
   const admissions: { x: Hex; ordinal: bigint }[] = [];
@@ -209,6 +210,7 @@ async function topicEdges(
     );
     if (!sl.ok) return sl;
     if (sl.value[1].length !== c.n) return badReply("postingSliceOf (length)");
+    if (!strictlyIncreasing(sl.value[1])) return badReply("postingSliceOf (entries out of order)");
     if (Number(sl.value[0]) !== 3) complete = false;
     for (const ord of sl.value[1]) admissions.push({ x: c.x, ordinal: BigInt(ord) });
   }

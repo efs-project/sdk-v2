@@ -357,6 +357,16 @@ describe("fileVersions (fixture)", () => {
     ).rejects.toMatchObject({ code: "MISUSE" }); // never created
   });
 
+  it("a slice with a duplicate entry is the endpoint's fault: it could double a row or end the scan early", async () => {
+    const lying = rewriting(indexAbi, "postingSliceOf", ([st, entries, ...rest]) => {
+      const xs = [...(entries as bigint[])];
+      if (xs.length > 1) xs[1] = xs[0] as bigint; // the length kept, an entry repeated
+      return [st, xs, ...rest];
+    });
+    const v = await fileVersions(lying, { kind: "file", subject: file }, { lens: lensOf(C) });
+    expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+  });
+
   it("a subject never created is ABSENT_PROVEN", async () => {
     const v = await fileVersions(efs, {
       kind: "file",

@@ -20,7 +20,7 @@ import {
 import { PURPOSES } from "../generated/constants.js";
 import { decodeScalars, NAME_PROFILE } from "../names/name.js";
 import { bindingKey, positionKey, recordFromHash, scopeKey } from "../protocol/keys.js";
-import { chainStatus, headState } from "../protocol/status.js";
+import { chainStatus, headState, strictlyIncreasing } from "../protocol/status.js";
 import type { Ctx, Evidence } from "./bytes.js";
 import {
   checkParent,
@@ -277,7 +277,13 @@ export async function listRemoved(
       if (!head.ok) return head;
       if (!slice.ok) return slice;
       const count = BigInt(head.value[0]);
-      const ordinals = [...slice.value].slice(0, Number(count > from ? count - from : 0n));
+      // This page is the list's entries from `from`, at most `limit`: a shorter slice would drop entries silently.
+      const wanted = Number(count > from ? count - from : 0n);
+      const expected = Math.min(wanted, Number(limit));
+      if (slice.value.length < expected)
+        return bad("scopeSlice (fewer entries than the list holds)");
+      const ordinals = [...slice.value].slice(0, wanted);
+      if (!strictlyIncreasing(ordinals)) return bad("scopeSlice (entries out of order)");
       // 3. Each ordinal's position, then the author's head there and the position's cell (its name role).
       const positions: Hex[] = [];
       if (ordinals.length > 0) {

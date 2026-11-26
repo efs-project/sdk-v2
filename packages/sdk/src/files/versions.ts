@@ -31,7 +31,7 @@ import { indexAbi, ledgerAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { GAS_READS } from "../generated/gas.js";
 import { positionKey } from "../protocol/keys.js";
-import { chainStatus, headState } from "../protocol/status.js";
+import { chainStatus, headState, strictlyIncreasing } from "../protocol/status.js";
 import { type Ctx, decodeHead, type Evidence, type FileRef, headCall } from "./bytes.js";
 import { decodeCreator, subjectInfoCall } from "./folders.js";
 
@@ -427,6 +427,8 @@ export async function fileVersions(
           );
         const admissions = slice.value[1];
         if (admissions.length !== n) return badReply("postingSliceOf (length)");
+        if (!strictlyIncreasing(admissions))
+          return badReply("postingSliceOf (entries out of order)");
         ctx.requests += 1;
         const [ah] = await callsAt(s, at, [
           callOf(d.readers.ledgerViews, ledgerViewsAbi, "authorHeads", [

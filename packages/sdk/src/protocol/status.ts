@@ -45,3 +45,14 @@ export function headsAtServed(status: number | bigint): boolean {
   const cs = chainStatus(status);
   return cs === "PRESENT" || cs === "MASKED" || cs === "ABSENT_PROVEN";
 }
+
+/**
+ * Whether a list slice's entries strictly increase (every list the index and the bitmap store keep is append-only, in
+ * admission or first-bind order): a duplicate or a reordering is the endpoint's fault. A duplicate could double a row,
+ * or count one entry twice toward a total and end a scan early.
+ */
+export function strictlyIncreasing(xs: readonly (bigint | number)[]): boolean {
+  for (let i = 1; i < xs.length; i++)
+    if (BigInt(xs[i] as bigint) <= BigInt(xs[i - 1] as bigint)) return false;
+  return true;
+}
