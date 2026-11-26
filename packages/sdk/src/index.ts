@@ -56,6 +56,7 @@ export type {
   RealmSplit,
   RevisionLink,
   TopicLink,
+  WordDetail,
 } from "./names/links.js";
 export {
   formatRealm,
@@ -64,6 +65,7 @@ export {
   MAX_LINK_LENS,
   parseLink,
   splitRealm,
+  WORD_DETAILS,
 } from "./names/links.js";
 export type { NameCheck, NameInput, NameRule } from "./names/name.js";
 export { checkName, MAX_NAME_BYTES, NAME_PROFILE, normalizeName } from "./names/name.js";

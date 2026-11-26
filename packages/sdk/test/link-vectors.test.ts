@@ -4,7 +4,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type FoldStep, link, parseLink } from "../src/names/links.ts";
+import {
+  type FoldStep,
+  link,
+  parseLink,
+  WORD_DETAILS,
+  type WordDetail,
+} from "../src/names/links.ts";
 
 const vectors = JSON.parse(
   readFileSync(join(import.meta.dirname, "vectors/links.json"), "utf8"),
@@ -52,7 +58,8 @@ describe("link grammar vectors", () => {
       status: "INVALID",
       rule: "bad-word",
       segment: 0,
-      detail: "unstable",
+      detail: "fold-refused",
+      foldRule: "unstable",
       word: "cars",
     });
     const makesSlash: FoldStep = (w) => ({ ok: true, word: w === "b" ? "x/y" : w });
@@ -108,5 +115,63 @@ describe("link grammar vectors", () => {
     expect(() => link({ kind: "path", folder, names: [] })).toThrow(/at least one name/);
     expect(() => link({ kind: "path", folder, names: ["a/b"] })).toThrow(/files-name\/3/);
     expect(() => link({ kind: "path", folder: "0x12" as never, names: ["a"] })).toThrow(/64 hex/);
+  });
+});
+
+describe("bad-word details are a closed union (WordDetail)", () => {
+  // A Record over the union: a value added to or removed from WordDetail is a type error here, as in a client's map.
+  const ALL: Record<WordDetail, true> = {
+    length: true,
+    "malformed-utf8": true,
+    slash: true,
+    control: true,
+    "forbidden-ascii": true,
+    unfolded: true,
+    "trailing-dot": true,
+    "leading-dash": true,
+    "address-shaped": true,
+    "refused-character": true,
+    "fold-refused": true,
+  };
+  it("WORD_DETAILS lists exactly the union", () => {
+    expect([...WORD_DETAILS].sort()).toEqual(Object.keys(ALL).sort());
+  });
+
+  it("every chain word code reaches a detail (never a raw code), with the chain's code", () => {
+    const topics = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "../../../protocol-inputs/contracts/test/vectors/topics.json"),
+        "utf8",
+      ),
+    ) as { words: { hex: string; code: number }[] };
+    const keep: FoldStep = (segment) => ({ ok: true, word: segment }); // the word exactly as given
+    const seen = new Set<number>();
+    for (const w of topics.words) {
+      if (w.code === 0 || w.code === 8) continue;
+      // every byte escaped, so the segment carries the word's exact bytes
+      const escaped = (w.hex.slice(2).match(/../g) ?? [])
+        .map((h) => `%${h.toUpperCase()}`)
+        .join("");
+      const got = parseLink(`x/${escaped}`, { fold: keep });
+      if (got.status !== "INVALID") continue; // a segment the link grammar can't carry is bad-escape, not a word
+      if (got.rule !== "bad-word") continue;
+      expect(WORD_DETAILS).toContain(got.detail);
+      if (got.code !== undefined) seen.add(got.code);
+    }
+    // 2 (malformed UTF-8) never reaches the word rules through a link: the segment's escape is refused first
+    // (bad-escape), and a fold returns a string, which is always well-formed. Every other code does.
+    expect([...seen].sort((a, b) => a - b)).toEqual([1, 3, 4, 6, 7, 9]);
+  });
+
+  it("a caller's fold that refuses gives detail fold-refused and its own rule, with no code", () => {
+    const got = parseLink("cars/tesla", { fold: () => ({ ok: false, rule: "my-rule" }) });
+    expect(got).toEqual({
+      status: "INVALID",
+      rule: "bad-word",
+      segment: 0,
+      word: "cars",
+      detail: "fold-refused",
+      foldRule: "my-rule",
+    });
   });
 });

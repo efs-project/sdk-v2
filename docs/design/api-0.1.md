@@ -365,14 +365,19 @@ string that an app places in its route, for example after `#/files/`:
   `canonical` is the folded link. Pass your own `fold` to override it, or `fold: null` to `parseLink` for the grammar
   alone. It is marked interim until Q53: the ruled rule replaces it, extending it and never contradicting it.
 - `parseLink(input, { fold? })` returns `{ status: "OK", target: ObjectLink | PathLink | RevisionLink | HomeLink |
-  TopicLink, canonical }` or `{ status: "INVALID", rule, segment?, detail?, word?, code? }`. For `bad-word`, `word` is
-  the refused segment as the link spelled it (percent-decoded, not folded), so a page can say which word: it may hold
-  the characters that broke the rule, so show it escaped or isolated. `code` is the chain's own refusal code
-  (`checkWord`: 1 length, 2 malformed UTF-8, 3 an ASCII character other than a–z, 0–9, `-`, `_` and `.`, 4 ends with
-  `.`, 6 address-shaped, 7 a refused character, 9 starts with `-`; 5 is unused since the list release), present
-  whenever the word grammar refused (absent when the fold did). `detail` names it: `length`, `malformed-utf8`,
-  `slash`, `control`, `forbidden-ascii` (code 3: `~` and every other punctuation character), `unfolded` (a caller's
-  fold left a capital or a space), `trailing-dot`, `leading-dash`, `address-shaped`, `refused-character`.
+  TopicLink, canonical }` or an INVALID result. `{ status: "INVALID", rule: "bad-word", segment, word, detail, code?,
+  foldRule? }`: `word` is the refused segment as the link spelled it (percent-decoded, not folded), so a page can say
+  which word; it may hold the characters that broke the rule, so show it escaped or isolated. `{ status: "INVALID",
+  rule: "bad-name", segment, detail }`: `detail` is the `NameRule`. Any other rule: `{ status: "INVALID", rule,
+  segment? }`. For `bad-word`, `code` is the chain's own refusal code (`checkWord`: 1 length, 2 malformed UTF-8, 3 an
+  ASCII character other than a–z, 0–9, `-`, `_` and `.`, 4 ends with `.`, 6 address-shaped, 7 a refused character, 9
+  starts with `-`; 5 is unused since the list release), present whenever the word grammar refused. `detail` is a
+  closed union, `WordDetail` (and `WORD_DETAILS` at runtime), so a message map keyed on it (`Record<WordDetail, …>`)
+  makes a rename a type error: `length`, `malformed-utf8`, `slash`, `control`, `forbidden-ascii` (code 3: `~` and every
+  other ASCII symbol; letters of other scripts and emoji are not ASCII, and the word rules judge them), `unfolded` (a
+  caller's fold left a capital or a space), `trailing-dot`, `leading-dash`, `address-shaped`, `refused-character`, and
+  `fold-refused` when the caller's own fold refused the segment (its rule in `foldRule`, no `code`; `foldWord` never
+  refuses).
   - **A link names only words the chain can hold:** what the fold produced must pass `checkWord`, the chain's whole
     word grammar. So a bidi override, a zero-width joiner, a no-break space, a soft hyphen, a variation selector, a
     C1 control, a noncharacter or a backslash makes the link INVALID, never a page for a word that can't exist.
@@ -1604,6 +1609,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `validateDeploymentManifest` | function | Check an efs-deployment/1 document field by field: `{ ok: true, deployment }` (the SDK's DeploymentInfo) or `{ ok: false, problems }`. createEfs runs it; call it yourself to report a bad document before creating a client. |
 | `VIEW_KINDS` | const | Every kind a listing row can be (file, folder, other, subject, revision, topic, address, invalid): pass a subset as `kinds` to filter a listing; a kind outside this list is MISUSE. |
 | `wireSegment` | function | Canonical wire segment for exact name bytes. |
+| `WORD_DETAILS` | const | Every WordDetail, for a client that wants to check its message map at runtime too. |
 | `AbortSignalLike` | interface | Minimal structural AbortSignal: the DOM and Node signals both satisfy it. |
 | `Address` | type |  |
 | `Attempt` | interface |  |
@@ -1664,6 +1670,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `UnstableCheck` | type | Why a word is not stable until the fold rule is ruled (checkStableWord). |
 | `ViewKind` | type |  |
 | `WalletMismatch` | interface | The wallet moved off the plan's chain or account. |
+| `WordDetail` | type | Why a topic segment is refused (LinkParse `detail` for `bad-word`): the chain's word rules (each with its `code`) and the link grammar's own fold-independent ones, or "fold-refused" when the caller's fold refused the segment. |
 
 #### `@efs/sdk/links`
 
@@ -1678,6 +1685,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `MAX_LINK_LENS` | const | The most principals a link's Lens may name (the deployment may allow fewer; reads enforce its limit). |
 | `parseLink` | function | Parse a link string from a route. |
 | `splitRealm` | function | Split the realm off the front of a route path (what follows `#/r/`). |
+| `WORD_DETAILS` | const | Every WordDetail, for a client that wants to check its message map at runtime too. |
 | `FoldStep` | type | One fold step, supplied by the caller until the fold rule is chosen: a word, or the rule the segment breaks. |
 | `HomeLink` | interface | A home (an address, lowercase), then folder and file names below it, which keep their case. |
 | `LinkParse` | type |  |
@@ -1693,6 +1701,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `StableWordCheck` | type |  |
 | `TopicLink` | interface | A topic: a path of words. |
 | `UnstableCheck` | type | Why a word is not stable until the fold rule is ruled (checkStableWord). |
+| `WordDetail` | type | Why a topic segment is refused (LinkParse `detail` for `bad-word`): the chain's word rules (each with its `code`) and the link grammar's own fold-independent ones, or "fold-refused" when the caller's fold refused the segment. |
 
 #### `@efs/sdk/files`
 
