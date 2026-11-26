@@ -22,7 +22,7 @@ import {
   reason,
   type SequenceFault,
 } from "../core/errors.js";
-import { type Address, type Hex, lower } from "../core/hex.js";
+import { type Address, type Hex, isWord, lower } from "../core/hex.js";
 import { toJson } from "../core/json.js";
 import { setTimer, utf8Encode } from "../core/platform.js";
 import {
@@ -484,10 +484,25 @@ function sequenceCore(efs: Efs, journal: Journal) {
   ): Promise<SequenceProgress> => {
     // A save read back from the journal (another tab, a reload) is a read floor on this client, on its own chain
     // only: same chain id and ledger here, the genesis hash when a pin would read below it (chain/floor.ts).
+    // The record is stored data: only a well-formed one is a floor (32-byte words and a block number).
     const seen = lastCommittedAt(r);
     const d = efs.deployment;
-    if (seen && r.genesisHash && r.chainId === d.chainId && lower(r.ledger) === lower(d.ledger))
-      efs._internal.pool.floor.seed({ key: r.sequenceId, ...seen, genesisHash: r.genesisHash });
+    if (
+      seen &&
+      typeof seen.blockNumber === "bigint" &&
+      seen.blockNumber >= 0n &&
+      isWord(seen.blockHash) &&
+      isWord(r.genesisHash) &&
+      r.chainId === d.chainId &&
+      typeof r.ledger === "string" &&
+      lower(r.ledger) === lower(d.ledger)
+    )
+      efs._internal.pool.floor.seed({
+        key: r.sequenceId,
+        blockNumber: seen.blockNumber,
+        blockHash: lower(seen.blockHash),
+        genesisHash: lower(r.genesisHash),
+      });
     const part = r.parts.find((p) => !p.committed);
     const stage = part?.planId
       ? ((await journal.get(part.planId))?.stage ?? "NOT_PLANNED")

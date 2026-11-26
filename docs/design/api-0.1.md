@@ -216,6 +216,17 @@ state from before the save, and the new tag would quietly not be there.
     the read is served (newer and canonical) with `basis.reorgedSince`, so reconcile the save rather than say "not
     there".
   - A malformed `atLeast` is MISUSE.
+- **Trust:** the floor guards against endpoints that are *behind*, not endpoints that *lie*.
+  - Endpoints are already trusted for chain state: the SDK checks code hashes and record ids, not state proofs. An
+    endpoint that lies about a block number, a block's ancestry or the genesis can serve old state with or without
+    a floor.
+  - So every judgement here fails toward "no floor", never toward a wrong read:
+    - the genesis is read from one endpoint, once per client;
+    - a mismatch makes a journal floor not count, rather than holding reads (that is what keeps a reset dev chain
+      usable);
+    - the floor compares heights, not ancestry (ancestry would cost a request on every read).
+  - A journal record seeds a floor only when it is well formed: 32-byte genesis and block hashes, a block number,
+    this chain id and ledger.
 - **Replay:** the floor follows a transcript's recorded heads (epoch replay repeats an epoch's last head, never a
   lower one). The recorded edit flows include the one genesis read.
 
