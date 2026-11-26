@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "cbf5b7807a9adf011d8bc2f8bf278a281b4e4752",
+  "contractsCommit": "3ca53ba980e0f5aeb0ef691c9a3ed4df28ec1e45",
   "case": "bytes-web3-no-contract",
   "note": "readBytes on the seed's web3:// file, whose locator names the zero address: UNAVAILABLE (no contract)",
   "result": {

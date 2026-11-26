@@ -47,7 +47,7 @@
 > - topic statements: `planLabel` (a topic's or a home's name in one BCP 47 language, lowercased; the text/1 record
 >   published when new), `planSame` and `planBroader` (both ends registered earlier in the same save, as the
 >   validator's codes 10 and 11 need; a topic is never either of these to itself), each with `remove: true` for a
->   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (first measured at contracts 0fb4804; the vendored gas model is now cbf5b78's): a
+>   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (first measured at contracts 0fb4804; the vendored gas model is now 3ca53ba's): a
 >   first label `bindPropertyFresh` (a new text adds the text/1 row), a later one `bindPropertyRebind`, a first
 >   `same` `bindSameFreshWord` (the dearer of the two first-same rows), a first `broader` `bindBroaderFresh`, a later
 >   bind `restoreSame` / `restoreBroader`, and a removal `release*`, as the reference planner prices them; the label
@@ -369,9 +369,10 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
 - **The merge.** A row's `entry` is a binding ordinal from one global counter, unique across lists, and every list
   is stored in rising order. So the lists merge newest first on it:
   - Each list keeps a floor F: every row of it newer than F has been read. F is the page's `frontier` (the reader's
-    newest entry not yet processed, contracts `cbf5b78`), and 0 at EXHAUSTED. A list that returns no rows still
+    newest entry not yet processed, since contracts `cbf5b78`), and 0 at EXHAUSTED. A list that returns no rows still
     moves its floor, so a padded synonym list never holds the merge back. F is set only from a page the reader
-    served: a refused page carries `frontier` 0 too, so only EXHAUSTED ends a list.
+    served: a refused page carries `frontier` 0 too (since contracts `3ca53ba` every count on a refused page is 0,
+    and a PARTIAL list is refused like UNKNOWN), so only EXHAUSTED ends a list.
   - Every served page's `frontier` is checked against the page laws, in `topicItems` too:
     - it is 0 exactly at EXHAUSTED;
     - every row of the page is above it;

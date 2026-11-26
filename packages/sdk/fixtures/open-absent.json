@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "cbf5b7807a9adf011d8bc2f8bf278a281b4e4752",
+  "contractsCommit": "3ca53ba980e0f5aeb0ef691c9a3ed4df28ec1e45",
   "case": "open-absent",
   "note": "openFile on a file subject nobody created",
   "result": {
@@ -11,11 +11,11 @@
       "blockNumber": {
         "$efs:bigint": "79"
       },
-      "blockHash": "0x774efc26557bddb488cb43af6721b30a489ce69ea44c5309f755d34fdb4376bf",
+      "blockHash": "0x988fc832920bd30790dc8a024113607759c465a764b509b00baf507b2a4789aa",
       "timestamp": {
-        "$efs:bigint": "1795691776"
+        "$efs:bigint": "1795695740"
       },
-      "executionSet": "0x0788d65963e48f73fe655a469cc2110365bc9e498cc37c56030d60ac3a9cb99d",
+      "executionSet": "0x768d8353040e477be465dca8086d75431cf09d7e4573096b55176d90f0b9dde7",
       "admissions": {
         "$efs:bigint": "27"
       },

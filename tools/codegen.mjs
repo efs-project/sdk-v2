@@ -340,7 +340,12 @@ const files = {};
         ? { executionGas: constants(`${name}.executionGas`, sch.executionGas) }
         : {}),
       floor: floorOf(`${name}.floor`, sch.floor),
+      // The all-gas error; where the cap counts execution gas only (amsterdam), the execution error the cap
+      // condition is tested against (gas/model.json planning.headroomCovers).
       maxAbsErrorPercent: sch.maxAbsErrorPercent,
+      ...(sch.maxAbsExecutionErrorPercent !== undefined
+        ? { maxAbsExecutionErrorPercent: sch.maxAbsExecutionErrorPercent }
+        : {}),
     };
   }
   if (!schedules.prague) throw new Error("codegen: gasModel has no prague schedule");
