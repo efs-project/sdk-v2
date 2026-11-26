@@ -779,11 +779,13 @@ export function sequenceOps(d: Deps) {
         answered(o, r, [i], "sequential", sent);
         if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o, settleMs);
         const sentAt = r;
-        r = await reconcileParts(
-          r,
-          o,
-          sent.status === "SUBMITTED" || sent.status === "AMBIGUOUS" ? settleMs : 0,
-        );
+        // Wait the settle window only for a send this call may have made. ALREADY_ATTEMPTED (too close to the
+        // deadline to send again) and NOT_SENT asked no wallet: settle at once, the original still undecided. Every
+        // other AMBIGUOUS from sendPlan comes after its write-ahead (JOURNAL_UNAVAILABLE before it is NOT_SENT).
+        const mayHaveSent =
+          sent.status === "SUBMITTED" ||
+          (sent.status === "AMBIGUOUS" && sent.reason.code !== "ALREADY_ATTEMPTED");
+        r = await reconcileParts(r, o, mayHaveSent ? settleMs : 0);
         committedSince(o, sentAt, r, "sequential");
         // Not committed and not settled by a landed original: stop here, saying why (refused again, or not decided).
         if (!(r.parts[i] as SequencePart).committed && sent.status !== "STALE")

@@ -191,6 +191,19 @@ describe("the same plan, sent again after a funds refusal (fixture)", () => {
     expect(w.prompts).toBe(1);
   }, 120_000);
 
+  it("near the deadline, Send again returns at once: nothing was sent, so there is no settle window to wait", async () => {
+    const w = wallet();
+    const { writer } = await writerFor(w);
+    const stopped = await writer.runSequence([chunkPart(30)], { settleMs: 500 });
+    expect(stopped.reason?.code).toBe("INSUFFICIENT_FUNDS");
+    await topUp();
+    const started = Date.now();
+    const again = await writer.resume(stopped.sequenceId); // the default settle window, 60 s
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(again).toMatchObject({ state: "IN_FLIGHT", reason: { code: "ALREADY_ATTEMPTED" } });
+    expect(w.prompts).toBe(1); // the wallet was never asked again
+  }, 120_000);
+
   it("the wallet queued the original and it landed: the resend's estimate refuses, nothing is sent, COMMITTED", async () => {
     const w = wallet();
     const { writer, journal } = await writerFor(w);
