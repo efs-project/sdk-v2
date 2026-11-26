@@ -32,6 +32,7 @@ interface Row {
   at: number;
 }
 
+/** A persistent cache of verified bytes in IndexedDB, for pages and workers (opt-in: `createEfs({ cache: { bytes } })`). */
 export function indexedDbByteStore(options: IndexedDbByteStoreOptions = {}): WebByteStore {
   const max = options.maxBytes ?? 256 * 1024 * 1024;
   const db = lazyDb(

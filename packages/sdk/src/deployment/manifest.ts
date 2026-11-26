@@ -177,6 +177,10 @@ function familyOf(index: Record<string, unknown>, kind: number, universe: number
   return null;
 }
 
+/**
+ * Check an efs-deployment/1 document field by field: `{ ok: true, deployment }` (the SDK's DeploymentInfo) or
+ * `{ ok: false, problems }`. createEfs runs it; call it yourself to report a bad document before creating a client.
+ */
 export function validateDeploymentManifest(input: unknown): ManifestCheck {
   const problems: string[] = [];
   const d = obj(input);

@@ -432,7 +432,7 @@ and `streamFile(efs, opened, o)` in `@efs/sdk/web` wraps it as a pull-based `Rea
 per pull). `StreamOpts`: `offset`, `length`, `windowBytes` (rounded up to whole 8,160-byte chunks; default 16
 chunks), `maxBytes` (the buffering cap for external files) and `signal`.
 - Ledger layouts stream window by window, and each chunk record is verified before its bytes are emitted. A
-  whole-file stream also checks the author's sha256 claim at the end, so it can never disagree with `bytes()`.
+  whole-file stream also checks the author's sha256 claim at the end, so it can never disagree with `readBytes`.
 - External files have a single digest for the whole body, so they are fetched and verified first, then emitted.
   Bytes that fail are never emitted.
 - A stream that cannot continue throws or errors with `EfsFault("STREAM_FAILED")`, with details
@@ -853,7 +853,7 @@ on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedu
   - `SplitPart.rule` keeps E, K, V and the quote; `SplitPart.gas` is the figure shown to people (the model plus
     intrinsic and calldata gas). `packBatches` sums each part's max(E, V) with its intrinsic and calldata gas, since
     each call in an atomic batch must still find its own floor.
-  - `kernelQuote(actions, floor, { everyBindFirst: true })` equals `LedgerIngress.indexFloor`, which prices every BIND
+  - `kernelQuote(actions, floor, { everyBindFirst: true })` (`@efs/sdk/actions`) equals `LedgerIngress.indexFloor`, which prices every BIND
     and UNBIND as a first statement: an upper bound, never planned from (tested against the chain).
   - **The deployment must price the floor the same way:** `gasPlanFor` refuses (`UNSUPPORTED_PROFILE`) when the
     deployment's `index.workModel` or floor limits differ from the gas model's in any field, or the formula is not 2.
@@ -1225,16 +1225,16 @@ is never a filter that matches nothing, which a scan from the start would report
   to the next author's entry at each name again. It answers a `NEVER_BOUND` row and works on any of your hides;
   `NOT_HIDDEN` for an entry that isn't hidden, `ENTRY_ABSENT` where you have no entry. Effect `files.unhide`.
   To test it on a chain, `planLoneHide(efs, w, { folder, name, lens? })` from `@efs/sdk/testing` plans a lone hide
-  (the name record when missing, then an UNBIND at your revision there; review `efs.loneHideReview`, effect
+  (the name record when missing, then an UNBIND at your revision there; review kind `"efs.loneHideReview"`, effect
   `files.hide`). It throws MISUSE unless the name is lone for you: never stated, or released after lone hides only.
   `planOtherEntry(efs, w, { folder, name, salt?, lens? })` (also `@efs/sdk/testing`) places a subject with no file
   version at a name in a folder or a home (a CREATE, the name record when missing, the FOLDER bind; review
-  `efs.otherEntryReview`): a listing shows it as kind `other`, the junk row an owner blocks with `planHideEntries`.
+  `"efs.otherEntryReview"`): a listing shows it as kind `other`, the junk row an owner blocks with `planHideEntries`.
 - `planHideEntries(efs, w, { entries, lens? })`: hide other authors' entries (a folder owner hiding spam, say): an
   UNBIND, a mask, at your own position at each name, after the name record if it is missing. Nothing shows there for a
   reader whose Lens puts you before the entry's author; a reader who ranks that author first still sees it, and the
   hide is public. The chain lets anyone mask their own position, so the SDK does not gate it by ownership: whom to
-  offer it is the app's rule, as for Remove and block. Review `efs.hideReview`: per entry `shownNow` (the author whose
+  offer it is the app's rule, as for Remove and block. Review kind `"efs.hideReview"`: per entry `shownNow` (the author whose
   entry it covers) and `shownAfter` (null when it is hidden in this Lens; an author ranked before you when your hide
   doesn't change this view), plus `notice`, one plain sentence saying what a hide does. Refused: `NAME_TAKEN_MINE`
   (your own entry: Remove and block, `planRemoveEntries` with `hide: true`), `ALREADY_HIDDEN`, `ENTRY_ABSENT` (this
@@ -1353,16 +1353,486 @@ stops a chain left running under a sticky name (no-op when none), signalling onl
 - **Proof:** `examples/smoke-fixture` installs both tarballs as a plain npm consumer, starts a chain, edits the
   seeded `readme.txt` and reads the edit back. CI runs it in the integration job.
 
-## 10. Decisions from the client review (2026-11-24)
+## 10. Decisions from the client review (2026-11-24), as shipped
 
-1. Both are available: `efs.at(...)` views, and the convenience `efs.files`.
-2. Entries carry no `href`. The client's router calls `paths.link`.
+1. Every read takes the client and pins its own basis (`efs.at`, held to the read floor). The files convenience on
+   the client was not built: the reads are the functions of `@efs/sdk/files`, which take `efs`.
+2. Entries carry no `href`. The client's router calls `link()` (`@efs/sdk/links`).
 3. Review effects are `{ code, args }` plus optional English `text`.
-4. `stream()` returns a pull-based `ReadableStream`; cancel or abort stops the fetches.
+4. `streamFile()` (`@efs/sdk/web`) returns a pull-based `ReadableStream`; cancel or abort stops the fetches.
 
 ## 11. Earlier questions (answered)
+
+<!-- history:start (the questions as they were asked; section 10 has what shipped) -->
 
 1. `efs.files` re-pins a fresh `latest` basis on every call. Your list-then-open flows probably want `efs.at(...)` views. Is having both fine, or do you want only views?
 2. Should a `DirectoryEntry` include an `href` (the wire link), or will you call `paths.link` yourself?
 3. `review()` returns `EffectView` strings in English. Do you want message keys plus arguments instead, for your MF2 catalog? I'd lean towards keys plus arguments.
 4. `stream()` returns a `ReadableStream`. Everything else is plain data. Is that acceptable for your worker plan? A stream is transferable but not clonable.
+
+<!-- history:end -->
+
+## Appendix: every export
+
+<!-- export-index:start (generated by node tools/api-index.mjs write; do not edit) -->
+
+Every name each entry point exports, with the first sentence of its JSDoc. Functions and constants always have one; a type without one is documented by the functions that take or return it, and field by field in its declaration (the published `.d.ts`). `pnpm check` fails when this list is out of date.
+
+#### `@efs/sdk`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `checkLocator` | function | Whether a files-external/1 locator could ever be read, by its shape alone: pure, for checking one as it is typed (as checkName is for names). |
+| `checkName` | function | Check a name against files-name/2. |
+| `checkStableWord` | function | Whether a word reads the same under both candidate fold rules, so writing it now can never leave text a ruling would fold differently. |
+| `checksumAddress` | function | EIP-55 checksum form of an address (for display). |
+| `createEfs` | function | Create a client for one EFS deployment. |
+| `displaySegment` | function | Human-friendly display segment for name text. |
+| `EfsFault` | class | The only thing the SDK throws: caller misuse, the caller's own abort, a bad caller-supplied limit, an attempt journal that cannot be read or written, a byte stream that cannot continue (STREAM_FAILED: a stream has no other way to report), or an internal invariant failure. |
+| `FOLD_RULE` | const | The fold's name, for an app that says which fold it applied ("Saved as notes"). |
+| `foldWord` | const | Fold one typed word (see the header). |
+| `formatRealm` | function | The full realm form for a deployment: `eip155:<chainId>/0x<ledger, lowercase>`. |
+| `fromJson` | function | Parse JSON text produced by `toJson`. |
+| `link` | function | The link string for an object or revision. |
+| `LINK_PREFIX` | const | The first segment of every system link (`~efs`); the name profile reserves it, so no path can look like a link. |
+| `MAX_LINK_LENS` | const | The most principals a link's Lens may name (the deployment may allow fewer; reads enforce its limit). |
+| `MAX_NAME_BYTES` | const | The longest name files-name/2 admits, in UTF-8 bytes. |
+| `memoryByteStore` | function | In-memory byte store, least recently used first out (default 32 MiB). |
+| `NAME_PROFILE` | const | The name profile folder and file names are checked against: files-name/2 (UTF-8, byte-exact, case-sensitive). |
+| `normalizeName` | function | NFC, the form the SDK writes. |
+| `parseLink` | function | Parse a link string from a route. |
+| `parseSegment` | function | Decode one segment (wire, display or encodeURIComponent form) to exact bytes. |
+| `principalDisplay` | function | How to show a principal: an account (`address`, for a key principal), one of the given contracts (`contract`), or an opaque principal id. |
+| `PROTOCOL_INPUTS` | const | The contracts commit (and, once release pinning starts, the release digest) this SDK build was generated from. |
+| `splitRealm` | function | Split the realm off the front of a route path (what follows `#/r/`). |
+| `toJson` | function | Serialize SDK data (results, plans, journal records) to JSON text. |
+| `validateDeploymentManifest` | function | Check an efs-deployment/1 document field by field: `{ ok: true, deployment }` (the SDK's DeploymentInfo) or `{ ok: false, problems }`. createEfs runs it; call it yourself to report a bad document before creating a client. |
+| `VIEW_KINDS` | const | Every kind a listing row can be (file, folder, other, subject, revision, topic, address, invalid): pass a subset as `kinds` to filter a listing; a kind outside this list is MISUSE. |
+| `wireSegment` | function | Canonical wire segment for exact name bytes. |
+| `AbortSignalLike` | interface | Minimal structural AbortSignal: the DOM and Node signals both satisfy it. |
+| `Address` | type |  |
+| `Attempt` | interface |  |
+| `Basis` | interface |  |
+| `BasisPolicy` | type |  |
+| `ByteStore` | interface | Exact verified bytes, keyed by content id (record id or sha256). |
+| `CallOpts` | interface |  |
+| `Capabilities` | interface |  |
+| `ChainFacts` | interface | Chain facts the deployment document records (efs-deployment.chain): a snapshot from when the instance was deployed. |
+| `DeploymentInfo` | interface |  |
+| `Efs` | interface |  |
+| `EfsConfig` | interface |  |
+| `Eip1193Like` | interface |  |
+| `Evidence` | interface |  |
+| `FaultCode` | type |  |
+| `FetchLike` | type | Structural fetch, so the portable core needs no DOM or Node types. |
+| `FloorBlock` | interface | A block a floor holds: its number and hash. |
+| `FoldStep` | type | One fold step, supplied by the caller until the fold rule is chosen: a word, or the rule the segment breaks. |
+| `GatewayConfig` | interface |  |
+| `Hex` | type | A lowercase-or-mixed 0x-prefixed hex string. |
+| `HomeLink` | interface | A home (an address, lowercase), then folder and file names below it, which keep their case. |
+| `Lens` | interface |  |
+| `LensTools` | interface |  |
+| `LinkParse` | type |  |
+| `LinkRule` | type |  |
+| `LinkTarget` | type | What `link` accepts: an object, path, revision, topic or home link, or a FileRef / RevisionRef from ` |
+| `LiveDeployment` | interface | What the pin learned about the live deployment at its basis. |
+| `LocatorCheck` | type | Whether a location could ever be read (checkLocator). |
+| `ManifestCheck` | type |  |
+| `NameCheck` | type |  |
+| `NameInput` | type |  |
+| `NameRule` | type |  |
+| `ObjectLink` | interface | An object by subject id. |
+| `ParseLinkOpts` | interface |  |
+| `PathLink` | interface | A path from a folder named by its id (`~efs/o/<folder>/<name>/…`): that folder's object link, then at least one folder or file name, which keep their case (files-name/2). |
+| `PinMismatch` | interface |  |
+| `PinResult` | type |  |
+| `PrincipalDisplay` | type | What a person should see for a principal (an author in a Lens, a row's `author`): - address: a key principal is its account's address, EIP-55 checksummed (the padded `0x0000…` id is never shown); - contract: a contract principal of this Realm, matched to an address you name (`contracts`, such as the Safe whose home you are showing) by recomputing it here: a contract principal is a hash, so it is never read back or guessed; - principal: anything else, as its id (lowercase): a contract principal you didn't name, another kind, the zero word. |
+| `PrincipalId` | type | Compile-time brands only: plain strings at runtime, so results stay structured-clone-safe. |
+| `ProtocolLimits` | interface |  |
+| `ReadFloors` | interface | The floors of one instance, per policy (efs.readFloor()). |
+| `RealmRef` | interface |  |
+| `RealmRule` | type |  |
+| `RealmSplit` | type |  |
+| `Reason` | interface | Why something is unknown, unsupported or failed. |
+| `ReasonCode` | type |  |
+| `RecordId` | type |  |
+| `RequestEvent` | interface |  |
+| `RevertInfo` | interface | A contract revert, decoded only as far as the vendored contracts tables allow. |
+| `RevisionLink` | interface | One exact revision. |
+| `RpcEndpoint` | type |  |
+| `SegmentParse` | type |  |
+| `SequenceFault` | interface | Where a save stood when runSequence or resume threw, set as plain properties on the EfsFault. |
+| `StableWordCheck` | type |  |
+| `SubjectId` | type |  |
+| `TopicLink` | interface | A topic: a path of words. |
+| `TypeId` | type |  |
+| `UnstableCheck` | type | Why a word is not stable until the fold rule is ruled (checkStableWord). |
+| `ViewKind` | type |  |
+| `WalletMismatch` | interface | The wallet moved off the plan's chain or account. |
+
+#### `@efs/sdk/links`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `checkStableWord` | function | Whether a word reads the same under both candidate fold rules, so writing it now can never leave text a ruling would fold differently. |
+| `FOLD_RULE` | const | The fold's name, for an app that says which fold it applied ("Saved as notes"). |
+| `foldWord` | const | Fold one typed word (see the header). |
+| `formatRealm` | function | The full realm form for a deployment: `eip155:<chainId>/0x<ledger, lowercase>`. |
+| `link` | function | The link string for an object or revision. |
+| `LINK_PREFIX` | const | The first segment of every system link (`~efs`); the name profile reserves it, so no path can look like a link. |
+| `MAX_LINK_LENS` | const | The most principals a link's Lens may name (the deployment may allow fewer; reads enforce its limit). |
+| `parseLink` | function | Parse a link string from a route. |
+| `splitRealm` | function | Split the realm off the front of a route path (what follows `#/r/`). |
+| `FoldStep` | type | One fold step, supplied by the caller until the fold rule is chosen: a word, or the rule the segment breaks. |
+| `HomeLink` | interface | A home (an address, lowercase), then folder and file names below it, which keep their case. |
+| `LinkParse` | type |  |
+| `LinkRule` | type |  |
+| `LinkTarget` | type | What `link` accepts: an object, path, revision, topic or home link, or a FileRef / RevisionRef from ` |
+| `ObjectLink` | interface | An object by subject id. |
+| `ParseLinkOpts` | interface |  |
+| `PathLink` | interface | A path from a folder named by its id (`~efs/o/<folder>/<name>/…`): that folder's object link, then at least one folder or file name, which keep their case (files-name/2). |
+| `RealmRef` | interface |  |
+| `RealmRule` | type |  |
+| `RealmSplit` | type |  |
+| `RevisionLink` | interface | One exact revision. |
+| `StableWordCheck` | type |  |
+| `TopicLink` | interface | A topic: a path of words. |
+| `UnstableCheck` | type | Why a word is not stable until the fold rule is ruled (checkStableWord). |
+
+#### `@efs/sdk/files`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `fileChunks` | function | Verified chunks of an opened file, pulled on demand. |
+| `listFolder` | function | One page of a folder's entries under a Lens, read at one block. |
+| `listRemoved` | function | List `author`'s removed entries in `folder` (released, or hidden), each with its last target, a page of their scope list at a time, at one block. |
+| `lookupEntry` | function | Look up one name in a folder under a Lens: the Lens's choice (`selected`), and every author in the Lens with an entry at that name, in Lens order with when each was first placed (`candidates`), so an app can show same-named entries as a list. |
+| `MAX_MEDIA_TYPE_BYTES` | const | The longest media type the chain accepts, in bytes (release constants.files.mediaType.maxLength). |
+| `normalizeMediaType` | function | Normalize a caller's media type for planning: lowercase A–Z in the type and subtype (before the first ";"), keep the parameters exactly as given, then check the chain's grammar. |
+| `openFile` | function | Resolve a file's HEAD revision under the Lens, then its content layout. |
+| `openHome` | function | Open a home (`/0x<address>`, a HomeLink with no names): the address's author identity at one block (the gateway's Keys.principalFor: a key account's key principal, a contract's Realm contract principal), and the Lens to list it under, the reader first, then that owner, then `base`. |
+| `openObject` | function | What an object link's id is, from one batched read: a files-directory/1 record is a FOLDER; else a created subject is a FILE (then opened under the Lens); else ABSENT_PROVEN. |
+| `openPath` | function | Open a path link: names below a folder named by its id (`~efs/o/<folder>/<name>/…`, a PathLink) or below a home (`/0x<address>/<name>/…`, a HomeLink with names). |
+| `planCreateFile` | function | Plan a new file `name` in `folder`: one review, one prompt in the common case (large content splits into parts, the finish kept in one publication so the file appears whole). |
+| `planCreateFolder` | function | Plan a new, empty folder `name` in `folder`. |
+| `planEditFile` | function | Plan an edit of `file` from `base` to `content`, for writer.runSequence. |
+| `planHideEntries` | function | Plan hiding other authors' entries (an UNBIND, a mask, at your own position at each name): nothing shows there for a reader whose Lens puts you before the entry's author; readers who rank that author first still see it. |
+| `planMoveEntries` | function | Plan moves and renames of your own entries: each one RELEASEs the old place (the Lens falls through to the next author there) and BINDs the new one, atomically in one publication. |
+| `planRemoveEntries` | function | Plan removing your own entries from their folders. |
+| `planRestoreEntries` | function | Plan putting your removed entries back (released or hidden), each to the target it had before. |
+| `planUnhideEntries` | function | Plan removing your hides (RELEASE of your own MASKED entries): the Lens falls through to the next author's entry at each name again. |
+| `readBytes` | function | Read the whole file, verified, bounded by maxBytes. |
+| `readRange` | function | Read [offset, offset + length) of an opened file, verified. |
+| `resolvePath` | function | Resolve a path of names from a folder the caller names, under a Lens, at one block. |
+| `unverifiedChunks` | function | Stream a whole file, emitting external bytes before they can be verified. |
+| `ByteGrade` | type |  |
+| `ByteRangeResult` | interface |  |
+| `BytesOpts` | interface |  |
+| `CreateFileInput` | interface |  |
+| `CreateFileReview` | interface |  |
+| `CreateFolderInput` | interface |  |
+| `CreateFolderReview` | interface |  |
+| `EditFileInput` | interface |  |
+| `EditFileOpts` | interface |  |
+| `EditLayout` | type |  |
+| `EditPlanResult` | type |  |
+| `EditReview` | interface | What the review dialog shows. |
+| `EntryCandidate` | interface | One author's live entry at a name. |
+| `EntryKind` | type | What a row is. |
+| `EntryLookup` | type |  |
+| `EntryRef` | interface | One name in one folder or home. |
+| `EntryRefusal` | interface | Why one entry of a plan was refused. |
+| `EntryTarget` | type | What a folder entry points at: a file (subject) or a folder (directory record). |
+| `ExternalContent` | interface | Content stored elsewhere: the revision names a files-external/1 locator and its sha256. |
+| `FileChunks` | interface | Verified chunks of a file. |
+| `FileRef` | interface |  |
+| `FolderCoverage` | type |  |
+| `FolderCursor` | interface | Continues a listing. |
+| `FolderPage` | type |  |
+| `FolderPlanOpts` | interface |  |
+| `FolderPlanResult` | type |  |
+| `FolderRef` | interface | A folder: its files-directory/1 record id, which is also its permanent link (`~efs/o/<directory>`) and the subject of its entries' FOLDER bindings. |
+| `FolderReviewBase` | interface | What every folder review carries (prompts, gas and records as in EditReview). |
+| `FolderRow` | interface |  |
+| `HideEntriesInput` | interface |  |
+| `HideReview` | interface |  |
+| `HideReviewItem` | interface |  |
+| `HomeOpen` | type |  |
+| `HomeRef` | interface | A home: an address as a folder parent (design §12.5). |
+| `LastBound` | type | What an entry pointed at before it was removed, read from its history: - KNOWN: the target of its last BIND, which Restore binds again; - NEVER_BOUND: a hide with no earlier bind by this author (a lone hide of someone else's entry at that name): there is nothing to restore, and Unhide (planUnhideEntries) removes the hide; - UNKNOWN: the history is deeper than the walk's bound, or the endpoint can't walk it (`reason`); never a guess. |
+| `LensView` | interface | What a reader with this Lens sees at a name. |
+| `ListFolderOpts` | interface |  |
+| `ListRemovedOpts` | interface |  |
+| `Location` | interface |  |
+| `LocationAttempt` | interface |  |
+| `MediaTypeCheck` | type |  |
+| `MoveEntriesInput` | interface |  |
+| `MoveInput` | interface |  |
+| `MoveReview` | interface |  |
+| `MoveReviewItem` | interface |  |
+| `ObjectOpen` | type |  |
+| `OpenedFile` | interface |  |
+| `OpenPathOpts` | interface |  |
+| `OpenResult` | type |  |
+| `ParentRef` | type | Where entries live: a folder (a files-directory/1 record) or a home (an address). |
+| `PathOpen` | type |  |
+| `PathResolution` | type |  |
+| `PathStep` | interface |  |
+| `ReadOpts` | interface |  |
+| `RemovedCursor` | interface | Continues a removed-entries listing: an index into the author's scope list, for the same folder and author. |
+| `RemovedPage` | type |  |
+| `RemovedRow` | type |  |
+| `RemoveEntriesInput` | interface |  |
+| `RemoveReview` | interface |  |
+| `RemoveReviewItem` | interface |  |
+| `ResolvePathOpts` | interface |  |
+| `RestoreEntriesInput` | interface |  |
+| `RestoreReview` | interface |  |
+| `RestoreReviewItem` | interface |  |
+| `RevisionRef` | interface |  |
+| `StreamFailure` | interface |  |
+| `StreamOpts` | interface |  |
+| `UnhideEntriesInput` | interface |  |
+| `UnhideReview` | interface |  |
+| `UnhideReviewItem` | interface |  |
+| `UnverifiedChunks` | interface | Chunks emitted before they are verified. |
+| `UnverifiedOpts` | interface |  |
+| `UnverifiedResult` | interface |  |
+
+#### `@efs/sdk/actions`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `ACTION` | const | The action kinds a plan may use. |
+| `actionGas` | function | The model's gas for one action (without the per-publication terms). |
+| `actionsHash` | function | The hash of a publication's actions as the ledger checks them (keccak256 of their ABI encoding), part of its digest. |
+| `atomicBatchSupport` | function | Whether the wallet can run calls atomically on this chain (EIP-5792 wallet_getCapabilities). |
+| `createWriter` | function | A writer for one account: plan, review, send and reconcile publications, and run split saves (runSequence, resume), each sent exactly once through the durable journal. |
+| `decodeJournalRecord` | function | Parse a stored record. |
+| `decodeRevert` | function | Decode revert data as far as the vendored contracts tables allow: the selector always, the error's name only when the vendored errors table has it, its arguments only when they decode cleanly as that error. |
+| `decodeSequenceRecord` | function | Parse a stored sequence. |
+| `encodeJournalRecord` | function | The storage form of a record (see docs/design/journal-storage.md): JSON, bigints as tagged decimal strings. |
+| `encodeSequenceRecord` | function | The storage form of a sequence record (the same tagged JSON as encodeJournalRecord). |
+| `gasLimitOf` | function | The gas limit to sign or ask the wallet for, or a refusal. |
+| `gasPlanFor` | function | The gas model and cap to split with on this deployment's chain: the schedule `chain.feeSchedule` names, else the one whose hardforks include `chain.hardfork`. |
+| `isResolved` | const | True for a stage that ends an attempt (COMMITTED, NOT_COMMITTED_PROVEN, NOT_SENT); see isSettled for finality. |
+| `isSettled` | const | Nothing left to check for this attempt: NOT_SENT, NOT_COMMITTED_PROVEN, or COMMITTED at a finalized block. |
+| `kernelQuote` | function | The kernel's quote (LedgerIngress._foldAndQuote, formula 2), exactly as gas-plan.mjs computes it: fresh slots for each first statement and each new record (with its references and digest specs), rewrites per publish and per bind (more for a later statement), and the prefix floor and final reserve they price. |
+| `localLocks` | function | Locks for this JavaScript context only: callers queue in order, and `wait` is false (BUSY at once if held), true (queue until free) or a number of milliseconds (BUSY if not acquired in time). |
+| `lockKey` | function | The lock key: one submission at a time per (chain, realm, deployment, account). |
+| `memoryJournal` | function | In-memory journal with an in-process lock. |
+| `openJournal` | function | Open a journal without a writer: what an app shows after a reload, before the person reconnects ("Partially saved (2 of 5) — Continue"). |
+| `planPublication` | function | Plan one publication from its actions and bodies, without a wallet (what `writer.planActions` runs): limits checked, the nonce and acceptance profile read at a pinned basis, the calldata encoded. |
+| `publicationGas` | function | The planning estimate shown to people: the model plus intrinsic gas and the calldata of the encoded call (every byte priced as non-zero), plus the first-write surcharge when `firstWrite`. |
+| `reconcileAttempt` | function | Settle one journaled attempt from the ledger, by plan id, without a wallet (what `writer.reconcile` runs): COMMITTED, NOT_COMMITTED_PROVEN or UNKNOWN, with `final`. |
+| `reservoirProfile` | function | True when the deployment's fee schedule splits execution gas from state gas (the vendored schedule has `executionGas`, as amsterdam does: EIP-8037's reservoir). |
+| `splitPublications` | function | Greedy, order-keeping split: each publication takes as many whole units as fit. |
+| `TX_GAS_CAP` | const | EIP-7825's per-transaction gas cap (2^24): the default when the deployment document states none. |
+| `TX_GAS_HARD_MAX` | const | EIP-8037's ceiling on tx.gas (2^32 − 1): the reservoir profile's limit never goes above it. |
+| `txGasCapOf` | const | The cap of this deployment's chain (efs-deployment.chain.txGasCap). |
+| `ActionData` | interface | One ledger action (contracts src/interfaces/Actions.sol), as plain data. |
+| `AttemptRecord` | interface |  |
+| `AttemptStage` | type |  |
+| `Authorizer` | type |  |
+| `BatchLimits` | interface |  |
+| `BatchSendResult` | type |  |
+| `BindRow` | type | The gas-model row a BIND, UNBIND or RELEASE is priced at. |
+| `EffectView` | interface | Stable codes for the client's message catalog. |
+| `EfsWriter` | interface |  |
+| `FloorModel` | interface | The kernel's floor, per schedule (gas/model.json profiles.<schedule>.floor). |
+| `GasConstants` | interface | One fee schedule's fitted constants (release.json gasModel.schedules[name]; generated as GAS_SCHEDULES). |
+| `GasLimit` | type |  |
+| `GasLimitInput` | interface |  |
+| `GasModel` | interface | The model the planner splits with: what the per-transaction cap counts, for one fee schedule. |
+| `GasPlan` | type |  |
+| `Journal` | interface |  |
+| `JournalView` | interface | Sequences without a wallet: settle and list them before anyone connects (resume still needs the writer). |
+| `KernelQuote` | interface | The kernel's own quote of a publication's floor (LedgerIngress.indexFloor's four numbers). |
+| `LocalAccountLike` | interface | A viem LocalAccount satisfies this structurally; the SDK holds no private-key code. |
+| `Plan` | interface | Plain, journal-safe data. |
+| `PlanInput` | interface |  |
+| `PlannedAction` | interface |  |
+| `PlanResult` | type |  |
+| `PlanSequenceResult` | type |  |
+| `ReconcileOpts` | type |  |
+| `ReconcileResult` | interface |  |
+| `Review` | interface |  |
+| `RunResult` | interface |  |
+| `SendOpts` | interface |  |
+| `SendResult` | type |  |
+| `SequenceEffect` | type | What a save is for, so a UI can name it and hold new saves per file. |
+| `SequenceEvent` | type |  |
+| `SequenceOpts` | interface |  |
+| `SequencePart` | interface |  |
+| `SequencePartInput` | type | A part as a planner made it: PlanInput.gas and .total carry its batching estimate and its whole gas. |
+| `SequenceProgress` | interface | What the client shows: N, how many committed, and where the save is now. |
+| `SequenceRecord` | interface |  |
+| `SequenceState` | type | A save split into several publications (writer.runSequence). |
+| `SplitOptions` | interface |  |
+| `SplitPart` | interface |  |
+| `SplitResult` | type |  |
+| `WithLock` | type |  |
+| `WriterConfig` | interface |  |
+
+#### `@efs/sdk/tags`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `authorCount` | function | A (place, thing) pair's two counts: the authors who ever stated anything there, and how many say yes now. |
+| `broaderAction` | const | "subject is narrower than broader": (BROADER, subject, broader) → broader. |
+| `checkText` | function | The chain's text grammar (text/1, for labels; TopicProfile.textRefusal): 1–255 bytes of strict UTF-8; no C0, DEL or C1 control; no bidi control, invisible scalar or noncharacter. '/', spaces, uppercase and joiners are admitted. |
+| `checkWord` | function | The chain's word grammar (topic-word/1, TopicProfile.wordRefusal): 1–255 bytes of strict UTF-8; no '/', '\', ASCII control, space or A–Z; no refused scalar; not '.' or '..'; not starting with '~'; not '0x' and 40 lowercase hex digits. |
+| `childId` | function | The topic one word below `parent`: the topic/1 record (parent, word page). |
+| `denyAction` | function | "not this", n < 0 (−1 by default): a TAG UNBIND, which may be a first statement (a lone negative). |
+| `fileNames` | function | Names for files shown in a topic, by the spec §3.7 order, at one block: for each file, its tagger's own entry in their home or a folder they created, else its creator's entry, else the first Lens author's, else null. |
+| `homeId` | function | A home: the address as a left-padded word (no record, no hash). |
+| `labelActions` | function | A label of `subject` in `lang`: the text record, then the PROPERTY bind to it. |
+| `labelKey` | const | A label's key in one language: the property key of "label:" ‖ the BCP 47 tag with ASCII A–Z lowercased, exactly as EfsTopics.labelKey folds it (`pt-BR` and `pt-br` are one key). |
+| `labelOf` | function | What a topic or home is called under a Lens: its label in the reader's first language that has one. |
+| `langTag` | function | A BCP 47 language tag, lowercased (the tag is case-insensitive; EfsTopics' own example is `pt-br`). |
+| `lensTagsOf` | function | A page of the places `thing` is filed at, under a Lens (see the file's header). |
+| `numberOf` | function | BindingNumber.numberOf: BOUND (1) → strength, MASKED (2) → −1 − strength, any other state → no number. |
+| `pathId` | function | A path's topic id, from its words alone: never an author, a Realm or a chain. |
+| `pathIds` | function | Every prefix's topic id, from the root word down: ids[k] is the topic of the first k + 1 words. |
+| `placeCount` | function | A place's two counts, for one of two lists, never both: exactly at the place, or with `below: true` strictly below it (statements at its proper descendants; the place itself is left out). |
+| `placeId` | function | A place's id (and whether it is a topic). |
+| `planBroader` | function | Plan "this topic is narrower than that one" (or, with `remove`, take yours back). |
+| `planDeny` | const | Plan "not this" for each target at this topic (or home), with number n < 0 (default −1). |
+| `planLabel` | function | Plan a label of a topic or home in one language (or, with `remove`, take yours back). |
+| `planSame` | function | Plan "this topic is the same as that one" (or, with `remove`, take yours back). |
+| `planTag` | const | Plan "each target is in this topic (or home), with number n ≥ 0" (default 0). |
+| `planUntag` | const | Plan taking your statements back (RELEASE): you say nothing about these targets there any more. |
+| `propertyAction` | function | A property of `subject`: (PROPERTY, subject, key) → value. |
+| `propertyKey` | function | A property's key: keccak256(abi.encode(keccak256("efs/property-key/1"), keccak256(key))). |
+| `registerPathActions` | function | Registering a path, in the order the chain needs (registerPath / registerChild): the word pages first, then the path records from two words on, parent first. |
+| `releaseAction` | function | Back to "said nothing" for any statement of yours: a RELEASE at (purpose, subject, role). |
+| `sameAction` | const | "subject is the same topic as other": (SAME, subject, other) → other. |
+| `strengthOf` | function | The action a number takes: a BIND with strength n (n ≥ 0) or an UNBIND with strength −1 − n. |
+| `tagAction` | function | "thing is in topic, with number n ≥ 0": a TAG BIND whose target is the thing. |
+| `tagsOf` | function | Every place a thing is filed at (TAG), either sign, newest first, each with its exact yes-count; no Lens. |
+| `textRecordAction` | function | The PUBLISH of a text/1 record (a label's display string). |
+| `textRecordId` | function | A text/1 record (a label's display string). |
+| `topicBroader` | function | "Under…" and "Over…" for a topic, one hop each way, under a Lens: the topics it is narrower than, and the topics narrower than it. |
+| `topicChildren` | function | A topic's child topics, newest first, each with its own word (read from its path record and word page and checked against the parent) and its counts. |
+| `topicItems` | function | A page of things at a place. |
+| `topicItemsMerged` | function | A topic's items with its Lens's synonyms, merged newest first: see the header. |
+| `topicName` | function | Every segment's display name for a topic under a Lens (spec §3.5): a path-level label of that place, else the word-level label (the word's page) in the reader's languages, else the word itself. |
+| `topicPath` | function | A topic's words, root first, read from its path records (at most 64 levels). |
+| `topicSynonyms` | function | The topics a Lens says are the same as `topic`, at both levels (see the file's header), at one block: the places joined to it, and each of its words' word-level synonyms. |
+| `topicTypesOf` | function | The deployment's Topics Type ids (topic-word/1, topic/1, text/1); MISUSE when it registers none. |
+| `untagAction` | function | Back to "said nothing": a TAG RELEASE of your own statement. |
+| `wordPage` | function | Every place whose own word is `word`: its root topic /<word> first, then each registered path ending in it. |
+| `wordPageId` | function | A word's page (and the root-level topic /<word>): the topic-word/1 record of its bytes. |
+| `BroaderInput` | interface |  |
+| `BroaderResult` | type |  |
+| `CountResult` | type |  |
+| `Decider` | type | Who decided a row: a Lens author (with their index and number), or the public tier (someone says yes). |
+| `FiledRow` | interface | One place a thing is filed at (tagsOf): the row of `everyone` with no Lens, rows nobody says yes to included. |
+| `FileName` | interface |  |
+| `FileNameInput` | interface |  |
+| `FileNameRow` | interface |  |
+| `FileNamesOpts` | interface |  |
+| `FileNamesResult` | type |  |
+| `GrammarCheck` | type |  |
+| `Joined` | interface | One topic joined to the asked one: how many hops away, and which Lens author's statement joined it. |
+| `Label` | interface | A label the Lens chose: its text, its language, who said it, and the text record. |
+| `LabelInput` | interface |  |
+| `LabelResult` | type |  |
+| `LensTagsOpts` | interface |  |
+| `LookupPage` | type |  |
+| `MergedCursor` | interface | Continues a merged listing: the frozen list set, each list's resume point, and the things already decided. |
+| `MergedHow` | type | How a list joined the merge: the topic itself, a "same" the Lens states, or a word swap of the topic's path. |
+| `MergedItemsOpts` | interface |  |
+| `MergedList` | interface | A list of the merge: its place, how it joined, and how many hops from the topic. |
+| `MergedPage` | type |  |
+| `MergedRow` | interface |  |
+| `MissingList` | interface | A list the chain refused: named, so the client can say "N synonyms couldn't be read". |
+| `NameOpts` | interface |  |
+| `PlaceCountRow` | interface | A place of a directory (children, word page): its counts are "about" figures, never row counts. |
+| `PlacesOpts` | interface |  |
+| `Related` | interface | One topic a Lens says the asked one is under (broader), or that is under it (narrower). |
+| `SameInput` | interface |  |
+| `ScanStatus` | type | Why a page stopped: the list ended (the only end), or a bound was reached (entries, gas, rows). |
+| `SegmentName` | interface |  |
+| `SynonymOpts` | interface |  |
+| `SynonymsResult` | type |  |
+| `TagInput` | interface |  |
+| `TagPlace` | type | Where a statement is made: a topic by its words (registered as needed), or a home (an address; no record). |
+| `TagPlanOpts` | interface |  |
+| `TagPlanResult` | type |  |
+| `TagRefusal` | interface |  |
+| `TagReview` | interface |  |
+| `TagStatementReview` | interface |  |
+| `TagTarget` | type | What a statement is about: any existing record or subject, or an address. |
+| `ThingKind` | type | What a row's thing is, at the page's block. |
+| `ThingTagRow` | interface | One place the thing is in, as the Lens decided it. |
+| `ThingTagsPage` | type |  |
+| `TopicCursor` | interface | Continues a listing: the chain's resume point, and the things already returned (for de-duplication). |
+| `TopicId` | type | A topic's id: the record id of its word page (one word) or of its path record (two or more). |
+| `TopicItemsOpts` | interface |  |
+| `TopicNameResult` | type |  |
+| `TopicPage` | type |  |
+| `TopicPathResult` | type |  |
+| `TopicPlace` | type | A place: a topic by its words or its id, or a home (an address). |
+| `TopicRow` | interface |  |
+| `TopicStatementPlanResult` | type |  |
+| `TopicStatementReview` | interface |  |
+| `TopicTypes` | interface | The Topics Type ids of a deployment (provisional until the Unicode generator gate; see the release notes). |
+| `TopicView` | type |  |
+| `WordSynonyms` | interface |  |
+
+#### `@efs/sdk/web`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `streamFile` | function | Stream an opened file's verified bytes. |
+| `streamUnverified` | function | The explicit opt-in for playing a single-digest (external) file while it downloads. |
+
+#### `@efs/sdk/web/journal`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `indexedDbJournal` | function | The journal for browser and worker clients. |
+| `IndexedDbJournalOptions` | interface |  |
+| `WebJournal` | interface |  |
+
+#### `@efs/sdk/web/cache`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `indexedDbByteStore` | function | A persistent cache of verified bytes in IndexedDB, for pages and workers (opt-in: `createEfs({ cache: { bytes } })`). |
+| `IndexedDbByteStoreOptions` | interface |  |
+| `WebByteStore` | interface |  |
+
+#### `@efs/sdk/node`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `fileJournal` | function | The journal for Node clients. |
+| `FileJournalOptions` | interface |  |
+
+#### `@efs/sdk/testing`
+
+| Export | Kind | Summary |
+| --- | --- | --- |
+| `createRecorder` | function | Record the RPC half (a fetch) and, optionally, the wallet half of a flow, numbering every answer and every mark in one sequence. |
+| `createReplay` | function | Replay transcripts with the head gated by their writes and marks (see the header). |
+| `createRpcReplay` | function | Replay recorded RPC transcripts as a fetch and an EIP-1193 provider, for chain-free tests: each request gets its recorded answer in order, and unmatched calls are misses (createReplay adds epochs, for heads that move). |
+| `planLoneHide` | function | Test-only (exported from ` |
+| `planOtherEntry` | function | Test-only (exported from ` |
+| `recordingFetch` | function | Wrap a fetch so every JSON-RPC POST is recorded as an RpcCall (request and response bodies, verbatim). |
+| `recordingProvider` | function | Wrap an EIP-1193 provider so every request is recorded as a WalletCall, in the order the requests were made, with the result or error filled in when it settles. |
+| `replayFetch` | function | A fetch that answers JSON-RPC POSTs from transcripts (any URL) and 404s everything else. |
+| `replayProvider` | function | A fake wallet answering from the transcripts' wallet halves: each request is matched on `[method, params]`, answers are served in recorded order and the last repeats (`strict`: never repeats), and a recorded error is thrown (with its `code`). |
+| `LoneHideInput` | interface |  |
+| `LoneHideReview` | interface |  |
+| `OtherEntryInput` | interface |  |
+| `OtherEntryReview` | interface |  |
+| `RecordedMark` | interface | A harness's mark: where the chain's head moved without a page write (an actor's write, a mine). |
+| `Replay` | interface |  |
+| `RpcCall` | interface |  |
+| `RpcReplay` | interface |  |
+| `RpcTranscript` | interface |  |
+| `WalletCall` | interface | One EIP-1193 request to the wallet and what the wallet answered (a result, or an error it threw). |
+
+<!-- export-index:end -->

@@ -29,6 +29,7 @@ export interface TopicTypes {
   path: Hex;
   text: Hex;
 }
+/** The deployment's Topics Type ids (topic-word/1, topic/1, text/1); MISUSE when it registers none. */
 export function topicTypesOf(d: Pick<DeploymentInfo, "typeIds">): TopicTypes {
   const word = d.typeIds["topic-word/1"];
   const path = d.typeIds["topic/1"];

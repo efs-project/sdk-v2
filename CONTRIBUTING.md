@@ -31,6 +31,11 @@ pnpm lint:package  # publint + are-the-types-wrong on the packed tarball
 
 `pnpm check` runs all of the above in order.
 
+When you add, rename or remove an export, or change the first sentence of its JSDoc, run `pnpm docs:index`: it
+regenerates the export index at the end of `docs/design/api-0.1.md`. `pnpm test` fails while the index is stale, while
+a function or constant has no JSDoc summary, or while a document names an API that does not exist
+(`packages/sdk/test/docs-api.test.ts`).
+
 ## Solidity lane (no Node required)
 
 ```sh

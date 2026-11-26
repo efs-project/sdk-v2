@@ -14,12 +14,16 @@ const NOTHING_SENT = new Set([
   "STALE",
   "BUSY",
   "JOURNAL_UNAVAILABLE",
+  "ALREADY_ATTEMPTED", // with `reason.twin`: the same save is already open, and this call sent nothing
 ]);
 
 /** efs.at(): may this page show chain data as EFS data? */
 export function describePin(pin) {
   if (pin.status === "VERIFIED") return "Connected";
   if (pin.status === "MISMATCH") return "This network is not the EFS deployment this app expects";
+  // The read floor: every endpoint is behind a block this client has read (or the read's atLeast). Retry.
+  if (pin.reason?.code === "BEHIND")
+    return "This network hasn't caught up with your last save yet — Retry";
   return "Can't check the network right now — try again"; // UNKNOWN: never "not EFS"
 }
 
@@ -66,6 +70,11 @@ export function describeSave(p) {
   const nothing = p.state === "NOT_STARTED" && NOTHING_SENT.has(code) ? " Nothing was sent." : "";
   if (code === "USER_REJECTED")
     return `${where}: you declined in your wallet.${nothing} — Try again`;
+  // The same save is already open (on its way, or saved and confirming): this call sent nothing.
+  if (code === "ALREADY_ATTEMPTED" && p.reason.twin)
+    return p.reason.twin.stage === "COMMITTED"
+      ? "Already saved · confirming. Nothing more was sent."
+      : "Already on its way — see its progress. Nothing more was sent.";
   const retry = p.reason?.retry;
   if (retry === "transient" || retry === "after-reconcile") return `${where}.${nothing} — Continue`;
   return `${where}.${nothing} (${code ?? "no reason"})`;

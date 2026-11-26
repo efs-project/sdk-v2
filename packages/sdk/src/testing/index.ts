@@ -106,6 +106,10 @@ export interface RpcReplay {
   readonly misses: readonly string[];
 }
 
+/**
+ * Replay recorded RPC transcripts as a fetch and an EIP-1193 provider, for chain-free tests: each request gets its
+ * recorded answer in order, and unmatched calls are misses (createReplay adds epochs, for heads that move).
+ */
 export function createRpcReplay(transcripts: RpcTranscript | readonly RpcTranscript[]): RpcReplay {
   const answers = new Map<string, Omit<JsonRpcResponse, "id" | "jsonrpc">[]>();
   const served = new Map<string, number>();

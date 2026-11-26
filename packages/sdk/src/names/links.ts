@@ -155,6 +155,7 @@ export type LinkRule =
   /** A topic segment breaks a word rule, or the caller's fold refused it (`detail` says which). */
   | "bad-word";
 
+/** The first segment of every system link (`~efs`); the name profile reserves it, so no path can look like a link. */
 export const LINK_PREFIX = "~efs";
 const ID = /^0x[0-9a-fA-F]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;

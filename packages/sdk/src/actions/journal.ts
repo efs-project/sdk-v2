@@ -257,6 +257,7 @@ export function memoryJournal(): Journal {
   };
 }
 
+/** True for a stage that ends an attempt (COMMITTED, NOT_COMMITTED_PROVEN, NOT_SENT); see isSettled for finality. */
 export const isResolved = (stage: AttemptStage): boolean => RESOLVED.has(stage);
 
 /**

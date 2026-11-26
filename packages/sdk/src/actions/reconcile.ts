@@ -83,6 +83,10 @@ async function admittedAt(
   };
 }
 
+/**
+ * Settle one journaled attempt from the ledger, by plan id, without a wallet (what `writer.reconcile` runs):
+ * COMMITTED, NOT_COMMITTED_PROVEN or UNKNOWN, with `final`. It never sends.
+ */
 export async function reconcileAttempt(
   efs: Efs,
   journal: Journal,

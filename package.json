@@ -29,6 +29,7 @@
     "inputs:sync": "node tools/inputs.mjs sync --from ../contracts-v2",
     "inputs:verify": "node tools/inputs.mjs verify",
     "generate": "node tools/codegen.mjs && node tools/solidity.mjs",
+    "docs:index": "node tools/api-index.mjs write",
     "generate:check": "node tools/codegen.mjs --check && node tools/solidity.mjs --check",
     "pack:all": "node tools/pack.mjs",
     "lint:package": "node tools/checks.mjs package",

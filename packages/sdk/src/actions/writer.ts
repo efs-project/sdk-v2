@@ -87,6 +87,11 @@ function floorOf(
   return BigInt(ruleGas(list, g.model, false, g.typeNames).V);
 }
 
+/**
+ * A writer for one account: plan, review, send and reconcile publications, and run split saves (runSequence,
+ * resume), each sent exactly once through the durable journal. The authorizer is a wallet (EIP-1193) or a local
+ * account.
+ */
 export async function createWriter(
   efs: Efs,
   config: WriterConfig,

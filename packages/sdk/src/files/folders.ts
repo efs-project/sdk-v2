@@ -1594,11 +1594,6 @@ export type ObjectOpen =
       evidence: Evidence;
     };
 
-/**
- * What an object link's id is, from one batched read: a files-directory/1 record is a FOLDER; else a created
- * subject is a FILE (then opened under the Lens); else ABSENT_PROVEN. The kind is fixed by the id itself (a folder's
- * id is its record, which only its creator may publish), so the answer never changes after the fact.
- */
 /** A session that notes whether any call it carried failed at the transport (unreachable or a JSON-RPC error). */
 function watchCalls(s: Session): { session: Session; callFailed: () => boolean } {
   let failedCall = false;
@@ -1617,6 +1612,11 @@ function watchCalls(s: Session): { session: Session; callFailed: () => boolean }
   };
 }
 
+/**
+ * What an object link's id is, from one batched read: a files-directory/1 record is a FOLDER; else a created
+ * subject is a FILE (then opened under the Lens); else ABSENT_PROVEN. The kind is fixed by the id itself (a folder's
+ * id is its record, which only its creator may publish), so the answer never changes after the fact.
+ */
 export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<ObjectOpen> {
   const none: Evidence = { attempts: [], requests: 0 };
   if (!/^0x[0-9a-fA-F]{64}$/.test(id ?? ""))

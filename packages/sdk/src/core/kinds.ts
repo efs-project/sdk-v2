@@ -13,6 +13,10 @@
 //   invalid   folders only: a row that breaks a Files rule
 import { misuse } from "./errors.js";
 
+/**
+ * Every kind a listing row can be (file, folder, other, subject, revision, topic, address, invalid): pass a subset
+ * as `kinds` to filter a listing; a kind outside this list is MISUSE.
+ */
 export const VIEW_KINDS = [
   "file",
   "folder",

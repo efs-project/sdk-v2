@@ -43,9 +43,11 @@ export { openJournal } from "./sequence.js";
 export type {
   BatchLimits,
   BindRow,
+  FloorModel,
   GasConstants,
   GasModel,
   GasPlan,
+  KernelQuote,
   PlannedAction,
   SplitOptions,
   SplitPart,
@@ -54,6 +56,7 @@ export type {
 export {
   actionGas,
   gasPlanFor,
+  kernelQuote,
   publicationGas,
   splitPublications,
   TX_GAS_CAP,

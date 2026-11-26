@@ -2,9 +2,12 @@
 
 The TypeScript SDK for EFS: portable ESM for browsers, Workers, Node servers and scripts.
 
-**Status: EFS SDK 0.1 in development.** The package is `private` and has never been published. The API is
-documented in [`docs/design/api-0.1.md`](../../docs/design/api-0.1.md), and what is missing is listed in
-[`LIMITATIONS.md`](../../LIMITATIONS.md). Folder, path and tag reads wait on an open data-model decision.
+**Status: EFS SDK 0.1 in development.** The package is `private` and has never been published. It pins
+deployments, reads and streams verified files, lists and edits folders and homes, tags, labels and names topics,
+and writes exactly once through a durable journal. The API is documented in
+[`docs/design/api-0.1.md`](../../docs/design/api-0.1.md) (its appendix lists every export) and
+[`docs/design/tags-0.1.md`](../../docs/design/tags-0.1.md); what is missing is listed in
+[`LIMITATIONS.md`](../../LIMITATIONS.md).
 
 ## Quick start
 
@@ -68,6 +71,25 @@ if (edit.status === "BASE_CHANGED") {
   const saved = await writer.runSequence(edit.parts); // COMPLETE, or PARTIAL / IN_FLIGHT to resume later
 }
 ```
+
+### Outcomes every app handles
+
+- **A read never comes from before your last save.** Each client keeps a read floor (the highest block it has
+  read; a save's block counts, and a reload or another tab gets it from the journal). An endpoint behind it is
+  skipped; when every endpoint is behind, the read is UNKNOWN with reason `BEHIND` after a short wait: "This network
+  hasn't caught up with your last save yet. Checking…", then Retry. Never show it as empty. Pass `atLeast` for a
+  block this client can't know about (a worker, a link).
+- **The same save is never sent twice.** Saving parts that are already on their way, or saved and not yet final,
+  sends nothing: `NOT_SENT` (a save: `NOT_STARTED`) with reason `ALREADY_ATTEMPTED` and `reason.twin`, which names
+  the earlier save. Show its progress instead. A lost wallet answer is `IN_FLIGHT`, never "not sent":
+  `reconcileSequence` settles it from the ledger.
+- **What people type is folded, and some words wait.** Tag words go through `foldWord` (interim, until the tag text
+  rule is chosen): an all-ASCII word is trimmed, its spaces become underscores, and A–Z become a–z ("Notes" saves as
+  `notes`: say so). Adding a tag refuses a word with a non-ASCII character a candidate rule would change (MISUSE,
+  `details.rule: "unstable-until-ruled"`): "can't be used until the tag text rule is chosen". `checkStableWord` lets
+  a field say it as the person types.
+- **UNKNOWN is never absence.** Only `ABSENT_PROVEN` means "not there"; a failed or unvouched read is UNKNOWN with a
+  reason and a `retry` class.
 
 ## Entry points
 

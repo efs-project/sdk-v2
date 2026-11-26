@@ -36,6 +36,10 @@ export type PrincipalDisplay =
   | { kind: "address"; address: Address }
   | { kind: "contract"; address: Address }
   | { kind: "principal"; id: PrincipalId };
+/**
+ * How to show a principal: an account (`address`, for a key principal), one of the given contracts (`contract`), or
+ * an opaque principal id. MISUSE when it is not a 32-byte word. `efs.lens.displayOf` applies it with this Realm.
+ */
 export function principalDisplay(
   principal: PrincipalId,
   realmOrigin: Hex,

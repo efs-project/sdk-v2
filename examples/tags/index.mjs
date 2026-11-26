@@ -4,7 +4,7 @@
 // so CI fails if this stops being true.
 import assert from "node:assert/strict";
 import { startFixtureChain } from "@efs/fixture";
-import { createEfs, foldWord } from "@efs/sdk";
+import { checkStableWord, createEfs, foldWord } from "@efs/sdk";
 import { createWriter, memoryJournal } from "@efs/sdk/actions";
 import { listFolder, openHome, planCreateFile } from "@efs/sdk/files";
 import {
@@ -86,6 +86,16 @@ try {
     planTag(efs, writer, { topic: ["Straße"], targets: [file] }),
     /not a word the chain admits/,
   );
+  //    Until the rule is chosen, a write that adds a tag refuses a word with a non-ASCII character a candidate rule
+  //    would change (the word guard), so a word's id can't move under the ruling: "École" waits, "école" is fine. Say
+  //    "can't be used until the tag text rule is chosen". Apps can check as the person types (checkStableWord).
+  assert.equal(checkStableWord("école").ok, true);
+  assert.equal(checkStableWord("École").ok, false);
+  await assert.rejects(planTag(efs, writer, { topic: ["École"], targets: [file] }), (e) => {
+    assert.equal(e.code, "MISUSE");
+    assert.equal(e.details.rule, "unstable-until-ruled");
+    return true;
+  });
   const tagged = await save(await planTag(efs, writer, { topic: ["Notes"], targets: [file] }));
   assert.deepEqual(
     tagged.review.newTopics.map((t) => t.words),

@@ -21,6 +21,7 @@ const executeAbi = ledgerAbi.find(
 const ACTIONS_PARAM = [executeAbi.inputs[0]] as const;
 const EMPTY_GUARD: Hex = "0x";
 
+/** The hash of a publication's actions as the ledger checks them (keccak256 of their ABI encoding), part of its digest. */
 export function actionsHash(actions: readonly ActionData[]): Hex {
   return keccak256(encodeAbiParameters(ACTIONS_PARAM as never, [actions] as never));
 }
@@ -45,6 +46,10 @@ export interface PlanInput {
   total?: number;
 }
 
+/**
+ * Plan one publication from its actions and bodies, without a wallet (what `writer.planActions` runs): limits
+ * checked, the nonce and acceptance profile read at a pinned basis, the calldata encoded. PLANNED, REFUSED or UNKNOWN.
+ */
 export async function planPublication(
   efs: Efs,
   input: PlanInput,

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-// EFS SDK v0.1, getting started: pin a deployment, open and read a file, edit it (plan → review → send), and recover
-// a save whose wallet answer was lost. It runs against a local fixture chain (`anvil` on PATH) and asserts every
-// step, so CI fails if the guide stops being true. Each outcome is printed through the copy rules in copy.mjs.
+// EFS SDK v0.1, getting started: pin a deployment, open and read a file, edit it (plan → review → send), recover a
+// save whose wallet answer was lost, refuse to send the same save twice, and never read from before a save. It runs
+// against a local fixture chain (`anvil` on PATH) and asserts every step, so CI fails if the guide stops being
+// true. Each outcome is printed through the copy rules in copy.mjs.
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -55,6 +56,21 @@ try {
   say("pin", describePin(pin));
   assert.equal(pin.status, "VERIFIED");
 
+  // A read is never served from a block older than one this client has read (the read floor). A save made elsewhere
+  // (another tab, a worker, a node ahead of this one) can pass its block as `atLeast`: until this network has that
+  // block, the read is UNKNOWN BEHIND after a short wait, never an older read. Here a block 1000 ahead stands in for it.
+  const strict = createEfs({
+    rpcs: [chain.rpcUrl],
+    deployment: chain.deployment,
+    reads: { behindWaitMs: 200 },
+  });
+  const ahead = await strict.at("latest", {
+    atLeast: { blockNumber: pin.basis.blockNumber + 1000n },
+  });
+  say("behind", describePin(ahead));
+  assert.equal(ahead.status, "UNKNOWN");
+  assert.equal(ahead.reason.code, "BEHIND");
+
   // 2. Open and read: a file by its link (subject id), its bytes verified against their sha256.
   const readme = chain.seed.files.find((f) => f.name === "readme.txt");
   const file = { kind: "file", subject: readme.subjectId };
@@ -96,6 +112,8 @@ try {
   const after = await openFile(efs, file);
   assert.equal(after.status, "PRESENT");
   assert.equal(after.file.revision, r.revision);
+  // The save's block is this client's read floor: every later read is at or after it (visibleAt), so the edit shows.
+  assert.ok(efs.readFloor().latest.blockNumber >= saved.visibleAt.blockNumber);
 
   // 4. Recover: the wallet sends, its answer is lost, and the page reloads before the transaction is mined.
   await rpc("evm_setAutomine", [false]);
@@ -119,6 +137,14 @@ try {
   const settled = await view.reconcileSequence(lost.sequenceId);
   say("settle", describeSave(settled)); // committed, not yet final
   assert.equal(settled.state, "COMPLETE");
+  // Saving the same parts again (a second click, another tab) is held back while the first is open: nothing is sent,
+  // the wallet is never asked, and the reason names the earlier save (ALREADY_ATTEMPTED, `reason.twin`).
+  const twice = await writer.runSequence(again.parts);
+  say("again", describeSave(twice));
+  assert.equal(twice.state, "NOT_STARTED");
+  assert.equal(twice.reason.code, "ALREADY_ATTEMPTED");
+  assert.equal(twice.reason.twin.sequenceId, lost.sequenceId);
+  await writer.abandon(twice.sequenceId); // nothing of it was sent: stop offering it
   await rpc("evm_setAutomine", [true]);
   await rpc("anvil_mine", ["0x50"]); // anvil finalizes 64 blocks behind the head
   for (const p of await view.pendingSequences()) {

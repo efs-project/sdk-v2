@@ -4,7 +4,9 @@
 // obligation: `normalize` produces it, and `check` reports whether a name is already NFC.
 import { utf8Encode } from "../core/platform.js";
 
+/** The name profile folder and file names are checked against: files-name/2 (UTF-8, byte-exact, case-sensitive). */
 export const NAME_PROFILE = "files-name/2" as const;
+/** The longest name files-name/2 admits, in UTF-8 bytes. */
 export const MAX_NAME_BYTES = 255;
 
 export type NameInput = string | Uint8Array;

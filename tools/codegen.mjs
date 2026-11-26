@@ -389,6 +389,8 @@ const files = {};
 // ---- Protocol inputs provenance (what this SDK build was generated from)
 {
   let src = header([]);
+  src +=
+    "/** The contracts commit (and, once release pinning starts, the release digest) this SDK build was generated from. */\n";
   src += `export const PROTOCOL_INPUTS = ${literal({ contractsCommit: lock.contracts.commit, releaseDigest: lock.contracts.releaseDigest })} as const;\n`;
   files["inputs.ts"] = src;
 }

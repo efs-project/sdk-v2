@@ -164,6 +164,10 @@ function lensTools(defaultLens: readonly PrincipalId[], max: number, realmOrigin
   };
 }
 
+/**
+ * Create a client for one EFS deployment. It checks the deployment document (MISUSE when it is invalid) and does no
+ * I/O: every read pins its own basis (`efs.at`), and nothing is fetched until a read or write asks.
+ */
 export function createEfs(config: EfsConfig): Efs {
   const checked = validateDeploymentManifest(config.deployment);
   if (!checked.ok)
