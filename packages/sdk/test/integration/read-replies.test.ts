@@ -8,10 +8,11 @@ import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
-import type { Address, RecordId, SubjectId } from "../../src/core/hex.ts";
+import type { Address, Hex, RecordId, SubjectId } from "../../src/core/hex.ts";
+import { openFile } from "../../src/files/bytes.ts";
 import { planCreateFile } from "../../src/files/entries.ts";
-import type { FolderRef } from "../../src/files/folders.ts";
-import { ledgerViewsAbi } from "../../src/generated/abis.ts";
+import { type FolderRef, listFolder } from "../../src/files/folders.ts";
+import { filesPageReaderAbi, ledgerViewsAbi, lensReaderAbi } from "../../src/generated/abis.ts";
 import { fileNames, planLabel, planSame, planTag, topicSynonyms } from "../../src/tags/index.ts";
 import { lyingEfs } from "./lying.ts";
 
@@ -98,5 +99,61 @@ describe("a headsAt status no headsAt read accepts is the endpoint's fault", () 
   it("fileNames", async () => {
     const r = await fileNames(headsAtInvalid(), [{ file }]);
     expect(r).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+  });
+});
+
+const stranger = `0x${"0".repeat(24)}${"ee".repeat(20)}` as Hex;
+const mine = () => efs.lens.from([me.address]);
+
+describe("the Lens reader's decider and refusals", () => {
+  it("openFile: a decider outside the Lens (at the reply's own index) is not believed", async () => {
+    const lie = lying(lensReaderAbi, "resolve", ([q, sel]) => [
+      q,
+      { ...(sel as object), principalId: stranger },
+    ]);
+    const r = await openFile(lie, { kind: "file", subject: file }, { lens: mine() });
+    expect(r).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+    // the same file, honestly answered
+    expect((await openFile(efs, { kind: "file", subject: file }, { lens: mine() })).status).toBe(
+      "PRESENT",
+    );
+  });
+
+  it("openFile: a refusal a one-principal query can't earn (LIMIT_EXCEEDED) fails over, never INVALID for good", async () => {
+    const lie = lying(lensReaderAbi, "resolve", ([q, sel]) => [
+      { ...(q as object), status: 12 },
+      sel,
+    ]);
+    const r = await openFile(lie, { kind: "file", subject: file }, { lens: mine() });
+    expect(r).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR", retry: "transient" },
+    });
+  });
+
+  it("listFolder: a resolveManyAt decider outside the Lens is not believed", async () => {
+    const lie = lying(lensReaderAbi, "resolveManyAt", ([q, out]) => [
+      q,
+      (out as object[]).map((x) => ({ ...x, principalId: stranger })),
+    ]);
+    const r = await listFolder(lie, root, { lens: mine() });
+    expect(r).toMatchObject({ status: "UNKNOWN" });
+    expect((await listFolder(efs, root, { lens: mine() })).status).toBe("PRESENT");
+  });
+
+  it("listFolder: a page served as ABSENT_PROVEN is not a page", async () => {
+    const lie = lying(filesPageReaderAbi, "listDirectory", ([page]) => [
+      { ...(page as { q: object }), q: { ...(page as { q: object }).q, status: 3 } },
+    ]);
+    const r = await listFolder(lie, root, { lens: mine() });
+    expect(r).toMatchObject({ status: "UNKNOWN" });
+  });
+
+  it("listFolder: an UNSUPPORTED page is this endpoint's fault (transient), never INVALID for good", async () => {
+    const lie = lying(filesPageReaderAbi, "listDirectory", ([page]) => [
+      { ...(page as { q: object }), q: { ...(page as { q: object }).q, status: 10 } },
+    ]);
+    const r = await listFolder(lie, root, { lens: mine() });
+    expect(r).toMatchObject({ status: "UNKNOWN", reason: { retry: "transient" } });
   });
 });

@@ -494,15 +494,21 @@ export const decodeParent = (
   return { ok: true, value: { status: "PRESENT", owner: x.owner } };
 };
 
-/** A reader's refusal status as a Reason (null when the status is a served one). */
-function refusal(
-  code: number,
-  what: string,
-): { status: "UNKNOWN" | "INVALID"; reason: Reason } | null {
+/**
+ * A reader's refusal status (null when the status is a served one). BASIS_STALE is the chain moving between reads: an
+ * UNKNOWN to read again. Every other refusal is one the SDK's well-formed query can't earn from a sound reader (it
+ * sends at most 64 principals, a page of at most 64 rows, the pinned layout, no tag query), so it is this endpoint's
+ * fault: fail over, never "this can never work".
+ */
+type Refusal =
+  | { failOver: true; reason: Reason }
+  | { failOver: false; status: "UNKNOWN"; reason: Reason };
+function refusal(code: number, what: string): Refusal | null {
   const st = chainStatus(code);
   if (st === "PRESENT" || st === "ABSENT_PROVEN" || st === "MASKED") return null;
   if (st === "BASIS_STALE")
     return {
+      failOver: false,
       status: "UNKNOWN",
       reason: reason(
         "BASIS_STALE",
@@ -510,12 +516,9 @@ function refusal(
         `${what}: the basis moved; read again from the start`,
       ),
     };
-  if (st === "LIMIT_EXCEEDED")
-    return { status: "INVALID", reason: reason("LIMIT_EXCEEDED", "never", `${what}: ${st}`) };
-  if (st === "INVALID" || st === "UNSUPPORTED")
-    return { status: "INVALID", reason: reason("UNSUPPORTED_PROFILE", "never", `${what}: ${st}`) };
-  return { status: "UNKNOWN", reason: reason("RPC_ERROR", "transient", `${what}: ${st}`) };
+  return { failOver: true, reason: reason("RPC_ERROR", "transient", `${what} answered ${st}`) };
 }
+const failOver = (r: Reason): Step<never> => ({ ok: false, retryElsewhere: true, reason: r });
 
 /** Strict UTF-8 (the name rule admits only well-formed UTF-8); null when malformed. */
 const decodeName = (hex: Hex): string | null => decodeScalars(hexToBytes(hex))?.text ?? null;
@@ -842,10 +845,15 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
       }
       const refused = refusal(page.q.status, "listDirectory");
       if (refused) {
-        if (refused.reason.code === "BASIS_STALE" && !o.cursor)
-          return { ok: false, retryElsewhere: true, reason: refused.reason }; // a fresh listing: another endpoint may agree
-        return { ok: true, value: { kind: "refused", ...refused } };
+        if (refused.failOver) return failOver(refused.reason);
+        if (!o.cursor) return failOver(refused.reason); // a fresh listing: another endpoint may agree
+        return { ok: true, value: { kind: "refused", status: refused.status, reason: refused.reason } };
       }
+      // A served page is PRESENT, never ABSENT_PROVEN or MASKED (FilesPageReader's page laws).
+      if (chainStatus(page.q.status) !== "PRESENT")
+        return failOver(
+          reason("RPC_ERROR", "transient", `listDirectory served a page as ${chainStatus(page.q.status)}`),
+        );
       // Authors: the reader's rows do not carry them. Named rows resolve under the Lens in one call; a row with no
       // name (an INVALID row: no files-name/3 record for its role) is resolved by its position, so one bad row never
       // costs the rest of the page.
@@ -904,7 +912,12 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
           const sel = outs[si];
           if (!sel?.ok) return failed(sel);
           let q: { status: number };
-          let sels: readonly { status: number; target: Hex; principalId: Hex }[];
+          let sels: readonly {
+            status: number;
+            target: Hex;
+            principalId: Hex;
+            selectedIndex: number;
+          }[];
           try {
             [q, sels] = decodeFunctionResult({
               abi: lensReaderAbi,
@@ -919,8 +932,13 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
             // The page itself was served; only the follow-up read saw another basis. The cursor (if any) is still
             // good, so this page can be read again as it is.
             if (refusedSel.reason.code === "BASIS_STALE") rereadable.add(refusedSel.reason);
-            return { ok: false, retryElsewhere: true, reason: refusedSel.reason };
+            return failOver(refusedSel.reason);
           }
+          // resolveManyAt serves PRESENT: each selection's own status says the rest.
+          if (chainStatus(q.status) !== "PRESENT")
+            return failOver(
+              reason("RPC_ERROR", "transient", `resolveManyAt answered ${chainStatus(q.status)}`),
+            );
           for (let i = 0; i < named.length; i++) {
             const row = named[i] as RawRow;
             const x = sels[i];
@@ -929,7 +947,9 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
               !x ||
               chainStatus(x.status) !== "PRESENT" ||
               lower(x.target) !== lower(row.target) ||
-              positionKey(PURPOSES.folder, subject, keccak256(row.name)) !== lower(row.position)
+              positionKey(PURPOSES.folder, subject, keccak256(row.name)) !== lower(row.position) ||
+              // the decider is the Lens's principal at the reply's own index, never anyone else
+              (principals[Number(x.selectedIndex)] ?? "").toLowerCase() !== lower(x.principalId)
             )
               return {
                 ok: false,
@@ -1202,7 +1222,10 @@ export async function lookupAt(
   }
   if (all.length !== principals.length) return badReply("headsAt (one head per Lens author)");
   const refused = refusal(status, "headsAt");
-  if (refused) return { ok: true, value: refused };
+  if (refused)
+    return refused.failOver
+      ? failOver(refused.reason)
+      : { ok: true, value: { status: refused.status, reason: refused.reason } };
   const candidates: EntryCandidate[] = [];
   for (let i = 0; i < all.length; i++) {
     const x = all[i] as RawHead;
@@ -1258,7 +1281,9 @@ export async function lookupAt(
     if (qs !== "PRESENT" && qs !== "INVALID") {
       const ref = refusal(q.status, "lookupName");
       return ref
-        ? { ok: true, value: ref }
+        ? ref.failOver
+          ? failOver(ref.reason)
+          : { ok: true, value: { status: ref.status, reason: ref.reason } }
         : {
             ok: false,
             retryElsewhere: true,
@@ -1703,7 +1728,7 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
       };
       // A created subject: its file, opened from the batched HEAD at this basis on this endpoint (every openFile check,
       // the HEAD law included, runs in openSelected).
-      const sel = decodeHead(head);
+      const sel = decodeHead(head, lens);
       if (!sel.ok) return fail(sel, !head?.ok);
       const watched = watchCalls(s);
       const open = await openSelected(ctx, watched.session, basis, target, sel.value);

@@ -285,7 +285,7 @@ export async function fileVersions(
       if (!cr.ok) return cr;
       if (cr.value === null) return { ok: true, value: { absent: true } };
       const creator = cr.value;
-      const sel = decodeHead(out1[1]);
+      const sel = decodeHead(out1[1], { principals });
       if (!sel.ok) return sel;
       const lensHeads = decoded<[number, unknown, number, readonly RawHead[]]>(
         ledgerViewsAbi,

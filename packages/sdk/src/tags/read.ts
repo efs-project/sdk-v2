@@ -974,7 +974,9 @@ export async function kindsOf(
   const headOuts = await callsIn(s, basis.blockHash, heads);
   const bound: { id: Hex; target: Hex }[] = [];
   for (const [i, x] of subjects.entries()) {
-    const h = decodeHead(headOuts[i]);
+    const h = decodeHead(headOuts[i], {
+      principals: [(subjects[i] as { creator: PrincipalId }).creator],
+    });
     if (!h.ok) return h;
     const sel = h.value;
     if (sel.status === "PRESENT") bound.push({ id: x.id, target: sel.target });

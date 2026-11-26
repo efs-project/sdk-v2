@@ -326,15 +326,13 @@ describe("fileVersions (fixture)", () => {
     expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
   });
 
-  it("a MASKED walk whose selection is not MASKED names no one: the decision is unknown, never hidden", async () => {
+  it("a MASKED walk whose selection is not MASKED names no one: the endpoint's fault, never hidden", async () => {
     const lying = rewriting(lensReaderAbi, "resolve", ([q, sel]) => [
       { ...(q as object), status: 4 }, // MASKED, while the selection still says PRESENT
       sel,
     ]);
     const v = await fileVersions(lying, { kind: "file", subject: file }, { lens: lensOf(C) });
-    if (v.status !== "PRESENT") throw new Error(v.status);
-    expect(v.decision).toMatchObject({ kind: "unknown" });
-    expect(v.lens).toEqual([{ ...present(C, true), lensIndex: 0 }]);
+    expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
   });
 
   it("a headsAt reply with a status no headsAt read accepts is the endpoint's fault (UNKNOWN here)", async () => {

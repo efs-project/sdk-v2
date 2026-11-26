@@ -203,16 +203,36 @@ export function headCall(efs: Efs, lens: Lens, subject: Hex): CallRequest {
   };
 }
 
-/** @internal Decode and check a headCall reply. A reply that does not decode fails over to the next endpoint. */
-export function decodeHead(out: RpcOutcome | undefined): Step<HeadSelection> {
+/** The most principals a LensReader query takes (its LIMIT_EXCEEDED past that is a real refusal, not a fault). */
+const LENS_READER_MAX = 64;
+
+/**
+ * @internal Decode and check a headCall reply, for the same `lens` the call was built with. A reply that does not
+ * decode, or that a sound LensReader could not give, fails over to the next endpoint: a selection that disagrees with
+ * the qualified status, a decider that is not the Lens's principal at the reply's own `selectedIndex`, or a refusal the
+ * SDK's well-formed query can't earn. Never a value, and never "this can never work" for one endpoint's fault.
+ */
+export function decodeHead(out: RpcOutcome | undefined, lens: Lens): Step<HeadSelection> {
   if (!out?.ok)
     return {
       ok: false,
       retryElsewhere: true,
       reason: out ? out.reason : reason("RPC_UNAVAILABLE", "transient"),
     };
+  const fault = (what: string): Step<never> => ({
+    ok: false,
+    retryElsewhere: true,
+    reason: reason("RPC_ERROR", "transient", what),
+  });
   let q: { status: number };
-  let sel: { status: number; target: Hex; principalId: Hex; revision: bigint; admission: bigint };
+  let sel: {
+    status: number;
+    target: Hex;
+    principalId: Hex;
+    revision: bigint;
+    admission: bigint;
+    selectedIndex: number;
+  };
   try {
     [q, sel] = decodeFunctionResult({
       abi: lensReaderAbi,
@@ -220,68 +240,63 @@ export function decodeHead(out: RpcOutcome | undefined): Step<HeadSelection> {
       data: out.result as Hex,
     }) as unknown as [typeof q, typeof sel];
   } catch {
-    return {
-      ok: false,
-      retryElsewhere: true,
-      reason: reason("RPC_ERROR", "transient", "LensReader.resolve did not decode"),
-    };
+    return fault("LensReader.resolve did not decode");
   }
+  const principals = uniquePrincipals(lens.principals).map((p) => lower(p));
   // LensReader.resolve: q.status equals the selection's status (PRESENT, MASKED, ABSENT_PROVEN, UNKNOWN), or is a
   // refusal (INVALID, LIMIT_EXCEEDED, BASIS_STALE, UNSUPPORTED). Anything else is not guessed at.
   const qs = chainStatus(q.status);
-  if (qs === "MASKED") {
-    // the selection must agree with the qualified status before its principal is trusted as who hid it
-    if (chainStatus(sel.status) !== "MASKED")
-      return {
-        ok: true,
-        value: {
-          status: "UNKNOWN",
-          reason: reason(
-            "RPC_ERROR",
-            "never",
-            `unexpected lens status MASKED/${chainStatus(sel.status)}`,
-          ),
-        },
-      };
-    return { ok: true, value: { status: qs, author: lower(sel.principalId) as PrincipalId } };
-  }
-  if (qs === "ABSENT_PROVEN" || qs === "UNKNOWN") return { ok: true, value: { status: qs } };
   if (qs === "BASIS_STALE")
     return {
       ok: false,
       retryElsewhere: true,
       reason: reason("BASIS_STALE", "transient", "the lens reader saw a different basis"),
     };
-  if (qs === "INVALID" || qs === "LIMIT_EXCEEDED" || qs === "UNSUPPORTED")
+  if (qs === "ABSENT_PROVEN") return { ok: true, value: { status: qs } };
+  if (qs === "UNKNOWN")
+    return {
+      ok: true,
+      value: {
+        status: qs,
+        reason: reason(
+          "NOT_YET_DECIDABLE",
+          "transient",
+          "the Lens reader met a head it can't interpret",
+        ),
+      },
+    };
+  // Refusals a well-formed query earns only for a Lens the SDK never trims: none, or past the reader's limit.
+  if (qs === "INVALID" && principals.length === 0)
+    return {
+      ok: true,
+      value: { status: "INVALID", reason: reason("UNSUPPORTED_PROFILE", "never", "an empty Lens") },
+    };
+  if (qs === "LIMIT_EXCEEDED" && principals.length > LENS_READER_MAX)
     return {
       ok: true,
       value: {
         status: "INVALID",
         reason: reason(
-          qs === "LIMIT_EXCEEDED" ? "LIMIT_EXCEEDED" : "UNSUPPORTED_PROFILE",
+          "LIMIT_EXCEEDED",
           "never",
-          `lens reader refused the query: ${qs}`,
+          `a Lens of more than ${LENS_READER_MAX} principals`,
         ),
       },
     };
-  if (qs !== "PRESENT" || chainStatus(sel.status) !== "PRESENT")
-    return {
-      ok: true,
-      value: {
-        status: "UNKNOWN",
-        reason: reason(
-          "RPC_ERROR",
-          "never",
-          `unexpected lens status ${qs}/${chainStatus(sel.status)}`,
-        ),
-      },
-    };
+  if (qs !== "PRESENT" && qs !== "MASKED") return fault(`the Lens reader answered ${qs}`);
+  // The selection must agree with the qualified status, and name the Lens's principal at its own index.
+  if (chainStatus(sel.status) !== qs)
+    return fault(`unexpected lens status ${qs}/${chainStatus(sel.status)}`);
+  const author = lower(sel.principalId) as PrincipalId;
+  if (principals[Number(sel.selectedIndex)] !== author)
+    return fault("the Lens reader names a decider outside the Lens");
+  if (qs === "MASKED") return { ok: true, value: { status: qs, author } };
   return {
     ok: true,
     value: {
       status: "PRESENT",
       target: lower(sel.target),
-      author: lower(sel.principalId) as PrincipalId,
+      author,
       admission: BigInt(sel.admission),
     },
   };
@@ -297,7 +312,7 @@ export async function headUnderLens(
 ): Promise<Step<HeadSelection>> {
   ctx.requests += 1;
   const [out] = await callsAt(s, basis.blockHash, [headCall(ctx.efs, lens, subject)]);
-  return decodeHead(out);
+  return decodeHead(out, lens);
 }
 
 /**
