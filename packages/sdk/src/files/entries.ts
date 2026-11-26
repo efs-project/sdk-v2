@@ -16,6 +16,7 @@
 //                  mask: nothing shows there for a reader who ranks you above the entry's author
 //   restore        BIND(FOLDER, at → the target it had before it was removed), read from the binding's history
 import { decodeFunctionResult, encodeFunctionData, keccak256 } from "viem";
+import type { PartUnit } from "../actions/journal.js";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
   batchGasOf,
@@ -548,12 +549,23 @@ async function toParts<R extends FolderReviewBase>(
       const last = unit.actions[unit.actions.length - 1];
       touched.set(u, (touched.get(u) ?? false) || (unit.finishes && a === last));
     }
+    const effectOf = (u: number) =>
+      (units[u] as Unit).effect(touched.get(u) ? "finish" : "content", i + 1, n);
+    // Each entry's actions in this part are one run: a re-split cuts only between entries (never inside a move).
+    const runs: PartUnit[] = [];
+    let at = -1;
+    for (const a of part.actions) {
+      const u = owner.get(a) as number;
+      const last = runs[runs.length - 1];
+      if (u === at && last) last.actions++;
+      else runs.push({ actions: 1, effect: effectOf(u) });
+      at = u;
+    }
     return {
       actions: part.actions.map((a) => a.action),
       bodies: part.actions.map((a) => a.body),
-      effects: [...touched].map(([u, fin]) =>
-        (units[u] as Unit).effect(fin ? "finish" : "content", i + 1, n),
-      ),
+      effects: [...touched].map(([u]) => effectOf(u)),
+      units: runs,
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
       ...batchGasOf(part),
     };

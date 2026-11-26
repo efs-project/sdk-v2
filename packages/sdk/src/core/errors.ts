@@ -27,6 +27,11 @@ export interface Reason {
    * fresh storage slot.
    */
   feeSchedule?: { document: string; chain: string | null; freshSlotGas: bigint };
+  /**
+   * Set on OVER_TX_GAS_CAP: the estimate, the cap, and how many publications the work needs (so a page can say
+   * "split into N"). A save re-splits a part of tag or folder statements itself; this is what it stopped at otherwise.
+   */
+  gas?: { estimate: bigint; cap: bigint; suggestedParts: number };
   /** Set on WALLET_MISMATCH: the chain and account the plan needs, and what the wallet is on now. */
   wallet?: WalletMismatch;
   /**

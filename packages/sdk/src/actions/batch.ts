@@ -116,15 +116,18 @@ export async function sendPlansAsBatch(
         // same per-profile rule as a single send (gasLimitOf: on amsterdam the cap bounds execution only).
         const cap = txGasCapOf(efs.deployment);
         const limit = "gas" in est ? planGasLimit(efs.deployment, first, est.gas) : undefined;
-        if (limit && !limit.ok)
+        if (limit && !limit.ok && "gas" in est)
           return {
             kind: "efs.sendBatch",
             status: "NOT_SENT",
-            reason: reason(
-              "OVER_TX_GAS_CAP",
-              "after-replan",
-              `the first part needs ~${limit.execution} gas, over ${cap}`,
-            ),
+            reason: {
+              ...reason(
+                "OVER_TX_GAS_CAP",
+                "after-replan",
+                `the first part needs ~${limit.execution} gas, over ${cap}`,
+              ),
+              gas: { estimate: est.gas, cap, suggestedParts: limit.suggestedParts },
+            },
           };
         let chainId: number;
         let accounts: string[];

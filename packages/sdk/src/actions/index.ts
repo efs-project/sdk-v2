@@ -9,6 +9,7 @@ export type {
   AttemptRecord,
   AttemptStage,
   Journal,
+  PartUnit,
   SequenceEffect,
   SequencePart,
   SequenceRecord,
@@ -39,7 +40,7 @@ export type {
   SequencePartInput,
   SequenceProgress,
 } from "./sequence.js";
-export { openJournal } from "./sequence.js";
+export { MAX_SPLIT_DEPTH, openJournal } from "./sequence.js";
 export type {
   BatchLimits,
   BindRow,

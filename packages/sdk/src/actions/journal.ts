@@ -44,10 +44,28 @@ export function lockKey(plan: Pick<Plan, "chainId" | "realmId" | "ledger" | "acc
  */
 export type SequenceState = "NOT_STARTED" | "IN_FLIGHT" | "PARTIAL" | "COMPLETE" | "ABANDONED";
 
+/**
+ * A run of a part's actions that must stay in one publication (a folder entry's actions, a topic's registration, one
+ * tag statement), with the effect that describes it. The parts of a save may be re-split only between units.
+ */
+export interface PartUnit {
+  /** How many consecutive actions the unit holds. */
+  actions: number;
+  /** What the unit does, as the part's effects say it (`args.part` / `args.parts` are renumbered on a re-split). */
+  effect: EffectView;
+}
+
 export interface SequencePart {
   actions: readonly ActionData[];
   bodies: readonly Hex[];
   effects: readonly EffectView[];
+  /**
+   * Where the part may be cut (its actions, in order, as indivisible runs), set by the folder and tag planners. A part
+   * without units (a file's content, a record written before units existed) is never re-split.
+   */
+  units?: readonly PartUnit[];
+  /** How many times the part this one came from was re-split (0 or absent for a planned part). Bounded. */
+  splitDepth?: number;
   /** The part's own deadline window (PlanInput.deadlineSeconds), applied each time it is planned. */
   deadlineSeconds?: number;
   /** The planner's estimate of the part in an atomic batch (batchGasOf), and its whole gas on amsterdam. */

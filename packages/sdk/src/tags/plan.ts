@@ -12,6 +12,7 @@
 // A batch plans every statement or none, listing each refusal by index. Words are checked against the chain's own
 // grammar after the caller's fold (efs/fold/1 is not ruled yet): a refused word is MISUSE, never a revert.
 import { decodeFunctionResult, encodeFunctionData } from "viem";
+import type { PartUnit } from "../actions/journal.js";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
   batchGasOf,
@@ -612,6 +613,21 @@ async function plan(
             text: `Register /${words.join("/")}`,
           },
         ];
+    // Units: the registration this part carries is one run, and each statement is one. A re-split never cuts a
+    // statement from the registration before it, and keeps the order.
+    const units: PartUnit[] = [];
+    const regCount = part.actions.filter((a) => regSet.has(a)).length;
+    if (regCount)
+      units.push({
+        actions: regCount,
+        effect: {
+          code: "tags.register",
+          args: { topic: placeId, part: String(k + 1), parts: String(total), stage: "register" },
+          text: `Register /${words.join("/")}`,
+        },
+      });
+    for (let j = 0; j < stmts.length; j++)
+      units.push({ actions: 1, effect: effects[j] as EffectView });
     return {
       actions: part.actions.map((a) => a.action),
       bodies: part.actions.map((a) => a.body),
@@ -619,6 +635,10 @@ async function plan(
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
       // The planner's own pricing (rows and per-level terms) is what an atomic batch is packed by.
       ...batchGasOf(part),
+      // Registration first, then the statements: the order the actions already have.
+      ...(regCount === 0 || part.actions.slice(0, regCount).every((a) => regSet.has(a))
+        ? { units }
+        : {}),
     };
   });
   const review: TagReview = {
