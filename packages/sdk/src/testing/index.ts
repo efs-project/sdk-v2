@@ -18,13 +18,20 @@
  *
  * `planLoneHide(efs, writer, { folder, name })` plans, for writer.runSequence, a state the SDK's planners never make
  * on purpose: your hide at a name where you never placed anything (listRemoved's NEVER_BOUND row, which Unhide
- * answers). It is for tests on a real chain; an app does not need it.
+ * answers). `planOtherEntry(efs, writer, { folder, name, salt? })` places a subject with no file version at a name in a
+ * folder or a home (a listing shows kind "other": the junk row an owner blocks). Both are for tests on a real chain; an
+ * app does not need them.
  */
 import type { Eip1193Like, FetchLike } from "../chain/rpc.js";
 import { utf8Encode } from "../core/platform.js";
 
-export type { LoneHideInput, LoneHideReview } from "../files/entries.js";
-export { planLoneHide } from "../files/entries.js";
+export type {
+  LoneHideInput,
+  LoneHideReview,
+  OtherEntryInput,
+  OtherEntryReview,
+} from "../files/entries.js";
+export { planLoneHide, planOtherEntry } from "../files/entries.js";
 
 export interface RpcCall {
   /** The request body as sent: one JSON-RPC object or a batch array. */

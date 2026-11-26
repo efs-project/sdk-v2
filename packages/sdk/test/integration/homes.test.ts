@@ -35,7 +35,7 @@ import { listRemoved } from "../../src/files/removed.ts";
 import { filesPageReaderAbi } from "../../src/generated/abis.ts";
 import { link, parseLink } from "../../src/names/links.ts";
 import { contractPrincipal, keyPrincipal } from "../../src/protocol/keys.ts";
-import { recordingFetch } from "../../src/testing/index.ts";
+import { planOtherEntry, recordingFetch } from "../../src/testing/index.ts";
 import { type Edit, sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -453,5 +453,52 @@ describe("homes: moves, removes, hides (fixture)", () => {
     );
     const shown = await lookupEntry(efs, { folder: bobHome, name: "later.txt" }, { lens: bobView });
     expect(shown.status === "PRESENT" && shown.selected.author).toBe(A);
+  });
+});
+
+describe("homes: an entry with no file version, and blocking it (fixture)", () => {
+  it("planOtherEntry places a junk row in someone's home or a folder; the owner blocks it", async () => {
+    const salt = `0x${"0c".repeat(32)}` as Hex;
+    const placed = await run(
+      wb,
+      planOtherEntry(efs, wb, { folder: aliceHome, name: "junk.bin", salt, lens: aliceView }),
+    );
+    expect(placed).toMatchObject({ kind: "efs.otherEntryReview", entry: { name: "junk.bin" } });
+    const listed = await listFolder(efs, aliceHome, { lens: aliceView });
+    expect(
+      listed.status === "PRESENT" && listed.rows.find((r) => r.name === "junk.bin"),
+    ).toMatchObject({
+      kind: "other",
+      author: B,
+    });
+    // Alice blocks it in her home.
+    await run(
+      wa,
+      planHideEntries(efs, wa, {
+        entries: [{ folder: aliceHome, name: "junk.bin" }],
+        lens: aliceView,
+      }),
+    );
+    expect(
+      await lookupEntry(efs, { folder: aliceHome, name: "junk.bin" }, { lens: aliceView }),
+    ).toMatchObject({
+      status: "MASKED",
+      by: A,
+    });
+    // Bob's own entry is already there: NAME_TAKEN_MINE; the same salt again: MISUSE.
+    expect(
+      await planOtherEntry(efs, wb, { folder: aliceHome, name: "junk.bin", lens: aliceView }),
+    ).toMatchObject({ status: "REFUSED", refused: [{ code: "NAME_TAKEN_MINE" }] });
+    await expect(
+      planOtherEntry(efs, wb, { folder: aliceHome, name: "other.bin", salt, lens: aliceView }),
+    ).rejects.toMatchObject({ code: "MISUSE" });
+    // In a folder too.
+    const made = await run(wa, planCreateFolder(efs, wa, { folder: aliceHome, name: "spamtrap" }));
+    const trap = made["created"] as FolderRef;
+    await run(wb, planOtherEntry(efs, wb, { folder: trap, name: "junk.bin", lens: aliceView }));
+    const inTrap = await listFolder(efs, trap, { lens: aliceView });
+    expect(inTrap.status === "PRESENT" && inTrap.rows.map((r) => [r.name, r.kind])).toEqual([
+      ["junk.bin", "other"],
+    ]);
   });
 });

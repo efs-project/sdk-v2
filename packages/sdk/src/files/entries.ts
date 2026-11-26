@@ -1553,6 +1553,109 @@ export async function planHideEntries(
   });
 }
 
+// ---- an entry with no file version (test-only: exported from @efs/sdk/testing)
+
+export interface OtherEntryInput {
+  /** A folder or a home. */
+  folder: ParentRef;
+  name: string;
+  /** The CREATE salt (default: 32 random bytes). The subject is subjectId(writer, salt). */
+  salt?: Hex;
+  lens?: Lens;
+}
+export interface OtherEntryReview extends FolderReviewBase {
+  kind: "efs.otherEntryReview";
+  entry: EntryRef;
+  /** The new subject: created, and never given a file version (no HEAD), so a listing shows it as kind "other". */
+  subject: SubjectId;
+}
+
+/**
+ * Test-only (exported from `@efs/sdk/testing`): plan placing a subject with no file version at a name (a CREATE, the
+ * name record when it is missing, and the FOLDER bind), in a folder or a home. A listing shows it as kind "other": the
+ * junk row an owner blocks with planHideEntries. Your own entry already at the name is NAME_TAKEN_MINE, a folder that
+ * is not one FOLDER_ABSENT, and a salt you already used MISUSE.
+ */
+export async function planOtherEntry(
+  efs: Efs,
+  writer: { readonly principal: PrincipalId },
+  input: OtherEntryInput,
+  o: FolderPlanOpts = {},
+): Promise<FolderPlanResult<OtherEntryReview>> {
+  const me = lower(writer.principal) as PrincipalId;
+  const principals = lensPrincipals(efs, input.lens);
+  const types = typesOf(efs);
+  const p = placeOf(input.folder, input.name, 0);
+  const salt = checkSalt(input.salt);
+  const subject = lower(subjectId(me, salt)) as SubjectId;
+  const nameId = nameRecord(types, p);
+  return atOneBasis(efs, o, async (ctx, s, basis) => {
+    const r = await readSeen(
+      ctx,
+      s,
+      basis,
+      me,
+      principals,
+      [p],
+      [...parentIds([p]), nameId],
+      [subject],
+    );
+    if (!r.ok) return r;
+    const seen = r.value;
+    if (seen.created.get(subject))
+      throw misuse("this salt was already used by this writer: pass a new one", { salt });
+    const st = seen.places.get(p.position) as PlaceState;
+    const refused: EntryRefusal[] = [];
+    if (!parentExists(types, p, seen.records))
+      refused.push({ index: 0, code: "FOLDER_ABSENT", entry: entryOf(p) });
+    if (headState(st.mine.state) === "BOUND")
+      refused.push({ index: 0, code: "NAME_TAKEN_MINE", entry: entryOf(p) });
+    if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
+    const needName = !(seen.records.get(nameId) as RecordInfo).present;
+    const row = freshFolderBindRow(st.mine, false);
+    const actions: PlannedAction[] = [
+      plain({ kind: ACTION.CREATE, saltOrStrength: salt }, { group: 1 }),
+      ...(needName ? [publish(types.name, p.nameBytes, "files-name/2", 1)] : []),
+      plain(
+        {
+          kind: ACTION.BIND,
+          purpose: PURPOSES.folder,
+          subject: p.folder,
+          role: p.role,
+          target: subject,
+          expectedRevision: BigInt(st.mine.revision),
+        },
+        { group: 1, firstStatement: isUnset(st.mine), ...(row ? { bindRow: row } : {}) },
+      ),
+    ];
+    const args = effectArgs(p, { subject });
+    const units: Unit[] = [
+      {
+        effect: (stage, part, parts) => ({
+          code: "testing.other",
+          args: { ...args, part: String(part), parts: String(parts), stage },
+          text: `Place ${p.name} (no file version)`,
+        }),
+        actions,
+        finishes: true,
+      },
+    ];
+    return {
+      ok: true,
+      value: () =>
+        toParts(
+          efs,
+          o,
+          units,
+          (base) => ({ kind: "efs.otherEntryReview", ...base, entry: entryOf(p), subject }),
+          me,
+          basis,
+          needName ? 1 : 0,
+        ),
+    };
+  });
+}
+
 // ---- a lone hide (test-only: exported from @efs/sdk/testing)
 
 export interface LoneHideInput {
