@@ -32,6 +32,11 @@ export interface Reason {
    * "split into N"). A save re-splits a part of tag or folder statements itself; this is what it stopped at otherwise.
    */
   gas?: { estimate: bigint; cap: bigint; suggestedParts: number };
+  /**
+   * Set on INSUFFICIENT_FUNDS when the send asked for a gas limit: the limit the wallet must hold enough to cover. A
+   * save is charged only the gas it uses, which is usually less. Absent for a batch (the wallet sets each call's gas).
+   */
+  funds?: { gasLimit: bigint };
   /** Set on WALLET_MISMATCH: the chain and account the plan needs, and what the wallet is on now. */
   wallet?: WalletMismatch;
   /**
@@ -99,6 +104,12 @@ export type ReasonCode =
   /** AMBIGUOUS: the wallet lost its connection (4900, 4901), possibly after relaying. Reconcile decides. */
   | "WALLET_DISCONNECTED"
   | "WALLET_CHAIN_DISCONNECTED"
+  /**
+   * AMBIGUOUS: the wallet or its node refused the transaction for insufficient funds, after signing (a wallet that
+   * queued it could still send it). The account must hold enough for the gas limit (`funds.gasLimit`), though a save is
+   * charged only what it uses. Reconcile decides before it can be sent again.
+   */
+  | "INSUFFICIENT_FUNDS"
   /** A part that was sent was never committed and is proven so past its deadline. Sending again is the person's call. */
   | "EXPIRED"
   | "BUSY"

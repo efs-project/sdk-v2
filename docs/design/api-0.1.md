@@ -270,6 +270,7 @@ export interface Reason {
   served?: readonly { endpoint: string; blockNumber: bigint }[]; // on BEHIND: each endpoint's head
   feeSchedule?: { document: string; chain: string | null; freshSlotGas: bigint }; // the document is not the chain's
   gas?: { estimate: bigint; cap: bigint; suggestedParts: number }; // on OVER_TX_GAS_CAP: how many publications
+  funds?: { gasLimit: bigint };   // on INSUFFICIENT_FUNDS for a single send: the limit the wallet must cover
 }
 export interface RevertInfo {
   selector: Hex;                // always
@@ -287,7 +288,7 @@ export type ReasonCode =
   | "JOURNAL_UNAVAILABLE" | "OVER_TX_GAS_CAP" | "STALE" | "WALLET_MISMATCH" | "USER_REJECTED" | "BUSY"
   | "NOT_YET_DECIDABLE" | "REORGED_DROPPED" | "EXPIRED"
   | "WALLET_UNAUTHORIZED" | "WALLET_UNSUPPORTED" | "WALLET_INVALID_PARAMS"        // NOT_SENT
-  | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED"                         // AMBIGUOUS
+  | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED" | "INSUFFICIENT_FUNDS"   // AMBIGUOUS
   | "BEHIND"                    // every endpoint behind the read floor or atLeast (floor, served)
   | (string & Record<never, never>);    // open union
 ```
@@ -1030,6 +1031,18 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   WALLET_DISCONNECTED or 4901 WALLET_CHAIN_DISCONNECTED, can be raised after the wallet relayed, so it is AMBIGUOUS
   with that named reason (`retry: "after-reconcile"`: "Your wallet lost its connection; checking whether the save
   went out"), as is any other wallet error or a lost response: the part stays in flight until reconcile decides.
+- **Insufficient funds:** a wallet or node that refuses the transaction because the account can't cover its gas
+  limit at the current fees (the words "insufficient funds" in the error or one nested in it, whatever its code, on
+  eth_sendTransaction, wallet_sendCalls or a local account's eth_sendRawTransaction) is AMBIGUOUS
+  `INSUFFICIENT_FUNDS` (`retry: "after-reconcile"`): the refusal comes after signing, and a wallet that queued the
+  signed transaction could still send it. A single send carries `reason.funds.gasLimit`, the limit it asked for; a
+  batch carries none (the wallet sets each call's gas) and keeps its batch size. The detail says "the wallet needs
+  enough to cover the gas limit of N; a save is charged only the gas it uses", and the copy should say the same: the
+  limit, never the cost. The part stays in flight; it can be sent again (Send
+  again, `resume`) once reconcile proves it never went out, as EXPIRED: past its deadline (900 s by default) at a
+  finalized block, about 15 minutes on a local chain and up to about half an hour on a public one. A wallet that
+  disables its confirm button instead (MetaMask) leaves the person only Reject, which is a plain 4001
+  USER_REJECTED. eth_estimateGas is never asked with fee fields, so it never answers for funds.
 - **EXPIRED:** a part that was sent and never committed, then proven not committed (a finalized block past its
   deadline, or its nonce finalized for another plan) without a reorg, is NOT_STARTED or PARTIAL with reason EXPIRED
   (`retry: "transient"`), never a bare "not sent": "This save didn't go through — Send again" (resume, the
