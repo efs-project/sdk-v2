@@ -3,11 +3,13 @@
 // the kernel's batch limits (LedgerCore._bounds), atomic groups, and honest refusals.
 import { describe, expect, it } from "vitest";
 import {
+  type BindRow,
   budgetOf,
   floorMismatch,
   type GasModel,
   gasPlanFor,
   kernelQuote,
+  modelGas,
   type PlannedAction,
   packBatches,
   partGas,
@@ -181,6 +183,93 @@ describe("splitPublications", () => {
   });
 });
 
+describe("the list tiers: every later statement at the long tier, first at its place or not", () => {
+  const C = GAS_SCHEDULES.prague.constants;
+  const w = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as Hex;
+  /** A bind-kind action at place (purpose p, subject q). */
+  const at = (kind: number, row: BindRow, p: number, q: number, first = false): PlannedAction => ({
+    action: { ...plain(kind).action, purpose: w(p), subject: w(q) },
+    body: "0x",
+    bindRow: row,
+    firstStatement: first,
+  });
+  /** What modelGas charges for these actions above the fixed term. */
+  const priced = (list: PlannedAction[]) => modelGas(list, C) - Math.round(C.fixed);
+  const mask = (p: number, q: number) => at(ACTION.UNBIND, "unbindTag", p, q);
+
+  it("a later statement whose row has long tiers: LongNewPlace when first at its place, LongSamePlace after", () => {
+    expect(priced([mask(1, 1)])).toBe(C.unbindTagLongNewPlace);
+    expect(priced([mask(1, 1), mask(1, 1), mask(1, 1)])).toBe(
+      C.unbindTagLongNewPlace + 2 * C.unbindTagLongSamePlace,
+    );
+    // A place is (purpose, subject): another subject, or another purpose, is a new place.
+    expect(priced([mask(1, 1), mask(1, 2), mask(2, 1)])).toBe(3 * C.unbindTagLongNewPlace);
+    // Of any kind: a release after a mask at the same place is at the same place.
+    expect(priced([mask(1, 1), at(ACTION.RELEASE, "releaseTag", 1, 1)])).toBe(
+      C.unbindTagLongNewPlace + C.releaseTagLongSamePlace,
+    );
+    // Every long row the model has, and restoreFolder (contracts 6d11858: a folder restore had no row before).
+    for (const row of ["restoreFolder", "unbindProperty", "releaseSame", "restoreBroader"] as const)
+      expect(priced([at(ACTION.BIND, row, 3, 3), at(ACTION.BIND, row, 3, 3)])).toBe(
+        C[`${row}LongNewPlace`] + C[`${row}LongSamePlace`],
+      );
+  });
+
+  it("a re-bind never takes a long tier: NewPlace when first at its place, its row after; it still marks the place", () => {
+    const rebind = (q: number) => at(ACTION.BIND, "bindTagNumberChange", 1, q);
+    expect(priced([rebind(1), rebind(1), rebind(2)])).toBe(
+      2 * C.bindTagNumberChangeNewPlace + C.bindTagNumberChange,
+    );
+    expect(priced([at(ACTION.BIND, "bindFolderRebind", 1, 1)])).toBe(C.bindFolderRebindNewPlace);
+    // A row with no tier at all (a HEAD re-bind) is its row.
+    expect(priced([at(ACTION.BIND, "bindHeadRebind", 1, 1)])).toBe(C.bindHeadRebind);
+    // An earlier re-bind at the place makes a later mask there a same-place statement.
+    expect(priced([rebind(1), mask(1, 1)])).toBe(
+      C.bindTagNumberChangeNewPlace + C.unbindTagLongSamePlace,
+    );
+  });
+
+  it("a first statement pays its row and never marks a place", () => {
+    const firstTag = at(ACTION.BIND, "bindTagFresh", 1, 1, true);
+    expect(priced([firstTag, mask(1, 1)])).toBe(C.bindTagFresh + C.unbindTagLongNewPlace);
+    expect(priced([at(ACTION.UNBIND, "unbindTagLone", 1, 1, true)])).toBe(C.unbindTagLone);
+  });
+
+  it("without a row: the dearest of its kind, its tiers included", () => {
+    const bare = { ...mask(1, 1) } as PlannedAction;
+    delete (bare as { bindRow?: BindRow }).bindRow;
+    const unbinds = [
+      "unbindFolder",
+      "unbindTagLone",
+      "unbindTag",
+      "unbindProperty",
+      "unbindSame",
+      "unbindBroader",
+    ] as const;
+    const dearest = Math.max(
+      ...unbinds.flatMap((r) => [
+        C[r],
+        (C as unknown as Record<string, number>)[`${r}LongNewPlace`] ?? 0,
+      ]),
+    );
+    expect(priced([bare])).toBe(dearest);
+  });
+
+  it("each part a split makes is priced on its own: its first statement at a place is first there again", () => {
+    const limits = { ...LIMITS, maxBindsPerPublication: 64 };
+    const many = Array.from({ length: 90 }, (_, i) => ({ ...mask(1, 1), group: i }));
+    const r = splitPublications(many, { model: FLOORED, limits, txGasCap: CAP });
+    if (!r.ok) throw new Error(r.reason.code);
+    expect(r.parts.length).toBeGreaterThan(1);
+    for (const p of r.parts) {
+      const n = p.actions.length;
+      expect(p.rule.E).toBe(
+        Math.round(C.fixed + C.unbindTagLongNewPlace + (n - 1) * C.unbindTagLongSamePlace),
+      );
+    }
+  });
+});
+
 describe("gasPlanFor", () => {
   const dep = (chain: ChainFacts | null) => ({ chain }) as unknown as DeploymentInfo;
   const osaka: ChainFacts = {
@@ -322,7 +411,7 @@ describe("packBatches", () => {
   });
 });
 
-/** The release's prague model, with its kernel floor (formula 2). */
+/** The release's prague model, with its kernel floor (formula 3). */
 const FLOORED = {
   ...GAS_SCHEDULES.prague.constants,
   schedule: "prague",
@@ -330,40 +419,125 @@ const FLOORED = {
 } as unknown as GasModel;
 const releases = (n: number) => Array.from({ length: n }, () => plain(ACTION.RELEASE));
 
-describe("the kernel's floor (formula 2)", () => {
-  it("a 64-entry remove fits one publication now: the reserve per bind is 7,400, not 120,000", () => {
+describe("the kernel's floor (formula 3)", () => {
+  it("a 64-entry remove is 58 + 6 on prague: bound by the floor V, as contracts 6d11858 item 43 says (64 at 3ca53ba)", () => {
     const limits = { ...LIMITS, maxBindsPerPublication: 64 };
     const r = splitPublications(releases(64), { model: FLOORED, limits, txGasCap: CAP });
     if (!r.ok) throw new Error(r.reason.code);
-    expect(r.parts.length).toBe(1);
+    expect(r.parts.map((p) => p.actions.length)).toEqual([58, 6]);
     const rule = r.parts[0]?.rule;
     expect(rule?.V).toBeGreaterThan(rule?.E ?? 0);
     expect(Math.max(rule?.E ?? 0, rule?.V ?? 0)).toBeLessThanOrEqual(r.budget);
   });
 
-  it("first statements: a RELEASE never is; an UNBIND only when the planner says so; a BIND unless it re-states", () => {
+  it("row classes (formula 3): first, re-bind or later; a RELEASE is later; an UNBIND first only when the planner says so", () => {
     const f = FLOORED.floor as NonNullable<GasModel["floor"]>;
-    const fresh = (list: PlannedAction[]) => kernelQuote(list, f).freshSlots;
-    const base = fresh([]);
+    const w = f.workModel;
+    const q = (list: PlannedAction[], o: { noPrincipal?: boolean } = {}) => {
+      const r = kernelQuote(list, f, o);
+      return [r.freshSlots, r.rewrites, r.prefixFloor] as const;
+    };
     const bind = (extra: Partial<PlannedAction> = {}): PlannedAction => ({
       ...plain(ACTION.BIND),
       ...extra,
     });
-    const w = f.workModel;
-    const slots = (fresh10: number) => Math.ceil((w.freshPerPublication + fresh10) / 10);
-    expect(base).toBe(slots(0));
-    expect(fresh([bind()])).toBe(slots(w.freshPerBindFresh));
-    expect(fresh([bind({ bindRow: "bindFolderRebind" })])).toBe(slots(0));
-    expect(fresh([bind({ bindRow: "restoreTag" })])).toBe(slots(0));
-    expect(fresh([bind({ bindRow: "bindTagSecondAuthor" })])).toBe(slots(w.freshPerBindFresh));
-    expect(fresh([plain(ACTION.UNBIND)])).toBe(slots(0));
-    expect(fresh([{ ...plain(ACTION.UNBIND), firstStatement: true }])).toBe(
-      slots(w.freshPerBindFresh),
+    /** The quote of an empty publication plus these rows (fresh ×10, rewrites ×10, compute). */
+    const rows = (...rs: [number, number, number][]) => {
+      const fr = rs.reduce((t, r) => t + r[0], w.freshPerPublication);
+      const rw = rs.reduce((t, r) => t + r[1], w.rwPerPublication);
+      const c = rs.reduce((t, r) => t + r[2], w.computeBase + w.computePerAction * rs.length);
+      const slots = Math.ceil(fr / 10);
+      const rewrites = Math.ceil(rw / 10);
+      return [
+        slots,
+        rewrites,
+        c + slots * f.limits.floorFreshGas + rewrites * f.limits.floorRewriteGas,
+      ];
+    };
+    const FIRST: [number, number, number] = [
+      w.freshPerBindFirst,
+      w.rwPerBindFirst,
+      w.computePerBindFirst,
+    ];
+    const REBIND: [number, number, number] = [w.freshPerRebind, w.rwPerRebind, w.computePerRebind];
+    const LATER: [number, number, number] = [
+      w.freshPerBindLater,
+      w.rwPerBindLater,
+      w.computePerBindLater,
+    ];
+    const max = (...rs: [number, number, number][]): [number, number, number] => [
+      Math.max(...rs.map((r) => r[0])),
+      Math.max(...rs.map((r) => r[1])),
+      Math.max(...rs.map((r) => r[2])),
+    ];
+    expect(q([bind()])).toEqual(rows(FIRST));
+    expect(q([bind({ bindRow: "bindTagSecondAuthor" })])).toEqual(rows(FIRST));
+    expect(q([bind({ bindRow: "bindFolderRebind" })])).toEqual(rows(REBIND));
+    expect(q([bind({ bindRow: "bindTagNumberChange" })])).toEqual(rows(REBIND));
+    expect(q([bind({ bindRow: "restoreTag" })])).toEqual(rows(LATER));
+    expect(q([bind({ bindRow: "restoreFolder" })])).toEqual(rows(LATER));
+    expect(q([plain(ACTION.UNBIND)])).toEqual(rows(LATER));
+    expect(q([{ ...plain(ACTION.UNBIND), firstStatement: true }])).toEqual(rows(FIRST));
+    expect(q([{ ...plain(ACTION.RELEASE), firstStatement: true }])).toEqual(rows(LATER));
+    // A later BIND of no known row may be a re-bind or a restore: the larger of each field.
+    expect(q([bind({ firstStatement: false })])).toEqual(rows(max(REBIND, LATER)));
+    // Generation 1 has the later row at or above the re-bind row in every field; a model where it is not.
+    const bigRebind = { ...f, workModel: { ...w, freshPerRebind: w.freshPerBindLater + 30 } };
+    expect(kernelQuote([bind({ firstStatement: false })], bigRebind).freshSlots).toBe(
+      Math.ceil((w.freshPerPublication + w.freshPerBindLater + 30) / 10),
     );
-    expect(fresh([{ ...plain(ACTION.RELEASE), firstStatement: true }])).toBe(slots(0));
-    // A later statement costs rewrites instead of a fresh slot.
-    expect(kernelQuote([plain(ACTION.RELEASE)], f).rewrites).toBe(
-      Math.ceil((w.rwPerPublication + w.rwPerBind + w.rwPerBindLater) / 10),
+    // With no principal (LedgerIngress.indexFloor) every bind takes the largest of the three rows, field by field.
+    expect(
+      q([bind({ bindRow: "restoreTag" }), plain(ACTION.RELEASE)], { noPrincipal: true }),
+    ).toEqual(rows(max(FIRST, REBIND, LATER), max(FIRST, REBIND, LATER)));
+    // Every WITHDRAW after the first adds the later row; the first is in the per-publication terms.
+    const withdraw = plain(ACTION.WITHDRAW);
+    const withdraws = (n: number) => kernelQuote(Array(n).fill(withdraw), f);
+    const later2 = rows([0, 0, 0], LATER);
+    expect([withdraws(2).freshSlots, withdraws(2).rewrites, withdraws(2).prefixFloor]).toEqual(
+      later2,
+    );
+  });
+
+  it("the surcharge: its row of the same class is added when the purpose is the work model's surchargePurpose", () => {
+    const f0 = FLOORED.floor as NonNullable<GasModel["floor"]>;
+    const P = `0x${"5a".repeat(32)}` as Hex;
+    const w = {
+      ...f0.workModel,
+      surchargePurpose: P,
+      surchargeFreshFirst: 30,
+      surchargeRwFirst: 40,
+      surchargeComputeFirst: 5000,
+      surchargeFreshLater: 10,
+      surchargeRwLater: 70,
+      surchargeComputeLater: 9000,
+    };
+    const f = { ...f0, workModel: w };
+    const at = (purpose: Hex, extra: Partial<PlannedAction> = {}) =>
+      kernelQuote(
+        [{ ...plain(ACTION.BIND), action: { ...plain(ACTION.BIND).action, purpose }, ...extra }],
+        f,
+      );
+    const plainFirst = kernelQuote([plain(ACTION.BIND)], f0);
+    const other = `0x${"11".repeat(32)}` as Hex;
+    expect(at(other)).toEqual(
+      kernelQuote(
+        [{ ...plain(ACTION.BIND), action: { ...plain(ACTION.BIND).action, purpose: other } }],
+        f0,
+      ),
+    );
+    const first = at(P);
+    expect(first.freshSlots).toBe(
+      Math.ceil((w.freshPerPublication + w.freshPerBindFirst + 30) / 10),
+    );
+    expect(first.prefixFloor).toBeGreaterThan(plainFirst.prefixFloor);
+    const later = at(P, { bindRow: "restoreTag" });
+    expect(later.rewrites).toBe(Math.ceil((w.rwPerPublication + w.rwPerBindLater + 70) / 10));
+    // The kernel's own test is equality of the words, zero included (LedgerIngress._foldOne): a zero surchargePurpose
+    // surcharges a zero purpose, so the planner does too (generation 1's surcharge rows are all zero).
+    const zero = { ...f, workModel: { ...w, surchargePurpose: ZERO_WORD } };
+    expect(kernelQuote([plain(ACTION.BIND)], zero).freshSlots).toBe(
+      Math.ceil((w.freshPerPublication + w.freshPerBindFirst + 30) / 10),
     );
   });
 
@@ -402,11 +576,23 @@ describe("the kernel's floor (formula 2)", () => {
     expect(floorMismatch(heavier, FLOORED)?.detail).toMatch(/workModel.finalComputePerBind/);
     const { floor: _none, ...unfloored } = FLOORED;
     expect(floorMismatch(same, unfloored)?.code).toBe("UNSUPPORTED_PROFILE");
-    const formula3 = {
+    const formula2 = {
       ...FLOORED,
-      floor: { ...f, workModel: { ...f.workModel, formulaVersion: 3 } },
+      floor: { ...f, workModel: { ...f.workModel, formulaVersion: 2 } },
     };
-    expect(floorMismatch(d, formula3)?.detail).toMatch(/formula 3/);
+    expect(floorMismatch(d, formula2)?.detail).toMatch(/formula 2; this SDK plans with formula 3/);
+    // The surcharge purpose is a word: compared as one, whatever its case.
+    const word = (w: string) =>
+      ({
+        kernelFloor: { workModel: { ...f.workModel, surchargePurpose: w }, ...f.limits },
+      }) as unknown as DeploymentInfo;
+    const P = `0x${"ab".repeat(32)}`;
+    const withP = {
+      ...FLOORED,
+      floor: { ...f, workModel: { ...f.workModel, surchargePurpose: P as Hex } },
+    };
+    expect(floorMismatch(word(P.toUpperCase().replace("0X", "0x")), withP)).toBeNull();
+    expect(floorMismatch(word(P), FLOORED)?.detail).toMatch(/workModel.surchargePurpose/);
   });
 
   it("an atomic batch counts each part's floor; the budget is the contracts' integer rule", () => {

@@ -9,7 +9,12 @@
 //   E  the model's execution estimate: fixed + Σ actions (+ the first-write surcharge on a principal's first write);
 //   V  the visible gas the kernel's floor checks need: max(K + prefixNeed(P), E) + ⌈F·64/63⌉ + kernelTail, where K is
 //      the kernel's own share of E (floor.kernel, the same model with the index's callbacks removed), and P and F the
-//      kernel's own quote (prefix floor, final reserve) from the work model (formula 2).
+//      kernel's own quote (prefix floor, final reserve) from the work model (formula 3).
+// A later statement (a mask, release, restore or re-bind) is priced by the list tiers (gas/model.json laterLists): this
+// SDK never passes the author's entry count, so every later statement whose row has long tiers takes the long tier
+// (<row>LongNewPlace for the first later statement at its place in the publication, <row>LongSamePlace after it), which
+// is safe and moves no largest batch (those batches are bound by V; contracts tools/RELEASE.md items 43 and 47). A
+// count read at the pin goes stale as soon as an earlier part of the same save, or another tab, lands at that place.
 // The headroom covers the 21,000 intrinsic gas, the calldata and the model's error. eth_estimateGas on the exact call
 // stays the authority before anything is sent, and the gas limit comes from the estimate, never from V.
 import { type Reason, reason } from "../core/errors.js";
@@ -22,8 +27,40 @@ import type { ActionData } from "./types.js";
 /** The per-level terms a first TAG statement pays at each proper ancestor of its topic (tagLists). */
 export type TagLevel = "mineNew" | "mineExisting" | "sharedNew" | "sharedExisting";
 
+/** Rows with a new-place tier: a later statement first at its place in a publication pays `<row>NewPlace`. */
+export type NewPlaceRow =
+  | "unbindTag"
+  | "releaseTag"
+  | "restoreTag"
+  | "bindTagNumberChange"
+  | "unbindFolder"
+  | "releaseFolder"
+  | "restoreFolder"
+  | "bindFolderRebind";
+/** Rows with long tiers: a later statement in a long or unknown-length list pays `<row>LongNewPlace` or `<row>LongSamePlace`. */
+export type LongRow =
+  | "unbindTag"
+  | "releaseTag"
+  | "restoreTag"
+  | "unbindFolder"
+  | "releaseFolder"
+  | "restoreFolder"
+  | "unbindProperty"
+  | "releaseProperty"
+  | "unbindSame"
+  | "releaseSame"
+  | "restoreSame"
+  | "unbindBroader"
+  | "releaseBroader"
+  | "restoreBroader";
+/** The list tiers' constants (gas/model.json laterLists; contracts 6d11858 tools/RELEASE.md item 47). */
+export type TierConstant =
+  | `${NewPlaceRow}NewPlace`
+  | `${LongRow}LongNewPlace`
+  | `${LongRow}LongSamePlace`;
+
 /** One fee schedule's fitted constants (release.json gasModel.schedules[name]; generated as GAS_SCHEDULES). */
-export interface GasConstants {
+export interface GasConstants extends Readonly<Record<TierConstant, number>> {
   fixed: number;
   perWord: number;
   perByte: number;
@@ -43,6 +80,7 @@ export interface GasConstants {
   bindFolderRebind: number;
   unbindFolder: number;
   releaseFolder: number;
+  restoreFolder: number;
   bindTagFresh: number;
   bindTagSecondAuthor: number;
   bindTagNumberChange: number;
@@ -70,7 +108,13 @@ export interface GasConstants {
   tagLevel: Readonly<Record<TagLevel, number>>;
 }
 
-/** The work model the kernel quotes its floor with (formula 2; efs-deployment index.workModel). */
+/**
+ * The work model the kernel quotes its floor with (formula 3; efs-deployment index.workModel, 32 words). Each BIND,
+ * UNBIND or RELEASE adds the row of its class (fresh slots ×10, rewrites ×10, compute): a first statement (the
+ * author's head UNSET), a re-bind (a BIND on a BOUND head) or another later statement (a mask, release or restore),
+ * plus the surcharge's row of the same class when its purpose is `surchargePurpose`. Every WITHDRAW after the first of
+ * a publication adds the later row.
+ */
 export interface WorkModel {
   formulaVersion: number;
   freshPerPublication: number;
@@ -78,17 +122,33 @@ export interface WorkModel {
   freshPerPublishFresh: number;
   freshPerPublishExisting: number;
   rwPerPublish: number;
-  freshPerBindFresh: number;
-  rwPerBind: number;
-  rwPerBindLater: number;
   freshPerRef: number;
   freshPerDigestSpec: number;
   computeBase: number;
   computePerAction: number;
-  computePerHookEffect: number;
   finalComputeBase: number;
   finalComputePerBind: number;
   finalComputePerPublish: number;
+  freshPerBindFirst: number;
+  rwPerBindFirst: number;
+  computePerBindFirst: number;
+  freshPerRebind: number;
+  rwPerRebind: number;
+  computePerRebind: number;
+  freshPerBindLater: number;
+  rwPerBindLater: number;
+  computePerBindLater: number;
+  /** The purpose word whose statements pay the surcharge rows too (a bytes32 word; generation 1 has no surcharge). */
+  surchargePurpose: Hex;
+  surchargeFreshFirst: number;
+  surchargeRwFirst: number;
+  surchargeComputeFirst: number;
+  surchargeFreshRebind: number;
+  surchargeRwRebind: number;
+  surchargeComputeRebind: number;
+  surchargeFreshLater: number;
+  surchargeRwLater: number;
+  surchargeComputeLater: number;
 }
 
 /** The kernel's floor, per schedule (gas/model.json profiles.<schedule>.floor). */
@@ -124,6 +184,7 @@ export type BindRow =
   | "bindFolderRebind"
   | "unbindFolder"
   | "releaseFolder"
+  | "restoreFolder"
   | "bindTagFresh"
   | "bindTagSecondAuthor"
   | "bindTagNumberChange"
@@ -150,6 +211,7 @@ const BIND_ROWS: readonly BindRow[] = [
   "bindFolderFreshFile",
   "bindFolderFreshDirectory",
   "bindFolderRebind",
+  "restoreFolder",
   "bindTagFresh",
   "bindTagSecondAuthor",
   "bindTagNumberChange",
@@ -185,8 +247,42 @@ const LATER_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
   "restoreTag",
   "unbindTag",
   "unbindFolder",
+  "restoreFolder",
   "bindPropertyRebind",
   "restoreSame",
+  "restoreBroader",
+]);
+/** Later statements that are re-binds (a BIND on a BOUND head): the work model's re-bind row, and no long tier. */
+const REBIND_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
+  "bindHeadRebind",
+  "bindFolderRebind",
+  "bindTagNumberChange",
+  "bindPropertyRebind",
+]);
+const NEW_PLACE_ROWS: ReadonlySet<BindRow> = new Set<NewPlaceRow>([
+  "unbindTag",
+  "releaseTag",
+  "restoreTag",
+  "bindTagNumberChange",
+  "unbindFolder",
+  "releaseFolder",
+  "restoreFolder",
+  "bindFolderRebind",
+]);
+const LONG_ROWS: ReadonlySet<BindRow> = new Set<LongRow>([
+  "unbindTag",
+  "releaseTag",
+  "restoreTag",
+  "unbindFolder",
+  "releaseFolder",
+  "restoreFolder",
+  "unbindProperty",
+  "releaseProperty",
+  "unbindSame",
+  "releaseSame",
+  "restoreSame",
+  "unbindBroader",
+  "releaseBroader",
   "restoreBroader",
 ]);
 
@@ -290,8 +386,26 @@ const isBindLike = (k: number): boolean =>
   k === ACTION.BIND || k === ACTION.UNBIND || k === ACTION.RELEASE;
 const ceilDiv = (a: number, b: number): number => Math.floor((a + b - 1) / b);
 
-/** The model's gas for one action (without the per-publication terms). */
-export function actionGas(a: PlannedAction, m: GasConstants): number {
+/**
+ * The constant a bind-kind row is priced at (gas-plan.mjs `laterKey`, with the author's entry count unknown): a first
+ * statement pays its row; a later statement whose row has long tiers pays `<row>LongNewPlace` when it is the first later
+ * statement at its place in the publication, else `<row>LongSamePlace`; a later statement with only a new-place tier (a
+ * re-bind, which never searches the list) pays `<row>NewPlace` when first at its place, else its row.
+ */
+function tierKey(row: BindRow, later: boolean, firstAtPlace: boolean): BindRow | TierConstant {
+  if (!later) return row;
+  if (LONG_ROWS.has(row))
+    return `${row as LongRow}${firstAtPlace ? "LongNewPlace" : "LongSamePlace"}` as const;
+  if (firstAtPlace && NEW_PLACE_ROWS.has(row)) return `${row as NewPlaceRow}NewPlace` as const;
+  return row;
+}
+
+/**
+ * The model's gas for one action (without the per-publication terms). `firstAtPlace` (for a later statement): no
+ * earlier later statement of the same publication is at its place (purpose, subject); omitted, true, the dearer
+ * reading. modelGas and publicationGas work it out for each action of the list they price.
+ */
+export function actionGas(a: PlannedAction, m: GasConstants, firstAtPlace = true): number {
   const k = a.action.kind;
   if (k === ACTION.PUBLISH) {
     if (a.exists) return m.publishExisting;
@@ -305,14 +419,35 @@ export function actionGas(a: PlannedAction, m: GasConstants): number {
   if (k === ACTION.CREATE) return m.create;
   if (k === ACTION.WITHDRAW) return m.withdraw;
   if (isBindLike(k)) {
+    const later = !firstStatement(a);
     const rows = k === ACTION.BIND ? BIND_ROWS : k === ACTION.UNBIND ? UNBIND_ROWS : RELEASE_ROWS;
-    let g = a.bindRow !== undefined ? m[a.bindRow] : Math.max(...rows.map((r) => m[r]));
+    // Without a row, the dearest of its kind, its tiers included.
+    let g =
+      a.bindRow !== undefined
+        ? m[tierKey(a.bindRow, later, firstAtPlace)]
+        : Math.max(...rows.flatMap((r) => [m[r], m[tierKey(r, later, firstAtPlace)]]));
     for (const [level, n] of Object.entries(a.levels ?? {}))
       g += m.tagLevel[level as TagLevel] * (n ?? 0);
     return g;
   }
   // an unknown kind: priced high, never zero
   return Math.max(m.create, ...BIND_ROWS.map((r) => m[r]), ...UNBIND_ROWS.map((r) => m[r]));
+}
+
+/** A later statement's place: (purpose, subject), the author's scope list it changes (gas/model.json laterLists). */
+const placeOf = (a: PlannedAction): string =>
+  `${a.action.purpose.toLowerCase()}:${a.action.subject.toLowerCase()}`;
+
+/** Each action's model gas in order, each later statement priced first at its place or not, within this list. */
+function actionGases(actions: readonly PlannedAction[], m: GasConstants): number[] {
+  const places = new Set<string>();
+  return actions.map((a) => {
+    if (!isBindLike(a.action.kind) || firstStatement(a)) return actionGas(a, m);
+    const place = placeOf(a);
+    const firstAtPlace = !places.has(place);
+    places.add(place);
+    return actionGas(a, m, firstAtPlace);
+  });
 }
 
 /** The model's execution estimate of one publication (gas-plan.mjs `estimate`), without intrinsic or calldata gas. */
@@ -322,7 +457,7 @@ export function modelGas(
   firstWrite = false,
 ): number {
   let gas = m.fixed + (firstWrite ? m.firstWriteSurcharge : 0);
-  for (const a of actions) gas += actionGas(a, m);
+  for (const g of actionGases(actions, m)) gas += g;
   return Math.round(gas);
 }
 
@@ -337,10 +472,11 @@ export function publicationGas(
 ): number {
   let gas = m.fixed + INTRINSIC + CALL_OVERHEAD_BYTES * NONZERO_BYTE;
   if (firstWrite) gas += Math.max(0, m.firstWriteSurcharge);
-  for (const a of actions) {
+  const each = actionGases(actions, m);
+  actions.forEach((a, i) => {
     const n = bodyLen(a.body);
-    gas += actionGas(a, m) + (ACTION_BYTES + Math.ceil(n / 32) * 32) * NONZERO_BYTE;
-  }
+    gas += (each[i] as number) + (ACTION_BYTES + Math.ceil(n / 32) * 32) * NONZERO_BYTE;
+  });
   return Math.ceil(gas);
 }
 
@@ -353,12 +489,35 @@ export interface KernelQuote {
 }
 
 /** Whether a bind-kind action is a first statement (the author's head at the position is UNSET). */
-function firstStatement(a: PlannedAction, everyBindFirst: boolean): boolean {
+function firstStatement(a: PlannedAction): boolean {
   const k = a.action.kind;
   if (k === ACTION.RELEASE) return false; // a release always follows a statement
-  if (everyBindFirst) return true;
   if (a.firstStatement !== undefined) return a.firstStatement;
   return k === ACTION.BIND && !(a.bindRow !== undefined && LATER_ROWS.has(a.bindRow));
+}
+
+type RowClass = "First" | "Rebind" | "Later";
+/**
+ * The work model's row class of a bind-kind action (LedgerIngress._foldOne): a first statement; a re-bind (a BIND on a
+ * BOUND head); or another later statement (a mask, release or restore; a RELEASE always). A later BIND whose row is
+ * not known may be either, so it takes both (the larger of each field).
+ */
+function classesOf(a: PlannedAction): readonly RowClass[] {
+  if (firstStatement(a)) return ["First"];
+  if (a.action.kind !== ACTION.BIND) return ["Later"];
+  if (a.bindRow === undefined) return ["Rebind", "Later"];
+  return REBIND_ROWS.has(a.bindRow) ? ["Rebind"] : ["Later"];
+}
+
+/** One row of the work model (fresh ×10, rewrites ×10, compute), and its surcharge's row of the same class. */
+function rowOf(w: WorkModel, cls: RowClass, surcharged: boolean): [number, number, number] {
+  const k = cls === "Rebind" ? "Rebind" : (`Bind${cls}` as const);
+  const f = w[`freshPer${k}`];
+  const r = w[`rwPer${k}`];
+  const c = w[`computePer${k}`];
+  return surcharged
+    ? [f + w[`surchargeFresh${cls}`], r + w[`surchargeRw${cls}`], c + w[`surchargeCompute${cls}`]]
+    : [f, r, c];
 }
 
 /** The refs and specs the quote charges a record of this action's Type (the dearest when the Type is unknown). */
@@ -378,15 +537,18 @@ function typeTerms(
 }
 
 /**
- * The kernel's quote (LedgerIngress._foldAndQuote, formula 2), exactly as gas-plan.mjs computes it: fresh slots for
- * each first statement and each new record (with its references and digest specs), rewrites per publish and per bind
- * (more for a later statement), and the prefix floor and final reserve they price. `everyBindFirst` prices every BIND
- * and UNBIND as a first statement, as the kernel's own indexFloor helper does (an upper bound: never plan from it).
+ * The kernel's quote (LedgerIngress._foldAndQuote, formula 3), exactly as gas-plan.mjs `quote()` computes it: fresh
+ * slots for each new record (with its references and digest specs) and each publish's rewrites; for each BIND, UNBIND or
+ * RELEASE the work model's row of its class (classesOf), with the surcharge's row when its purpose is the work model's
+ * `surchargePurpose` (the kernel's own test: the words are equal, zero included); every WITHDRAW after the first adds
+ * the later row; and the prefix floor and final reserve they price. `noPrincipal` prices as the kernel does with no
+ * principal (its `indexFloor` helper): every bind adds the largest of the three rows, field by field, surcharge
+ * included. An upper bound: never plan from it.
  */
 export function kernelQuote(
   actions: readonly (ActionData | PlannedAction)[],
   f: FloorModel,
-  o: { everyBindFirst?: boolean; typeNames?: Readonly<Record<string, string>> } = {},
+  o: { noPrincipal?: boolean; typeNames?: Readonly<Record<string, string>> } = {},
 ): KernelQuote {
   const w = f.workModel;
   let fresh10 = w.freshPerPublication;
@@ -394,6 +556,20 @@ export function kernelQuote(
   let compute = w.computeBase + w.computePerAction * actions.length;
   let binds = 0;
   let publishes = 0;
+  let withdraws = 0;
+  const add = (classes: readonly RowClass[], surcharged: boolean) => {
+    let [fr, rw, c] = [0, 0, 0];
+    for (const cls of classes) {
+      const [f2, r2, c2] = rowOf(w, cls, surcharged);
+      fr = Math.max(fr, f2);
+      rw = Math.max(rw, r2);
+      c = Math.max(c, c2);
+    }
+    fresh10 += fr;
+    rw10 += rw;
+    compute += c;
+  };
+  const surchargePurpose = w.surchargePurpose.toLowerCase();
   for (const x of actions) {
     const a: PlannedAction = "action" in x ? x : { action: x, body: "0x" };
     const k = a.action.kind;
@@ -408,10 +584,11 @@ export function kernelQuote(
       publishes++;
     } else if (isBindLike(k)) {
       binds++;
-      if (firstStatement(a, o.everyBindFirst === true)) fresh10 += w.freshPerBindFresh;
-      else rw10 += w.rwPerBindLater;
-      rw10 += w.rwPerBind;
-      compute += w.computePerHookEffect;
+      const surcharged = a.action.purpose.toLowerCase() === surchargePurpose;
+      add(o.noPrincipal === true ? ["First", "Rebind", "Later"] : classesOf(a), surcharged);
+    } else if (k === ACTION.WITHDRAW) {
+      // the first WITHDRAW of a publication is covered by the per-publication terms
+      if (withdraws++ !== 0) add(["Later"], false);
     }
   }
   const freshSlots = ceilDiv(fresh10, 10);
@@ -681,8 +858,8 @@ export type GasPlan =
     }
   | { ok: false; reason: Reason };
 
-/** The work-model formula the planner implements (gas/model.json floor, formula 2). */
-export const FLOOR_FORMULA = 2;
+/** The work-model formula the planner implements (gas/model.json floor, formula 3). */
+export const FLOOR_FORMULA = 3;
 
 /** Type names by Type id (lowercase), from a deployment's typeIds. */
 export const typeNamesOf = (d: DeploymentInfo): Record<string, string> =>
@@ -711,7 +888,12 @@ export function floorMismatch(d: DeploymentInfo, m: GasModel): Reason | null {
     );
   const differs = [
     ...Object.entries(k.workModel)
-      .filter(([key, v]) => (f.workModel as unknown as Record<string, number>)[key] !== v)
+      .filter(([key, v]) => {
+        const mine = (f.workModel as unknown as Record<string, number | string>)[key];
+        return typeof v === "string" && typeof mine === "string"
+          ? v.toLowerCase() !== mine.toLowerCase()
+          : mine !== v;
+      })
       .map(([key]) => `workModel.${key}`),
     ...(["floorFreshGas", "floorRewriteGas", "kernelTail"] as const)
       .filter((key) => k[key] !== f.limits[key])

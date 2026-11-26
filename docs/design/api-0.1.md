@@ -270,6 +270,7 @@ export interface Reason {
   served?: readonly { endpoint: string; blockNumber: bigint }[]; // on BEHIND: each endpoint's head
   feeSchedule?: { document: string; chain: string | null; freshSlotGas: bigint }; // the document is not the chain's
   gas?: { estimate: bigint; cap: bigint; suggestedParts: number }; // on OVER_TX_GAS_CAP: how many publications
+  funds?: { gasLimit: bigint };   // on INSUFFICIENT_FUNDS for a single send: the limit the wallet must cover
 }
 export interface RevertInfo {
   selector: Hex;                // always
@@ -287,7 +288,7 @@ export type ReasonCode =
   | "JOURNAL_UNAVAILABLE" | "OVER_TX_GAS_CAP" | "STALE" | "WALLET_MISMATCH" | "USER_REJECTED" | "BUSY"
   | "NOT_YET_DECIDABLE" | "REORGED_DROPPED" | "EXPIRED"
   | "WALLET_UNAUTHORIZED" | "WALLET_UNSUPPORTED" | "WALLET_INVALID_PARAMS"        // NOT_SENT
-  | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED"                         // AMBIGUOUS
+  | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED" | "INSUFFICIENT_FUNDS"   // AMBIGUOUS
   | "BEHIND"                    // every endpoint behind the read floor or atLeast (floor, served)
   | (string & Record<never, never>);    // open union
 ```
@@ -872,24 +873,48 @@ on all seventeen shared shapes of `test/vectors/floor-plan.json`, on both schedu
     ceil(bytes/32) + perByte × bytes`, with shapes keyed as the release keys them (`files-child/1 form 0`,
     `files-content/1 carrier 2`, …). A bind-kind action is priced at its `bindRow` (`bindHeadFresh`,
     `bindFolderRebind`, `unbindFolder`, `releaseFolder`, `bindTagFresh`, `unbindTagLone`, …, plus a first tag's
-    per-level `levels`), or the dearest row of its kind when unknown. The 15% headroom covers the 21,000 intrinsic
-    gas, the calldata and the model's error.
+    per-level `levels`), or the dearest row of its kind when unknown, its tiers included. The 15% headroom covers
+    the 21,000 intrinsic gas, the calldata and the model's largest under-prediction of the gas the cap counts
+    (`maxUnderErrorPercent` on prague, `maxUnderExecutionErrorPercent` on amsterdam; an over-prediction only plans
+    less than the cap allows).
+  - **The list tiers** (gas/model.json `laterLists`, contracts 6d11858): a later statement (a mask, release, restore
+    or re-bind) costs more when the author's list at its place (purpose, subject) is long, or when it is the first
+    later statement at that place in the publication. The SDK never passes the author's entry count: a count read
+    when the save is planned goes stale as soon as an earlier part of the same save, or another tab, lands at that
+    place, and a stale low count under-prices by up to about 21%. So every later statement whose row has long tiers
+    (TAG and FOLDER hides, removes and restores; PROPERTY, SAME and BROADER masks, releases and restores) is priced at
+    the long tier: `<row>LongNewPlace` for the first later statement at its place in the part, `<row>LongSamePlace`
+    after it. A re-bind (a tag's number change, a folder entry pointed elsewhere) never searches the list and has no
+    long tier: `<row>NewPlace` when first at its place, else its row. HEAD statements have none. "First at its place"
+    is worked out for each part the splitter weighs, so a re-cut or re-split part is priced on its own. This moves no
+    largest batch: those batches are bound by V, not E (checked with the contracts' own planner on every later row,
+    both schedules, count known or not). What it costs: on amsterdam a part's gas limit is at least 1.15 × the
+    model's total, so it can be about 25% above what a save of tag masks uses. The person pays only the gas used,
+    but the wallet must hold enough for the limit.
   - **V**, the visible gas the kernel's floor needs: `max(K + prefixNeed(P), E) + ⌈F·64/63⌉ + kernelTail`. K is the
     kernel's own share of E (`floor.kernel`, the same model fitted with the index's callbacks removed). P and F are
     the kernel's own quote (`kernelQuote`: prefix floor, final reserve, fresh slots, rewrites; work model formula
-    2), priced with each Type's references and digest specs (`floor.types`) and each bind's first-statement flag. A
-    bind is a first statement unless its row is a later statement's (`firstStatement` overrides); a RELEASE never
-    is.
+    3), priced with each Type's references and digest specs (`floor.types`) and, for each BIND, UNBIND or RELEASE,
+    the work model's row of its class: a first statement (a bind is one unless its row is a later statement's;
+    `firstStatement` overrides), a re-bind (a BIND on a BOUND head: `bindHeadRebind`, `bindFolderRebind`,
+    `bindTagNumberChange`, `bindPropertyRebind`), or another later statement (a mask, release or restore; a RELEASE
+    always). A later BIND with no row takes the larger of the re-bind and later rows, field by field. The surcharge's
+    row of the same class is added when the action's purpose equals the work model's `surchargePurpose` (the kernel's
+    own test, zero included; generation 1 has no surcharge), and every WITHDRAW after the first adds the later row.
   - `SplitPart.rule` keeps E, K, V and the quote; `SplitPart.gas` is the figure shown to people (the model plus
     intrinsic and calldata gas). `packBatches` sums each part's max(E, V) with its intrinsic and calldata gas, since
     each call in an atomic batch must still find its own floor.
-  - `kernelQuote(actions, floor, { everyBindFirst: true })` (`@efs/sdk/actions`) equals `LedgerIngress.indexFloor`, which prices every BIND
-    and UNBIND as a first statement: an upper bound, never planned from (tested against the chain).
+  - `kernelQuote(actions, floor, { noPrincipal: true })` (`@efs/sdk/actions`) equals `LedgerIngress.indexFloor`,
+    which has no principal and so prices every bind at the largest of the three rows, field by field: an upper bound,
+    never planned from (tested against the chain).
   - **The deployment must price the floor the same way:** `gasPlanFor` refuses (`UNSUPPORTED_PROFILE`) when the
-    deployment's `index.workModel` or floor limits differ from the gas model's in any field, or the formula is not 2.
+    deployment's `index.workModel` (32 words, `surchargePurpose` compared as a word) or floor limits differ from the
+    gas model's in any field, or the formula is not 3.
   - Why it matters: on the release before this one (120,000 gas of final reserve per bind), 64-entry removes and
     moves were planned at about 9M gas and needed 18.9M to 22.2M, over the cap. This release reserves 7,400 per bind,
-    and the rule fits each part to what the kernel actually checks.
+    and the rule fits each part to what the kernel actually checks. Formula 3 (contracts 6d11858) prices later
+    statements at their real spend, so prague's tag masks and releases plan 58 to a part (64 before) and restores 51
+    (60): a correction, not a regression. Re-binds gain (62 on prague, 64 and 61 on amsterdam).
 - **Which model:** `gasPlanFor(deployment)` takes the schedule `efs-deployment.chain.feeSchedule` names, else the one
   whose hardforks include `chain.hardfork`, with `chain.txGasCap` (always enforced; 2^24 when not stated). It
   refuses (`UNSUPPORTED_PROFILE`) rather than guess when the document has no `chain` block or names a schedule this
@@ -1030,6 +1055,18 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   WALLET_DISCONNECTED or 4901 WALLET_CHAIN_DISCONNECTED, can be raised after the wallet relayed, so it is AMBIGUOUS
   with that named reason (`retry: "after-reconcile"`: "Your wallet lost its connection; checking whether the save
   went out"), as is any other wallet error or a lost response: the part stays in flight until reconcile decides.
+- **Insufficient funds:** a wallet or node that refuses the transaction because the account can't cover its gas
+  limit at the current fees (the words "insufficient funds" in the error or one nested in it, whatever its code, on
+  eth_sendTransaction, wallet_sendCalls or a local account's eth_sendRawTransaction) is AMBIGUOUS
+  `INSUFFICIENT_FUNDS` (`retry: "after-reconcile"`): the refusal comes after signing, and a wallet that queued the
+  signed transaction could still send it. A single send carries `reason.funds.gasLimit`, the limit it asked for; a
+  batch carries none (the wallet sets each call's gas) and keeps its batch size. The detail says "the wallet needs
+  enough to cover the gas limit of N; a save is charged only the gas it uses", and the copy should say the same: the
+  limit, never the cost. The part stays in flight; it can be sent again (Send
+  again, `resume`) once reconcile proves it never went out, as EXPIRED: past its deadline (900 s by default) at a
+  finalized block, about 15 minutes on a local chain and up to about half an hour on a public one. A wallet that
+  disables its confirm button instead (MetaMask) leaves the person only Reject, which is a plain 4001
+  USER_REJECTED. eth_estimateGas is never asked with fee fields, so it never answers for funds.
 - **EXPIRED:** a part that was sent and never committed, then proven not committed (a finalized block past its
   deadline, or its nonce finalized for another plan) without a reorg, is NOT_STARTED or PARTIAL with reason EXPIRED
   (`retry: "transient"`), never a bare "not sent": "This save didn't go through — Send again" (resume, the
@@ -1670,7 +1707,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `gasPlanFor` | function | The gas model and cap to split with on this deployment's chain: the schedule `chain.feeSchedule` names, else the one whose hardforks include `chain.hardfork`. |
 | `isResolved` | const | True for a stage that ends an attempt (COMMITTED, NOT_COMMITTED_PROVEN, NOT_SENT); see isSettled for finality. |
 | `isSettled` | const | Nothing left to check for this attempt: NOT_SENT, NOT_COMMITTED_PROVEN, or COMMITTED at a finalized block. |
-| `kernelQuote` | function | The kernel's quote (LedgerIngress._foldAndQuote, formula 2), exactly as gas-plan.mjs computes it: fresh slots for each first statement and each new record (with its references and digest specs), rewrites per publish and per bind (more for a later statement), and the prefix floor and final reserve they price. |
+| `kernelQuote` | function | The kernel's quote (LedgerIngress._foldAndQuote, formula 3), exactly as gas-plan.mjs `quote()` computes it: fresh slots for each new record (with its references and digest specs) and each publish's rewrites; for each BIND, UNBIND or RELEASE the work model's row of its class (classesOf), with the surcharge's row when its purpose is the work model's `surchargePurpose` (the kernel's own test: the words are equal, zero included); every WITHDRAW after the first adds the later row; and the prefix floor and final reserve they price. |
 | `localLocks` | function | Locks for this JavaScript context only: callers queue in order, and `wait` is false (BUSY at once if held), true (queue until free) or a number of milliseconds (BUSY if not acquired in time). |
 | `lockKey` | function | The lock key: one submission at a time per (chain, realm, deployment, account). |
 | `MAX_SPLIT_DEPTH` | const | How many times a planned part may be re-split, at most (each level at least doubles its pieces). |

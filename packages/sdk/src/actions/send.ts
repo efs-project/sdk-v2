@@ -89,6 +89,53 @@ export function decodeRevert(data: unknown): RevertInfo | null {
 
 const revertName = (r: RevertInfo): string => r.error ?? `unknown error ${r.selector}`;
 
+/** The wallet codes classifyWalletError names on their own; their words never change the reason. */
+const NAMED_WALLET_CODES: ReadonlySet<unknown> = new Set([
+  4001, 4100, 4200, -32602, 5700, 5710, 5740, 5750, 5760, 4900, 4901,
+]);
+const FUNDS_WORDS = /insufficient funds/i;
+/** Where wallets and nodes put the reason (EIP-1193 data, MetaMask's data.originalError, viem's cause and details). */
+const NESTED_KEYS = [
+  "message",
+  "details",
+  "shortMessage",
+  "data",
+  "originalError",
+  "cause",
+  "error",
+];
+const FUNDS_SEARCH_DEPTH = 6;
+
+/** Whether an error, or one nested in it within a few levels, says "insufficient funds". Cycles end. */
+function saysInsufficientFunds(e: unknown): boolean {
+  const seen = new Set<unknown>();
+  const look = (x: unknown, depth: number): boolean => {
+    if (typeof x === "string") return FUNDS_WORDS.test(x);
+    if (x === null || typeof x !== "object" || depth > FUNDS_SEARCH_DEPTH || seen.has(x))
+      return false;
+    seen.add(x);
+    const o = x as Record<string, unknown>;
+    return NESTED_KEYS.some((k) => look(o[k], depth + 1));
+  };
+  return look(e, 0);
+}
+
+/**
+ * INSUFFICIENT_FUNDS: the account can't cover the gas limit at the wallet's fees. AMBIGUOUS, after-reconcile: the
+ * refusal comes after signing, and a wallet that queued the signed transaction could still send it, so the attempt
+ * stays in flight until reconcile proves it never went out. `gasLimit` is the limit the send asked for, when it asked.
+ */
+export function insufficientFunds(gasLimit?: bigint): Reason {
+  const detail =
+    gasLimit === undefined
+      ? "the wallet needs enough to cover this transaction's gas limit; a save is charged only the gas it uses"
+      : `the wallet needs enough to cover the gas limit of ${gasLimit}; a save is charged only the gas it uses`;
+  return {
+    ...reason("INSUFFICIENT_FUNDS", "after-reconcile", detail),
+    ...(gasLimit === undefined ? {} : { funds: { gasLimit } }),
+  };
+}
+
 /**
  * How a wallet error leaves a request. NOT_SENT only for errors that mean the request was refused before signing
  * (EIP-1193 4001 / 4100 / 4200, JSON-RPC -32602): the attempt is stamped NOT_SENT. A disconnect (4900 / 4901) can be
@@ -98,8 +145,12 @@ const revertName = (r: RevertInfo): string => r.error ?? `unknown error ${r.sele
 export function classifyWalletError(
   e: unknown,
   method: string,
+  gasLimit?: bigint,
 ): { notSent: Reason } | { ambiguous: Reason } {
   const code = (e as { code?: unknown } | null)?.code;
+  // Refused for insufficient funds, whatever the code: still after signing (see insufficientFunds), so AMBIGUOUS.
+  if (!NAMED_WALLET_CODES.has(code) && saysInsufficientFunds(e))
+    return { ambiguous: insufficientFunds(gasLimit) };
   switch (code) {
     case 4001:
       return { notSent: reason("USER_REJECTED", "transient", "the wallet refused the request") };
@@ -408,7 +459,7 @@ export async function sendPlan(
           await bestEffort(journal.put({ ...stamp(record, "SUBMITTED"), txHash: hash }));
           return { kind: "efs.send", status: "SUBMITTED", planId: plan.id, txHash: hash };
         } catch (e) {
-          const how = classifyWalletError(e, "eth_sendTransaction");
+          const how = classifyWalletError(e, "eth_sendTransaction", gas);
           if ("notSent" in how) {
             const code = (e as { code?: unknown }).code;
             await bestEffort(
@@ -495,11 +546,10 @@ export async function sendPlan(
           kind: "efs.send",
           status: "AMBIGUOUS",
           planId: plan.id,
-          reason: reason(
-            "RESPONSE_LOST",
-            "after-reconcile",
-            sent.reason.detail ?? sent.reason.code,
-          ),
+          // The node refused it for funds (the limit at these fees is more than the balance): named, still AMBIGUOUS.
+          reason: FUNDS_WORDS.test(sent.reason.detail ?? "")
+            ? insufficientFunds(gas)
+            : reason("RESPONSE_LOST", "after-reconcile", sent.reason.detail ?? sent.reason.code),
         };
       await bestEffort(journal.put(stamp(record, "SUBMITTED")));
       return { kind: "efs.send", status: "SUBMITTED", planId: plan.id, txHash };

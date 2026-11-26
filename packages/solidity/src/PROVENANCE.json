@@ -3,11 +3,11 @@
   "note": "Copied byte for byte from efs-project/contracts-v2 at `commit` by tools/solidity.mjs. Do not edit.",
   "contracts": {
     "repo": "https://github.com/efs-project/contracts-v2",
-    "commit": "3ca53ba980e0f5aeb0ef691c9a3ed4df28ec1e45"
+    "commit": "6d11858bc88b10a25a1f61ab543917fc20827190"
   },
   "files": {
     "interfaces/Actions.sol": "26e98f79e9a2a02f6622d67870c9619a861be81321e981aa25a0312eeb503990",
-    "interfaces/Errors.sol": "5a9d4df39cad675524985d3c9ff7940951af3d4333c9aa1b97c0657c494e047e",
+    "interfaces/Errors.sol": "8f8a5ecdf7842a5b14f5171ced84bb1e6dd1977f8f54efd9113112220caca08c",
     "interfaces/IAcceptor.sol": "7d6949f47c4a6213d8953aba8371f5bea1e07d98bde065550822ead75fd3d7e0",
     "interfaces/IBitmapStore.sol": "d80f64c9080cd88bc154f17b63e615b0e71cb1fef72b1a813c569dc234e1f107",
     "interfaces/IIndexHook.sol": "fcd1409fc84c60c4bc255bdf028965ad0bf54f27fa2b91d45f51f7a646d93632",
@@ -25,7 +25,7 @@
     "interfaces/ITypeRegistry.sol": "0f7323f9c6f9982c1e2d37fefb2792ee04dd5bb5e7853f7928986709d594eb1c",
     "interfaces/IWeb3Content.sol": "7a1e7b125719b39245c37fdfe8afe920e12f851ff19c8b1d43a6e7a6a32000af",
     "interfaces/IWeb3Gateway.sol": "7fdbf781f32df3fa09aaa04f6790c3623e01eba96a26ab35388857dcff0f22ce",
-    "interfaces/Index.sol": "4b3c247bc7876869a310e53f51fd826cf87e444658d464f4323e5b0726ac82d9",
+    "interfaces/Index.sol": "c34a01b041189ad96574ebc3a460459e800d17a80381327cc2fe98aab81c50a6",
     "interfaces/Limits.sol": "b66538ac9546f5baf085c8e86a5a7033400240ece9ad4208e4ae054332af9d52",
     "interfaces/Readers.sol": "721d1423be8e710730158ab3c0e0f4aa732ef6a7fad2a831583628a935cb7cfe",
     "interfaces/Results.sol": "7c2d00946fb9f082ef07e5c23cd9284060f51ae151fdddb742c9f840c364bf5e",

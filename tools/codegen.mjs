@@ -236,6 +236,7 @@ const files = {};
     "bindFolderRebind",
     "unbindFolder",
     "releaseFolder",
+    "restoreFolder",
     "withdraw",
     "firstWriteSurcharge",
     // The tag release's TAG rows (a first tag at a fresh pair, a later author's first yes, a number change, a lone
@@ -263,8 +264,41 @@ const files = {};
     "restoreBroader",
   ];
   const TAG_LEVELS = ["mineNew", "mineExisting", "sharedNew", "sharedExisting"];
+  // The list tiers (contracts 6d11858, tools/RELEASE.md item 47): a later statement first at its place in a
+  // publication pays <row>NewPlace (where the row has one), and one in a long or unknown-length list pays
+  // <row>LongNewPlace or <row>LongSamePlace. Every one is required, so a renamed tier fails codegen.
+  const NEW_PLACE_ROWS = [
+    "unbindTag",
+    "releaseTag",
+    "restoreTag",
+    "bindTagNumberChange",
+    "unbindFolder",
+    "releaseFolder",
+    "restoreFolder",
+    "bindFolderRebind",
+  ];
+  const LONG_ROWS = [
+    "unbindTag",
+    "releaseTag",
+    "restoreTag",
+    "unbindFolder",
+    "releaseFolder",
+    "restoreFolder",
+    "unbindProperty",
+    "releaseProperty",
+    "unbindSame",
+    "releaseSame",
+    "restoreSame",
+    "unbindBroader",
+    "releaseBroader",
+    "restoreBroader",
+  ];
+  const TIERS = [
+    ...NEW_PLACE_ROWS.map((r) => `${r}NewPlace`),
+    ...LONG_ROWS.flatMap((r) => [`${r}LongNewPlace`, `${r}LongSamePlace`]),
+  ];
   const constants = (where, c) => {
-    for (const k of ROWS)
+    for (const k of [...ROWS, ...TIERS])
       if (typeof c?.[k] !== "number" || !Number.isFinite(c[k]))
         throw new Error(`codegen: gasModel ${where}.${k} must be a number`);
     const pn = c.publishNew ?? {};
@@ -277,11 +311,14 @@ const files = {};
       if (typeof tl[k] !== "number") throw new Error(`codegen: gasModel ${where}.tagLevel.${k}`);
     return Object.fromEntries([
       ...ROWS.map((k) => [k, c[k]]),
+      ...TIERS.map((k) => [k, c[k]]),
       ["publishNew", pn],
       ["tagLevel", Object.fromEntries(TAG_LEVELS.map((k) => [k, tl[k]]))],
     ]);
   };
-  // The kernel's floor inputs, per schedule: every field the planning rule reads is required (formula 2).
+  // The kernel's floor inputs, per schedule: every field the planning rule reads is required (formula 3, contracts
+  // 6d11858 tools/RELEASE.md item 42: three rows by class, first statement, re-bind and other later statement, and a
+  // surcharge row of each class for actions whose purpose is `surchargePurpose`, a bytes32 word, zero for none).
   const WORK_MODEL = [
     "formulaVersion",
     "freshPerPublication",
@@ -289,18 +326,24 @@ const files = {};
     "freshPerPublishFresh",
     "freshPerPublishExisting",
     "rwPerPublish",
-    "freshPerBindFresh",
-    "rwPerBind",
-    "rwPerBindLater",
     "freshPerRef",
     "freshPerDigestSpec",
     "computeBase",
     "computePerAction",
-    "computePerHookEffect",
     "finalComputeBase",
     "finalComputePerBind",
     "finalComputePerPublish",
+    ...["First", "Rebind", "Later"].flatMap((cls) => {
+      const k = cls === "Rebind" ? "Rebind" : `Bind${cls}`;
+      return [`freshPer${k}`, `rwPer${k}`, `computePer${k}`];
+    }),
+    ...["First", "Rebind", "Later"].flatMap((cls) => [
+      `surchargeFresh${cls}`,
+      `surchargeRw${cls}`,
+      `surchargeCompute${cls}`,
+    ]),
   ];
+  const FLOOR_FORMULA = 3;
   const floorOf = (where, f) => {
     const num = (path, v) => {
       if (typeof v !== "number" || !Number.isFinite(v))
@@ -310,6 +353,16 @@ const files = {};
     const wm = Object.fromEntries(
       WORK_MODEL.map((k) => [k, num(`workModel.${k}`, f?.workModel?.[k])]),
     );
+    if (wm.formulaVersion !== FLOOR_FORMULA)
+      throw new Error(
+        `codegen: gasModel ${where}.workModel is formula ${wm.formulaVersion}; this SDK plans formula ${FLOOR_FORMULA}`,
+      );
+    const sp = f?.workModel?.surchargePurpose;
+    if (typeof sp !== "string" || !/^0x[0-9a-f]{64}$/.test(sp))
+      throw new Error(
+        `codegen: gasModel ${where}.workModel.surchargePurpose must be a bytes32 word`,
+      );
+    wm.surchargePurpose = sp;
     const types = {};
     for (const [t, v] of Object.entries(f?.types ?? {}))
       types[t] = { refs: num(`types.${t}.refs`, v.refs), specs: num(`types.${t}.specs`, v.specs) };
@@ -329,6 +382,19 @@ const files = {};
       kernel: constants(`${where}.kernel`, f?.kernel),
     };
   };
+  // The fitted model itself (gas/model.json, committed to by release.json gasModel.sha256): the under-prediction
+  // maxima the headroom check reads and the list tiers' rule, which the release's copy does not carry.
+  const modelBytes = readFileSync(join(IN, g.path ?? "gas/model.json"));
+  if (`0x${createHash("sha256").update(modelBytes).digest("hex")}` !== g.sha256)
+    throw new Error(
+      "codegen: gas/model.json is not the model release.json gasModel.sha256 commits to",
+    );
+  const model = JSON.parse(modelBytes.toString("utf8"));
+  const pct = (where, v) => {
+    if (typeof v !== "number" || !Number.isFinite(v))
+      throw new Error(`codegen: gas/model.json ${where} must be a number`);
+    return v;
+  };
   const schedules = {};
   for (const [name, sch] of Object.entries(g.schedules ?? {})) {
     if (!Array.isArray(sch.hardforks) || !sch.hardforks.length)
@@ -346,13 +412,27 @@ const files = {};
       ...(sch.maxAbsExecutionErrorPercent !== undefined
         ? { maxAbsExecutionErrorPercent: sch.maxAbsExecutionErrorPercent }
         : {}),
+      // The largest under-prediction (predicted below measured): what the cap condition is checked against, all gas
+      // where the cap counts all gas, execution gas where it counts execution only (gas/model.json method.maxima).
+      maxUnderErrorPercent: pct(
+        `profiles.${name}.maxUnderErrorPercent`,
+        model.profiles?.[name]?.maxUnderErrorPercent,
+      ),
+      ...(sch.executionGas
+        ? {
+            maxUnderExecutionErrorPercent: pct(
+              `profiles.${name}.maxUnderExecutionErrorPercent`,
+              model.profiles?.[name]?.maxUnderExecutionErrorPercent,
+            ),
+          }
+        : {}),
     };
   }
   if (!schedules.prague) throw new Error("codegen: gasModel has no prague schedule");
   const env = g.envelope ?? {};
   if (typeof env.txGasCap !== "number" || typeof env.headroomPercent !== "number")
     throw new Error("codegen: gasModel.envelope needs txGasCap and headroomPercent");
-  let src = header(["release/release.json", "test/vectors/gas-schedules.json"]);
+  let src = header(["release/release.json", "gas/model.json", "test/vectors/gas-schedules.json"]);
   src +=
     "/**\n * The contracts' fitted gas model, by fee schedule (release.json gasModel). Planning only; eth_estimateGas on\n * the exact call decides before sending. `executionGas` is set where the per-transaction cap counts execution gas\n * only (then `constants`, all gas, must also fit the block). Never apply one schedule's constants to another.\n */\n";
   src += `export const GAS_SCHEDULES = ${literal(schedules)} as const;\n\n`;
@@ -371,6 +451,14 @@ const files = {};
   src +=
     "/** The planning rule (gas/model.json planning): inside `limits`, and max(E, V) ≤ ⌊txGasCap × (100 − headroomPercent) / 100⌋. */\n";
   src += `export const GAS_PLANNING = ${literal({ txGasCap: pl.txGasCap, headroomPercent: pl.headroomPercent, limits: pl.limits })} as const;\n\n`;
+  const ll = model.laterLists;
+  if (!Number.isInteger(ll?.shortTierMaxEntries) || !Number.isInteger(ll?.claimEntries))
+    throw new Error(
+      "codegen: gas/model.json laterLists needs shortTierMaxEntries and claimEntries",
+    );
+  src +=
+    "/** The list tiers (gas/model.json laterLists): a later statement in a list of at most `shortTierMaxEntries` known entries takes the short tier; longer or unknown, the long tier, measured at `claimEntries`. */\n";
+  src += `export const GAS_LATER_LISTS = ${literal({ shortTierMaxEntries: ll.shortTierMaxEntries, claimEntries: ll.claimEntries })} as const;\n\n`;
   const pan = g.tagLists?.priceAsNew;
   if (!Array.isArray(pan?.entries) || typeof pan?.entriesMultipleOf !== "number")
     throw new Error("codegen: gasModel.tagLists.priceAsNew needs entries and entriesMultipleOf");

@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "3ca53ba980e0f5aeb0ef691c9a3ed4df28ec1e45",
+  "contractsCommit": "6d11858bc88b10a25a1f61ab543917fc20827190",
   "case": "pin-verified",
   "note": "efs.pin() against the true deployment document",
   "result": {
@@ -11,18 +11,18 @@
       "blockNumber": {
         "$efs:bigint": "79"
       },
-      "blockHash": "0x1a816c9f6139f5262063e51c318fe257e9e7e4537d2e8215b2e245f426c0c3e1",
+      "blockHash": "0xf1a9ec8a710133e2392bf4a039d4c1058fc2d083e30f4da9084d80e6e9d5ae42",
       "timestamp": {
-        "$efs:bigint": "1795699849"
+        "$efs:bigint": "1795712548"
       },
-      "executionSet": "0x768d8353040e477be465dca8086d75431cf09d7e4573096b55176d90f0b9dde7",
+      "executionSet": "0x9c22c034e660c606de155654f43f35a7a24f29513d6e1d5dd5c94a1e1c60c9e5",
       "admissions": {
         "$efs:bigint": "27"
       },
       "endpoint": "local fixture"
     },
     "live": {
-      "executionSet": "0x768d8353040e477be465dca8086d75431cf09d7e4573096b55176d90f0b9dde7",
+      "executionSet": "0x9c22c034e660c606de155654f43f35a7a24f29513d6e1d5dd5c94a1e1c60c9e5",
       "revision": 1,
       "layoutId": "0xc59a1669be13ef347b3e85757f16896d2f324b1bdbc062719a24496e7173b212",
       "capabilities": 0,
@@ -36,7 +36,7 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 30
+          "ms": 18
         }
       ],
       "requests": 2

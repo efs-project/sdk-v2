@@ -47,7 +47,7 @@
 > - topic statements: `planLabel` (a topic's or a home's name in one BCP 47 language, lowercased; the text/1 record
 >   published when new), `planSame` and `planBroader` (both ends registered earlier in the same save, as the
 >   validator's codes 10 and 11 need; a topic is never either of these to itself), each with `remove: true` for a
->   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (first measured at contracts 0fb4804; the vendored gas model is now 3ca53ba's): a
+>   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (first measured at contracts 0fb4804; the vendored gas model is now 6d11858's, whose later rows take the long tier: api-0.1 "The list tiers"): a
 >   first label `bindPropertyFresh` (a new text adds the text/1 row), a later one `bindPropertyRebind`, a first
 >   `same` `bindSameFreshWord` (the dearer of the two first-same rows), a first `broader` `bindBroaderFresh`, a later
 >   bind `restoreSame` / `restoreBroader`, and a removal `release*`, as the reference planner prices them; the label

@@ -1,11 +1,11 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "3ca53ba980e0f5aeb0ef691c9a3ed4df28ec1e45",
+  "contractsCommit": "6d11858bc88b10a25a1f61ab543917fc20827190",
   "case": "reconcile-committed",
   "note": "writer.reconcile() after the lost response",
   "result": {
     "kind": "efs.reconcile",
-    "planId": "0x0f102dbfeb2943a68ac3c0575340e10e0b7b0c176f0e0f29377cdd7a2f59b97a",
+    "planId": "0x2816a27994fdd3c8edc772d84cc8b9052618e8e63139876ce3b4e85316e5ced9",
     "outcome": "COMMITTED",
     "final": false,
     "publication": {
@@ -16,11 +16,11 @@
       "blockNumber": {
         "$efs:bigint": "80"
       },
-      "blockHash": "0xfe1adff15977a2b4eeed057032f8b0b64db853abdd803dcab663eab553dbdd32",
+      "blockHash": "0xa4cedd63b57309de9033e9955b49c8a1f320284e6281b6a996208fccc5aa1670",
       "timestamp": {
-        "$efs:bigint": "1795699851"
+        "$efs:bigint": "1795712548"
       },
-      "executionSet": "0x768d8353040e477be465dca8086d75431cf09d7e4573096b55176d90f0b9dde7",
+      "executionSet": "0x9c22c034e660c606de155654f43f35a7a24f29513d6e1d5dd5c94a1e1c60c9e5",
       "admissions": {
         "$efs:bigint": "32"
       },

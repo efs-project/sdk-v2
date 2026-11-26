@@ -83,6 +83,11 @@ if (edit.status === "BASE_CHANGED") {
   sends nothing: `NOT_SENT` (a save: `NOT_STARTED`) with reason `ALREADY_ATTEMPTED` and `reason.twin`, which names
   the earlier save. Show its progress instead. A lost wallet answer is `IN_FLIGHT`, never "not sent":
   `reconcileSequence` settles it from the ledger.
+- **A wallet short of funds is named.** An account that can't cover the gas limit is `AMBIGUOUS` (a save stops
+  `IN_FLIGHT`) with reason `INSUFFICIENT_FUNDS` and, for a single send, `reason.funds.gasLimit`: "Your wallet needs
+  enough to cover the gas limit of N; a save is charged only the gas it uses." It can be sent again only once
+  reconcile proves it never went out (past the plan's deadline, 15 minutes by default, and finalized). A wallet that
+  just disables its confirm button gives a plain `USER_REJECTED`.
 - **What people type is folded, and some words wait.** Tag words go through `foldWord` (interim, until the tag text
   rule is chosen): an all-ASCII word is trimmed, its spaces become underscores, and A–Z become a–z ("Notes" saves as
   `notes`: say so). Adding a tag refuses a word with a non-ASCII character a candidate rule would change (MISUSE,
