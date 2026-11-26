@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "3ca53ba980e0f5aeb0ef691c9a3ed4df28ec1e45",
+  "contractsCommit": "6d11858bc88b10a25a1f61ab543917fc20827190",
   "case": "bytes-external-mismatch",
   "note": "readBytes on an https location serving tampered bytes (never handed back)",
   "result": {

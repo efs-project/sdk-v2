@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // The planning headroom must cover what the gas model leaves out: the 21,000 intrinsic cost, calldata (EIP-2028 /
-// EIP-7623) and the model's own error (gas/model.json planning.headroomCovers): the error of the gas the cap counts,
-// all gas on prague (maxAbsErrorPercent), execution gas only on amsterdam (maxAbsExecutionErrorPercent; its all-gas
-// maxAbsErrorPercent bounds the total against the block, never the 2^24 cap). A part is planned with
+// EIP-7623) and the model's own error (gas/model.json planning.headroomCovers): its largest UNDER-prediction (predicted
+// below measured; an over-prediction plans less than the cap allows, never more) of the gas the cap counts: all gas on
+// prague (maxUnderErrorPercent), execution gas only on amsterdam (maxUnderExecutionErrorPercent; its all-gas figures
+// bound the total against the block, never the 2^24 cap). Contracts 6d11858 tools/RELEASE.md item 47. A part is planned with
 // E ≤ ⌊txGasCap × (100 − headroomPercent) / 100⌋. Per the EIP texts (contracts dev, 2026-11-26: EIP-8037 Last Call,
 // EIP-7825 and EIP-7623 Final), intrinsic gas and calldata count against the 2^24 cap on every schedule (the
 // execution budget is TX_MAX_GAS_LIMIT − intrinsic), and EIP-7623's floor is a separate condition. So, for the largest
@@ -49,11 +50,16 @@ function worstCalldataBytes(): number {
 
 type Schedules = Record<
   string,
-  { maxAbsErrorPercent: number; maxAbsExecutionErrorPercent?: number }
+  {
+    maxAbsErrorPercent: number;
+    maxAbsExecutionErrorPercent?: number;
+    maxUnderErrorPercent: number;
+    maxUnderExecutionErrorPercent?: number;
+  }
 >;
-/** The error the cap condition is tested against: the execution error where the cap counts execution gas only. */
+/** The error the cap condition is tested against: the under-prediction of execution gas where the cap counts only it. */
 const capError = (s: Schedules[string]): number =>
-  s.maxAbsExecutionErrorPercent ?? s.maxAbsErrorPercent;
+  s.maxUnderExecutionErrorPercent ?? s.maxUnderErrorPercent;
 
 /** Per schedule: the worst part's gas as a fraction of the cap, the floor's, and the headroom that keeps it in LIMIT. */
 function headroomCheck(schedules: Schedules, headroomPercent: number) {
@@ -91,40 +97,63 @@ describe("the planning headroom covers intrinsic gas, calldata and the model's e
     expect(failures(GAS_SCHEDULES as unknown as Schedules, GAS_PLANNING.headroomPercent)).toEqual(
       [],
     );
-    const amsterdam = headroomCheck(
-      GAS_SCHEDULES as unknown as Schedules,
-      GAS_PLANNING.headroomPercent,
-    ).find((r) => r.schedule === "amsterdam");
-    // A tripwire on the spare: 0.9789 at contracts 3ca53ba (execution error 10.62%, headroom needed 13.2%; it was
-    // 0.953 at cbf5b78 with 7.56%). prague is 0.9380 (5.80%, needed 9.3%).
-    expect(amsterdam?.fraction).toBeLessThan(0.98);
+    const at = (name: string) =>
+      headroomCheck(GAS_SCHEDULES as unknown as Schedules, GAS_PLANNING.headroomPercent).find(
+        (r) => r.schedule === name,
+      );
+    // Tripwires on the spare, one per schedule, never raised: when one fires, report the figure and the headroom
+    // needed. Either fires once its under-prediction passes 10.74%. At contracts 6d11858: prague 0.9710 (9.69%, tag
+    // releases at entry 47 across topics; headroom needed 12.5%), amsterdam 0.9792 (10.65% of execution gas, create
+    // file lists exist; needed 13.3%). At 3ca53ba amsterdam was 0.9789 (10.62%).
+    expect(at("prague")?.fraction).toBeLessThan(0.98);
+    expect(at("amsterdam")?.fraction).toBeLessThan(0.98);
   });
 
   it("an error figure the headroom can't cover fails, naming the schedule and the headroom it needs", () => {
     const worse = {
       ...(GAS_SCHEDULES as unknown as Schedules),
-      amsterdam: { maxAbsErrorPercent: 30, maxAbsExecutionErrorPercent: 13 },
+      amsterdam: {
+        maxAbsErrorPercent: 30,
+        maxAbsExecutionErrorPercent: 30,
+        maxUnderErrorPercent: 30,
+        maxUnderExecutionErrorPercent: 13,
+      },
     };
     const f = failures(worse, GAS_PLANNING.headroomPercent);
     expect(f).toHaveLength(1);
     expect(f[0]).toMatch(/^amsterdam: .* headroomPercent must be at least 15\.\d% \(it is 15%\)$/);
   });
 
-  it("on amsterdam the cap is tested against the execution error, never the all-gas error", () => {
+  it("the cap is tested against the under-prediction of the gas it counts, never an over-prediction or the all-gas figure", () => {
     const vendored = GAS_SCHEDULES as unknown as Schedules;
-    expect(vendored["amsterdam"]?.maxAbsExecutionErrorPercent).toBe(10.62); // contracts 3ca53ba
-    expect(vendored["amsterdam"]?.maxAbsErrorPercent).toBe(12.03);
-    // An all-gas error far over the headroom changes nothing while the execution error fits.
-    const allGasOnly = {
+    // contracts 6d11858 (gas/model.json; release.json carries the maxAbs figures, codegen adds the maxUnder ones)
+    expect(vendored["amsterdam"]).toMatchObject({
+      maxUnderExecutionErrorPercent: 10.65,
+      maxUnderErrorPercent: 6.73,
+      maxAbsExecutionErrorPercent: 13.9, // an over-prediction: plans below the cap, never above it
+      maxAbsErrorPercent: 12.05,
+    });
+    expect(vendored["prague"]).toMatchObject({
+      maxUnderErrorPercent: 9.69,
+      maxAbsErrorPercent: 11.16,
+    });
+    // Figures far over the headroom change nothing while the under-prediction the cap counts fits.
+    const others = {
       ...vendored,
-      amsterdam: { maxAbsErrorPercent: 40, maxAbsExecutionErrorPercent: 10.62 },
+      amsterdam: {
+        maxAbsErrorPercent: 40,
+        maxAbsExecutionErrorPercent: 40,
+        maxUnderErrorPercent: 40,
+        maxUnderExecutionErrorPercent: 10.65,
+      },
+      prague: { maxAbsErrorPercent: 40, maxUnderErrorPercent: 9.69 },
     };
-    expect(failures(allGasOnly, GAS_PLANNING.headroomPercent)).toEqual([]);
-    // prague has one figure (all gas, which its cap counts).
-    expect(vendored["prague"]?.maxAbsExecutionErrorPercent).toBeUndefined();
+    expect(failures(others, GAS_PLANNING.headroomPercent)).toEqual([]);
+    // prague has all-gas figures only (its cap counts all gas).
+    expect(vendored["prague"]?.maxUnderExecutionErrorPercent).toBeUndefined();
   });
 
-  it("the worst calldata is every action and body at its widest (39,236 bytes at contracts 3ca53ba)", () => {
+  it("the worst calldata is every action and body at its widest (39,236 bytes at contracts 6d11858)", () => {
     expect(worstCalldataBytes()).toBe(39_236);
   });
 });

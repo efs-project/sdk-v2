@@ -167,7 +167,7 @@ describe("the kernel floor (fixture)", () => {
       }) as unknown as [number, number, number, number];
       // The kernel's helper prices every bind as a first statement, as the SDK does when it knows nothing better.
       expect(
-        kernelQuote(part.actions, floor, { everyBindFirst: true, typeNames: g.typeNames }),
+        kernelQuote(part.actions, floor, { noPrincipal: true, typeNames: g.typeNames }),
       ).toEqual({
         prefixFloor,
         finalReserve,

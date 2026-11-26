@@ -9,6 +9,7 @@ import {
   lower,
   type PrincipalId,
   type RecordId,
+  ZERO_WORD,
 } from "../core/hex.js";
 
 export interface ProtocolLimits {
@@ -39,8 +40,11 @@ export interface ChainFacts {
  * (`floorMismatch` refuses to plan otherwise).
  */
 export interface KernelFloor {
-  /** Every field of index.workModel, by name (formula 2 has 17, `formulaVersion` among them). */
-  workModel: Readonly<Record<string, number>>;
+  /**
+   * Every field of index.workModel, by name (formula 3 has 32, `formulaVersion` among them): numbers, and the one
+   * bytes32 word `surchargePurpose` (lowercase hex).
+   */
+  workModel: Readonly<Record<string, number | Hex>>;
   floorFreshGas: number;
   floorRewriteGas: number;
   kernelTail: number;
@@ -149,9 +153,17 @@ function kernelFloorOf(
     problems.push("index.workModel must be an object of numbers");
     return null;
   }
+  const word = (path: string, v: unknown): Hex => {
+    if (typeof v === "string" && /^0x[0-9a-fA-F]{64}$/.test(v)) return v.toLowerCase() as Hex;
+    problems.push(`${path} must be a bytes32 word`);
+    return ZERO_WORD;
+  };
   return {
     workModel: Object.fromEntries(
-      Object.entries(w).map(([k, v]) => [k, nat(`index.workModel.${k}`, v)]),
+      Object.entries(w).map(([k, v]) => [
+        k,
+        k === "surchargePurpose" ? word(`index.workModel.${k}`, v) : nat(`index.workModel.${k}`, v),
+      ]),
     ),
     floorFreshGas: nat("limits.floorFreshGas", limits["floorFreshGas"]),
     floorRewriteGas: nat("limits.floorRewriteGas", limits["floorRewriteGas"]),

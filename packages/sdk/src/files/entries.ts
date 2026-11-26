@@ -19,6 +19,7 @@ import { decodeFunctionResult, encodeFunctionData, keccak256 } from "viem";
 import type { PartUnit } from "../actions/journal.js";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
+  type BindRow,
   batchGasOf,
   type PlannedAction,
   packBatches,
@@ -458,12 +459,22 @@ const lensPrincipals = (efs: Efs, lens: Lens | undefined): PrincipalId[] => {
   if (ps.length > READ_CHUNK) throw misuse(`a Lens names at most ${READ_CHUNK} principals`);
   return ps;
 };
-const freshFolderBindRow = (h: RawHead, directory: boolean) =>
-  headState(h.state) === "UNSET"
-    ? directory
-      ? ("bindFolderFreshDirectory" as const)
-      : ("bindFolderFreshFile" as const)
-    : undefined; // a masked or released position is priced at the larger rows
+/**
+ * @internal The gas-model row of your FOLDER BIND at a position, by your head there: a first statement (fresh file or directory),
+ * a re-bind of a bound entry (bindFolderRebind), or a restore of a masked or released one (restoreFolder; contracts
+ * 6d11858). Unrecognized: none, so the bind is priced at the dearest row of its kind.
+ */
+export const folderBindRow = (
+  h: Pick<RawHead, "state">,
+  directory: boolean,
+): BindRow | undefined => {
+  const state = headState(h.state);
+  if (state === "UNSET")
+    return directory ? ("bindFolderFreshDirectory" as const) : ("bindFolderFreshFile" as const);
+  if (state === "BOUND") return "bindFolderRebind" as const;
+  if (state === "MASKED" || state === "RELEASED") return "restoreFolder" as const;
+  return undefined;
+};
 /** The writer has never stated anything at this place: a BIND there is a first statement (the kernel's floor). */
 const isUnset = (h: RawHead): boolean => headState(h.state) === "UNSET";
 
@@ -741,7 +752,7 @@ export async function planCreateFile(
         { group: FINISH, bindRow: "bindHeadFresh" },
       ),
     );
-    const folderRow = freshFolderBindRow(st.mine, false);
+    const folderRow = folderBindRow(st.mine, false);
     finish.push(
       plain(
         {
@@ -859,7 +870,7 @@ export async function planCreateFolder(
       refused.push({ index: 0, code: "NAME_TAKEN_MINE", entry: entryOf(place) });
     if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
     const nameExists = (seen.records.get(nameId) as RecordInfo).present;
-    const row = freshFolderBindRow(st.mine, true);
+    const row = folderBindRow(st.mine, true);
     const actions: PlannedAction[] = [
       publish(types.directory, dirBody, "files-directory/1", 1),
       ...(nameExists ? [] : [publish(types.name, place.nameBytes, "files-name/2", 1)]),
@@ -1114,7 +1125,7 @@ export async function planMoveEntries(
         !(seen.records.get(nameId) as RecordInfo).present && !namesPublished.has(nameId);
       if (needName) namesPublished.add(nameId);
       const group = i + 1;
-      const row = freshFolderBindRow(to.mine, target.kind === "folder");
+      const row = folderBindRow(to.mine, target.kind === "folder");
       const actions: PlannedAction[] = [
         ...(needName ? [publish(types.name, m.to.nameBytes, "files-name/2", group)] : []),
         plain(
@@ -1125,7 +1136,7 @@ export async function planMoveEntries(
             role: m.from.role,
             expectedRevision: BigInt(from.mine.revision),
           },
-          { group },
+          { group, bindRow: "releaseFolder" },
         ),
         plain(
           {
@@ -1314,13 +1325,17 @@ export async function planRemoveEntries(
           text: `Remove ${p.name}`,
         }),
         actions: [
-          plain({
-            kind: hide ? ACTION.UNBIND : ACTION.RELEASE,
-            purpose: PURPOSES.folder,
-            subject: p.folder,
-            role: p.role,
-            expectedRevision: BigInt(st.mine.revision),
-          }),
+          plain(
+            {
+              kind: hide ? ACTION.UNBIND : ACTION.RELEASE,
+              purpose: PURPOSES.folder,
+              subject: p.folder,
+              role: p.role,
+              expectedRevision: BigInt(st.mine.revision),
+            },
+            // your own bound entry: a later statement, priced by its own row
+            { bindRow: hide ? "unbindFolder" : "releaseFolder" },
+          ),
         ],
         finishes: true,
       });
@@ -1404,13 +1419,16 @@ export async function planUnhideEntries(
           text: `Unhide ${p.name}`,
         }),
         actions: [
-          plain({
-            kind: ACTION.RELEASE,
-            purpose: PURPOSES.folder,
-            subject: p.folder,
-            role: p.role,
-            expectedRevision: BigInt(st.mine.revision),
-          }),
+          plain(
+            {
+              kind: ACTION.RELEASE,
+              purpose: PURPOSES.folder,
+              subject: p.folder,
+              role: p.role,
+              expectedRevision: BigInt(st.mine.revision),
+            },
+            { bindRow: "releaseFolder" },
+          ),
         ],
         finishes: true,
       });
@@ -1625,7 +1643,7 @@ export async function planOtherEntry(
       refused.push({ index: 0, code: "NAME_TAKEN_MINE", entry: entryOf(p) });
     if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
     const needName = !(seen.records.get(nameId) as RecordInfo).present;
-    const row = freshFolderBindRow(st.mine, false);
+    const row = folderBindRow(st.mine, false);
     const actions: PlannedAction[] = [
       plain({ kind: ACTION.CREATE, saltOrStrength: salt }, { group: 1 }),
       ...(needName ? [publish(types.name, p.nameBytes, "files-name/2", 1)] : []),
@@ -1855,7 +1873,8 @@ export async function planRestoreEntries(
               target: targetWord,
               expectedRevision: BigInt(st.mine.revision),
             },
-            { firstStatement: false }, // your own released or masked entry: the head exists
+            // your own released or masked entry: the head exists (restoreFolder, contracts 6d11858)
+            { firstStatement: false, bindRow: "restoreFolder" },
           ),
         ],
         finishes: true,
