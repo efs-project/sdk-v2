@@ -33,7 +33,7 @@
 | `@efs/sdk/web` | browser helpers (no journal) | yes |
 | `@efs/sdk/web/journal` | `indexedDbJournal`, submission lock (Web Locks) | no |
 | `@efs/sdk/node` | `fileJournal`, file-system stores (Node condition only) | no |
-| `@efs/sdk/testing` | `guestProbe`, RPC transcript replay, `planLoneHide` (a lone hide, for Unhide tests), `planOtherEntry` (a junk row, for blocking tests) | dev only |
+| `@efs/sdk/testing` | `guestProbe`, RPC transcript replay, `planLoneHide` (a lone hide, for Unhide tests), `planOtherEntry` (a junk row, for blocking tests), `planHeadNo` / `planHeadRelease` (a "not this" or a take-back on a file's HEAD, for fileVersions tests) | dev only |
 | `@efs/sdk/fixtures/*.json` | recorded result fixtures (§9) | dev only |
 | `@efs/sdk/protocol-inputs.json` | the contracts commit (later, the release digest) this build targets | — |
 
@@ -2036,12 +2036,16 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `createRecorder` | function | Record the RPC half (a fetch) and, optionally, the wallet half of a flow, numbering every answer and every mark in one sequence. |
 | `createReplay` | function | Replay transcripts with the head gated by their writes and marks (see the header). |
 | `createRpcReplay` | function | Replay recorded RPC transcripts as a fetch and an EIP-1193 provider, for chain-free tests: each request gets its recorded answer in order, and unmatched calls are misses (createReplay adds epochs, for heads that move). |
+| `planHeadNo` | function | Test-only (exported from ` |
+| `planHeadRelease` | function | Test-only (exported from ` |
 | `planLoneHide` | function | Test-only (exported from ` |
 | `planOtherEntry` | function | Test-only (exported from ` |
 | `recordingFetch` | function | Wrap a fetch so every JSON-RPC POST is recorded as an RpcCall (request and response bodies, verbatim). |
 | `recordingProvider` | function | Wrap an EIP-1193 provider so every request is recorded as a WalletCall, in the order the requests were made, with the result or error filled in when it settles. |
 | `replayFetch` | function | A fetch that answers JSON-RPC POSTs from transcripts (any URL) and 404s everything else. |
 | `replayProvider` | function | A fake wallet answering from the transcripts' wallet halves: each request is matched on `[method, params]`, answers are served in recorded order and the last repeats (`strict`: never repeats), and a recorded error is thrown (with its `code`). |
+| `HeadStatementInput` | interface |  |
+| `HeadStatementReview` | interface |  |
 | `LoneHideInput` | interface |  |
 | `LoneHideReview` | interface |  |
 | `OtherEntryInput` | interface |  |

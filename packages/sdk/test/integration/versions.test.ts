@@ -21,7 +21,7 @@ import { planCreateFile } from "../../src/files/entries.ts";
 import type { FolderRef } from "../../src/files/folders.ts";
 import { type FileVersionsCursor, fileVersions } from "../../src/files/versions.ts";
 import { indexAbi, ledgerViewsAbi, lensReaderAbi } from "../../src/generated/abis.ts";
-import { ACTION, PURPOSES } from "../../src/generated/constants.ts";
+import { planHeadNo, planHeadRelease } from "../../src/testing/index.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -62,7 +62,6 @@ const writerOf = async (who: typeof C): Promise<Writer> => {
 };
 const p = (who: typeof C) => efs.lens.principalOf(who.address).toLowerCase() as PrincipalId;
 const lensOf = (...who: (typeof C)[]) => efs.lens.from(who.map((x) => x.address));
-const ZERO = `0x${"0".repeat(64)}` as Hex;
 let file: SubjectId;
 const revisions = new Map<string, RecordId>();
 
@@ -115,28 +114,22 @@ const rewriting = (
   return createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: lying });
 };
 
-/** A HEAD statement the SDK's planners never make: a "not this" (UNBIND) or taking a version back (RELEASE). */
-const headStatement = async (who: typeof C, kind: number, expectedRevision: bigint) => {
+/**
+ * A HEAD statement the SDK's planners never make, by the testing helpers (planHeadNo: a "not this", planHeadRelease: a
+ * take-back), checking what each says it made of the head.
+ */
+const headStatement = async (
+  who: typeof C,
+  kind: "no" | "release",
+  want: { before: string; statement: string },
+) => {
   const w = await writerOf(who);
-  const raw = await w.planActions({
-    actions: [
-      {
-        kind,
-        typeId: ZERO,
-        bodyHashOrRecordId: ZERO,
-        purpose: PURPOSES.head,
-        subject: file,
-        role: ZERO,
-        target: ZERO,
-        expectedRevision,
-        saltOrStrength: ZERO,
-      },
-    ],
-    bodies: ["0x"],
-    effects: [{ code: "test.head", args: {} }],
+  const p = await (kind === "no" ? planHeadNo : planHeadRelease)(efs, w, {
+    file: { kind: "file", subject: file },
   });
-  if (raw.status !== "PLANNED") throw new Error(raw.status);
-  expect((await w.run(raw.plan)).reconcile?.outcome).toBe("COMMITTED");
+  if (p.status !== "PLANNED") throw new Error(p.status);
+  expect(p.review).toMatchObject({ kind: "efs.headStatementReview", ...want, parts: 1 });
+  expect((await w.runSequence(p.parts)).state).toBe("COMPLETE");
 };
 /** `who` saves a version of their own, edited from C's. */
 const saveVersion = async (who: typeof C, text: string) => {
@@ -176,11 +169,11 @@ beforeAll(async () => {
   revisions.set(C.address, made.review.revision);
   await saveVersion(A, "A's version\n");
   await saveVersion(B, "B's version\n");
-  await headStatement(D, ACTION.UNBIND, 0n); // a lone "not this"
+  await headStatement(D, "no", { before: "UNSET", statement: "lone-no" }); // a lone "not this"
   await saveVersion(E, "E's version\n");
-  await headStatement(E, ACTION.RELEASE, 1n); // taken back
+  await headStatement(E, "release", { before: "BOUND", statement: "release" }); // taken back
   await saveVersion(F, "F's version\n");
-  await headStatement(F, ACTION.UNBIND, 1n); // hidden
+  await headStatement(F, "no", { before: "BOUND", statement: "hide" }); // hidden
 }, 240_000);
 
 describe("fileVersions (fixture)", () => {
@@ -392,6 +385,22 @@ describe("fileVersions (fixture)", () => {
     const lying = rewriting(ledgerViewsAbi, "headsAt", ([, ...rest]) => [9, ...rest]); // INVALID
     const v = await fileVersions(lying, { kind: "file", subject: file }, { lens: lensOf(C) });
     expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+  });
+
+  it("the HEAD helpers say what they make, and refuse a take-back with nothing to take back", async () => {
+    const d = await planHeadNo(efs, await writerOf(D), { file: { kind: "file", subject: file } });
+    expect(d.status === "PLANNED" && d.review).toMatchObject({
+      before: "MASKED",
+      statement: "no-again",
+    });
+    await expect(
+      planHeadRelease(efs, await writerOf(E), { file: { kind: "file", subject: file } }),
+    ).rejects.toMatchObject({ code: "MISUSE" }); // E's HEAD is RELEASED already
+    await expect(
+      planHeadNo(efs, await writerOf(D), {
+        file: { kind: "file", subject: `0x${"5e".repeat(32)}` as SubjectId },
+      }),
+    ).rejects.toMatchObject({ code: "MISUSE" }); // never created
   });
 
   it("a subject never created is ABSENT_PROVEN", async () => {

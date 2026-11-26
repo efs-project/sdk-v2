@@ -1771,6 +1771,163 @@ export async function planLoneHide(
   });
 }
 
+// ---- a HEAD "not this" and a take-back (test-only: exported from @efs/sdk/testing)
+
+export interface HeadStatementInput {
+  file: FileRef;
+}
+export interface HeadStatementReview extends FolderReviewBase {
+  kind: "efs.headStatementReview";
+  file: FileRef;
+  /** Your HEAD on the file before the statement. */
+  before: "UNSET" | "BOUND" | "MASKED" | "RELEASED";
+  /**
+   * What the statement makes of it: a lone "not this" (UNSET before: an entry in the file's head-authors list, never a
+   * version), your version hidden (BOUND before), another "not this" (MASKED or RELEASED before), or your version
+   * taken back (a RELEASE).
+   */
+  statement: "lone-no" | "hide" | "no-again" | "release";
+}
+
+/**
+ * Test-only (exported from `@efs/sdk/testing`): plan a HEAD statement on a file that no SDK planner makes, for
+ * writer.runSequence. `planHeadNo` is an UNBIND, a "not this": from no head it is a lone no (an author with an entry in
+ * the file's head-authors list and no version), from your own version it hides it. `planHeadRelease` is a RELEASE,
+ * taking your HEAD back. Each reads your head at the planning block and states against its revision (E_CAS refuses
+ * a stale one). MISUSE when the subject was never created, or for a release with nothing to take back.
+ */
+export async function planHeadNo(
+  efs: Efs,
+  writer: { readonly principal: PrincipalId },
+  input: HeadStatementInput,
+  o: FolderPlanOpts = {},
+): Promise<FolderPlanResult<HeadStatementReview>> {
+  return planHeadStatement(efs, writer, input, ACTION.UNBIND, o);
+}
+
+/** Test-only (exported from `@efs/sdk/testing`): plan taking your HEAD on a file back (a RELEASE); see planHeadNo. */
+export async function planHeadRelease(
+  efs: Efs,
+  writer: { readonly principal: PrincipalId },
+  input: HeadStatementInput,
+  o: FolderPlanOpts = {},
+): Promise<FolderPlanResult<HeadStatementReview>> {
+  return planHeadStatement(efs, writer, input, ACTION.RELEASE, o);
+}
+
+async function planHeadStatement(
+  efs: Efs,
+  writer: { readonly principal: PrincipalId },
+  input: HeadStatementInput,
+  kind: number,
+  o: FolderPlanOpts,
+): Promise<FolderPlanResult<HeadStatementReview>> {
+  const me = lower(writer.principal) as PrincipalId;
+  const file = lower(input.file.subject) as SubjectId;
+  const position = positionKey(PURPOSES.head, file, ZERO_WORD);
+  return atOneBasis(efs, o, async (ctx, s, basis) => {
+    const d = ctx.efs.deployment;
+    ctx.requests += 2;
+    const [sub, hd] = await callsAt(s, basis.blockHash, [
+      subjectInfoCall(ctx.efs, file),
+      {
+        to: d.readers.ledgerViews,
+        data: encodeFunctionData({
+          abi: ledgerViewsAbi,
+          functionName: "headsAt",
+          args: [d.ledger, [me], position],
+        }),
+      },
+    ]);
+    const creator = decodeCreator(sub);
+    if (!creator.ok) return creator;
+    if (!hd?.ok) return failed(hd);
+    let status: number;
+    let all: readonly RawHead[];
+    try {
+      [status, , , all] = decodeFunctionResult({
+        abi: ledgerViewsAbi,
+        functionName: "headsAt",
+        data: hd.result as Hex,
+      }) as unknown as [number, RawHead, number, RawHead[]];
+    } catch {
+      return bad("headsAt");
+    }
+    const st = chainStatus(status);
+    if (st !== "PRESENT" && st !== "MASKED" && st !== "ABSENT_PROVEN")
+      return {
+        ok: false,
+        retryElsewhere: true,
+        reason: reason("RPC_ERROR", "transient", `headsAt reads ${st}`),
+      };
+    const mine = all[0];
+    if (!mine || all.length !== 1) return bad("headsAt (your head)");
+    const before = headState(mine.state);
+    if (before === "UNRECOGNIZED") return bad(`headsAt (head state ${mine.state})`);
+    const refuse = (why: string): Step<() => Promise<FolderPlanResult<HeadStatementReview>>> => ({
+      ok: true,
+      value: async () => {
+        throw misuse(why, { file });
+      },
+    });
+    if (creator.value === null)
+      return refuse("this subject was never created: there is no file to state about");
+    if (kind === ACTION.RELEASE && (before === "UNSET" || before === "RELEASED"))
+      return refuse(`your HEAD on this file is ${before}: there is nothing to take back`);
+    const statement: HeadStatementReview["statement"] =
+      kind === ACTION.RELEASE
+        ? "release"
+        : before === "UNSET"
+          ? "lone-no"
+          : before === "BOUND"
+            ? "hide"
+            : "no-again";
+    const unit: Unit = {
+      effect: (stage, part, parts) => ({
+        code: kind === ACTION.RELEASE ? "test.headRelease" : "test.headNo",
+        args: { file, part: String(part), parts: String(parts), stage },
+        text: kind === ACTION.RELEASE ? "Take your version back" : "Say not this",
+      }),
+      actions: [
+        plain(
+          {
+            kind,
+            purpose: PURPOSES.head,
+            subject: file,
+            role: ZERO_WORD,
+            expectedRevision: BigInt(mine.revision),
+          },
+          kind === ACTION.RELEASE
+            ? { bindRow: "releaseHead" }
+            : before === "UNSET"
+              ? { firstStatement: true } // no HEAD lone-no row: priced at the dearest first UNBIND
+              : { firstStatement: false, bindRow: "unbindHead" },
+        ),
+      ],
+      finishes: true,
+    };
+    return {
+      ok: true,
+      value: () =>
+        toParts(
+          efs,
+          o,
+          [unit],
+          (base) => ({
+            kind: "efs.headStatementReview",
+            ...base,
+            file: input.file,
+            before,
+            statement,
+          }),
+          me,
+          basis,
+          0,
+        ),
+    };
+  });
+}
+
 export interface RestoreEntriesInput {
   /**
    * `via` is required when the entry restored is a folder, as for planMoveEntries: the path to the entry's folder
