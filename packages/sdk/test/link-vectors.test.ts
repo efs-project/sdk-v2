@@ -62,6 +62,17 @@ describe("link grammar vectors", () => {
       segment: 1,
       detail: "slash",
       word: "b",
+      code: 3,
+    });
+    // A fold that makes a word the link grammar's own rules pass but the chain refuses: checkWord has the last word.
+    const makesBidi: FoldStep = (w) => ({ ok: true, word: w === "b" ? "x\u202ey" : w });
+    expect(parseLink("a/b", { fold: makesBidi })).toEqual({
+      status: "INVALID",
+      rule: "bad-word",
+      segment: 1,
+      detail: "refused-character",
+      word: "b",
+      code: 7,
     });
     // Other refusals carry no word.
     expect(parseLink("cars//tesla", { fold: null })).not.toHaveProperty("word");

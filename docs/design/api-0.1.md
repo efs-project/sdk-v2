@@ -284,12 +284,23 @@ string that an app places in its route, for example after `#/files/`:
   `canonical` is the folded link. Pass your own `fold` to override it, or `fold: null` to `parseLink` for the grammar
   alone. It is marked interim until Q53: the ruled rule replaces it, extending it and never contradicting it.
 - `parseLink(input, { fold? })` returns `{ status: "OK", target: ObjectLink | PathLink | RevisionLink | HomeLink |
-  TopicLink, canonical }` or `{ status: "INVALID", rule, segment?, detail?, word? }`. For `bad-word`, `word` is the
-  refused segment as the link spelled it (percent-decoded, not folded), so a page can say which word: it may hold the
-  characters that broke the rule, so show it escaped or isolated. Every first segment starting with `~`
-  is the system's (only `~efs` is defined); a first segment that is an address is a home; anything else is a topic
-  (tag model spec §5). The shared root has no named link (no `~root`), and `~home` is never defined: both are
-  INVALID with rule `reserved-name`, like any other `~` segment.
+  TopicLink, canonical }` or `{ status: "INVALID", rule, segment?, detail?, word?, code? }`. For `bad-word`, `word` is
+  the refused segment as the link spelled it (percent-decoded, not folded), so a page can say which word: it may hold
+  the characters that broke the rule, so show it escaped or isolated. `code` is the chain's own refusal code
+  (`checkWord`: 1 length, 2 malformed UTF-8, 3 a forbidden ASCII byte, 4 a dot word, 5 a leading `~`, 6
+  address-shaped, 7 a refused character), present whenever the word grammar refused (absent when the fold did).
+  - **A link names only words the chain can hold:** what the fold produced must pass `checkWord`, the chain's whole
+    word grammar. So a bidi override, a zero-width joiner, a no-break space, a soft hyphen, a variation selector, a
+    C1 control, a noncharacter or a backslash makes the link INVALID, never a page for a word that can't exist.
+  - **Grammar only (`fold: null`) applies only the fold-independent rules** (length, slash, ASCII control, dot,
+    leading `~`, address shape). What the chain refuses in typed text depends on the fold: the recommended rule for
+    Q53 (NFKC_Casefold) removes bidi controls and joiners, so a link refused under the interim fold may name a real
+    word under the ruled one. A grammar-only parse has no `words`, and every read and planner folds and checks the
+    word in full before it becomes an id: a read by words refuses a word `checkWord` refuses with MISUSE, before
+    any request.
+  - **Kinds:** every first segment starting with `~` is the system's (only `~efs` is defined); a first segment that
+    is an address is a home; anything else is a topic (tag model spec §5). The shared root has no named link (no
+    `~root`), and `~home` is never defined: both are INVALID with rule `reserved-name`, like any other `~` segment.
 - **Path links** (`PathLink`, kind `path`): names after an object id are a path from that folder. It is its own
   kind, never an object link with names, so a router that only opens objects can't open the folder in place of the
   entry the link names. Without names the link is an object link, and `link()` refuses a path link with none. The

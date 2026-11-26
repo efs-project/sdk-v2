@@ -59,11 +59,13 @@ assert.deepEqual(
   [
     "@efs/sdk/dist/core/errors.js",
     "@efs/sdk/dist/core/platform.js",
+    "@efs/sdk/dist/generated/constants.js", // the word limits and the refused-scalar table (data only)
     "@efs/sdk/dist/links/index.js",
     "@efs/sdk/dist/names/fold.js", // the interim word fold (string code only)
     "@efs/sdk/dist/names/links.js",
     "@efs/sdk/dist/names/name.js", // checkName, for home path names
     "@efs/sdk/dist/names/segment.js", // the wire segment codec
+    "@efs/sdk/dist/names/word.js", // checkWord, the chain's word grammar
   ],
   `@efs/sdk/links pulled in more than the grammar: ${startupInputs.join(", ")}`,
 );

@@ -166,7 +166,9 @@
 | `/~efs/o/…`, `/~efs/v/…` | permanent object and revision links (as built) |
 | `/~efs/o/<folder>/<name>/…` | a path from a folder named by its id, the shared root included (see api-0.1) |
 
-  Trailing slashes are ignored and empty segments are refused. Every first segment starting with `~` is reserved for
+  Trailing slashes are ignored and empty segments are refused. A folded word must pass the chain's word grammar
+  (`checkWord`), so a link never names a word the chain can't hold (a bidi control, a joiner, a no-break space…):
+  it is INVALID `bad-word` with `word`, `segment` and the chain's `code`. Every first segment starting with `~` is reserved for
   the system. The shared root has no named link of its own (no `~root`), and `~home` is never defined. No link addresses a named file through a topic until the owner settles whether a file's name is the last
   word of a path.
 
