@@ -823,6 +823,20 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
 
   Only the same publication (the same actions and bodies) from the same account is held back. Any other save goes
   out as usual.
+
+  **Two different saves can share a publication.** A part of PUBLISHes alone is the same publication whenever the
+  same bytes are saved twice: one image into two folders, or a big file uploaded again. The second save's identical
+  part is then held too, until the first save's part is final.
+  - `twin.sequenceId` tells the cases apart: the save the person just started again, or another save of the same
+    bytes.
+  - The planner publishes each record once per save (a repeated chunk or subtree is published at its first
+    occurrence), so a save is never held by its own parts.
+  - Final means the admission's block is at or below the endpoint's `finalized` block. On anvil (the fixture and
+    local chains) that tag is 2 × 32 slots behind the latest block, 64 blocks. Anvil mines one block per transaction,
+    so on a quiet local chain a hold lasts until 64 more blocks are mined. On Sepolia and mainnet it is about two
+    epochs, roughly 13 minutes.
+
+  Plan-time reuse (not built: LIMITATIONS.md) will satisfy such a part without a send.
 - **Each part keeps its `deadlineSeconds`:** it is applied each time the part is planned, including on resume.
 - **Wallet errors:** NOT_SENT only for errors that mean the request was refused before signing; the attempt is
   stamped NOT_SENT, so nothing waits on it. They are 4001 USER_REJECTED and 4100 WALLET_UNAUTHORIZED
