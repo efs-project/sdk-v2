@@ -101,6 +101,15 @@ try {
     items.rows.map((r) => [r.thing, r.decider.kind]),
     [[file.subject, "lens"]],
   );
+  // Each row says what it is. A created subject is "subject" (a file, or another app's subject) until you ask for the
+  // exact tier (its HEAD read too); `kinds: ["file"]` turns it on, so "Files only" never lets another app's subject in.
+  assert.equal(items.rows[0].kind, "subject");
+  const onlyFiles = await topicItems(efs, ["notes"], { view: "mine", lens, kinds: ["file"] });
+  assert.equal(onlyFiles.status, "PRESENT");
+  assert.deepEqual(
+    onlyFiles.rows.map((r) => r.kind),
+    ["file"],
+  );
   // And the other way round: this file's tags, as this Lens sees them (tagsOf is the unfiltered list).
   const tags = await lensTagsOf(efs, file.subject, { lens });
   assert.equal(tags.status, "PRESENT");

@@ -16,11 +16,13 @@ import { decodeFunctionResult, encodeFunctionData, hexToBytes, keccak256 } from 
 import { gasPlanFor } from "../actions/split.js";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
+import type { RpcOutcome } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import { type Address, bytesToHex, type Hex, lower, type PrincipalId } from "../core/hex.js";
 import { utf8Encode } from "../core/platform.js";
-import { type Ctx, EMPTY_BASIS, type Evidence } from "../files/bytes.js";
+import { type Ctx, decodeHead, EMPTY_BASIS, type Evidence, headCall } from "../files/bytes.js";
+import { decodeCreator, subjectInfoCall } from "../files/folders.js";
 import {
   ledgerReadsAbi,
   ledgerViewsAbi,
@@ -34,6 +36,8 @@ import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
 import { positionKey, recordId } from "../protocol/keys.js";
 import { chainStatus } from "../protocol/status.js";
+import { callsIn } from "./filenames.js";
+import { badReply, READ_IDS } from "./plan.js";
 import {
   checkWord,
   childId,
@@ -60,9 +64,30 @@ export type Decider =
   /** Raw rows apply no rule. */
   | { kind: "none" };
 
+/**
+ * What a row's thing is, at the page's block. A record is a "folder" (files-directory/1), a "revision" (files-root/1 or
+ * files-child/1), a "topic" (topic/1 or topic-word/1) or "other" (any other Type, named in `typeId`). A padded address
+ * is an "address". A created subject is a "subject": a file, or another app's subject. The exact tier (`kindsExact`)
+ * tells those apart: "file" when its creator's HEAD names a Files revision, else "other". Anything else is "other".
+ */
+export type ThingKind = "file" | "subject" | "folder" | "revision" | "topic" | "address" | "other";
+const THING_KINDS: readonly ThingKind[] = [
+  "file",
+  "subject",
+  "folder",
+  "revision",
+  "topic",
+  "address",
+  "other",
+];
+
 export interface TopicRow {
   /** The thing (the position's role): a file's subject, a record id, or a padded address. */
   thing: Hex;
+  /** What the thing is (ThingKind). Without the exact tier a created subject is "subject", never "file". */
+  kind: ThingKind;
+  /** The thing's record Type, when it is a record (a folder, a revision, a topic or another record). */
+  typeId?: Hex;
   /** The topic it was filed under (the place itself, or a topic below it in a roll-up). */
   topic: Hex;
   position: Hex;
@@ -104,6 +129,15 @@ export interface TopicItemsOpts extends CallOpts {
   sample?: number;
   /** Folds each typed word of a place given by words. */
   fold?: FoldStep;
+  /**
+   * Only rows of these kinds. The SDK filters (the chain lists every kind), so a page may read further to fill
+   * `rows`; what it leaves out is counted in `counts.filtered` and still remembered for de-duplication. With "file",
+   * the exact tier is on, and "subject" can't be asked for with it. The filter is part of the listing (its cursor).
+   */
+  kinds?: readonly ThingKind[];
+  /** The exact tier: a created subject is "file" (its creator's HEAD names a Files revision) or "other". Two more
+   *  round trips a page, for the subjects only. */
+  kindsExact?: boolean;
 }
 
 export type TopicPage =
@@ -131,6 +165,8 @@ export type TopicPage =
         hiddenByChild: number;
         /** Calls tried again with smaller bounds after the node refused them. */
         backoffs: number;
+        /** Things the `kinds` filter left out (each once: a left-out thing is remembered like a returned one). */
+        filtered: number;
       };
       basis: Basis;
       evidence: Evidence;
@@ -320,6 +356,18 @@ export async function topicItems(
       ? []
       : (o.lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
   if (view !== "raw" && lensList.length === 0) throw misuse("a Lens names at least one principal");
+  const filter = o.kinds === undefined ? null : [...new Set(o.kinds)].sort();
+  if (filter) {
+    if (filter.length === 0) throw misuse("`kinds` names at least one kind");
+    const bad = filter.find((k) => !THING_KINDS.includes(k));
+    if (bad !== undefined) throw misuse(`"${bad}" is not a kind (${THING_KINDS.join(", ")})`);
+  }
+  // "file" can only be decided by the exact tier, so asking for it turns the tier on.
+  const exact = o.kindsExact === true || (filter?.includes("file") ?? false);
+  if (exact && filter?.includes("subject"))
+    throw misuse(
+      'with the exact tier on (kindsExact, or "file" in kinds) a subject is "file" or "other": "subject" never shows',
+    );
   const query = keccak256(
     utf8Encode(
       JSON.stringify([
@@ -329,11 +377,15 @@ export async function topicItems(
         o.below === true,
         lensList,
         o.sample ?? 0,
+        // A filter changes which rows a listing holds (and the things its cursor remembers), so it is part of it.
+        ...(filter ? [{ kinds: filter, exact }] : []),
       ]),
     ),
   );
   if (o.cursor && (o.cursor.v !== 1 || o.cursor.query !== query))
-    throw misuse("this cursor belongs to another listing (view, place, below, Lens or sample)");
+    throw misuse(
+      "this cursor belongs to another listing (view, place, below, Lens, sample or kinds)",
+    );
   const b = bounds(efs);
   const ptl = b.pageTimesLens;
   const perLens =
@@ -379,6 +431,7 @@ export async function topicItems(
           calls: number;
           hiddenByChild: number;
           backoffs: number;
+          filtered: number;
         };
       }
     | { kind: "refused"; status: "UNKNOWN" | "INVALID"; reason: Reason };
@@ -390,6 +443,8 @@ export async function topicItems(
       let bounded = o.cursor?.bounded ?? false;
       let next: Hex = o.cursor?.next ?? "0x";
       const rows: TopicRow[] = [];
+      // Without a filter, every row's kind is read once, at the end of the page.
+      const unkinded: Omit<TopicRow, "kind" | "typeId">[] = [];
       let read = 0;
       let calls = 0;
       let dropped = 0;
@@ -405,6 +460,7 @@ export async function topicItems(
         calls: 0,
         hiddenByChild: 0,
         backoffs: 0,
+        filtered: 0,
       };
       // A call the node refuses (out of gas, most likely) is tried again with half the bounds, a few times, before the
       // page is UNKNOWN: a big Lens never turns into UNKNOWN just because one call was too large.
@@ -413,7 +469,7 @@ export async function topicItems(
       let backoffs = 0;
       while (calls < MAX_CALLS) {
         const limit = Math.min(entryCap, entriesWanted - read);
-        const maxRows = Math.min(rowCap, rowsWanted - rows.length);
+        const maxRows = Math.min(rowCap, rowsWanted - rows.length - unkinded.length);
         if (limit <= 0 || maxRows <= 0) break;
         const call =
           view === "mine"
@@ -525,6 +581,7 @@ export async function topicItems(
             hidden = h.value;
           }
         }
+        const fresh: Omit<TopicRow, "kind" | "typeId">[] = [];
         for (const x of raw) {
           if (hidden.has(lower(x.topic))) {
             counts.hiddenByChild++;
@@ -537,11 +594,38 @@ export async function topicItems(
           }
           seen.add(thing);
           seenList.push(thing);
-          rows.push(rowOf(view, x, lensList));
+          fresh.push(rowOf(view, x, lensList));
         }
+        // A filter is applied per call, so only kept rows count toward `rows`. A left-out thing stays in `seen`.
+        if (filter) {
+          const k = await kindsOf(
+            s,
+            basis,
+            ctx,
+            fresh.map((x) => x.thing),
+            exact,
+          );
+          if (!k.ok) return k;
+          for (const x of fresh) {
+            const got = k.value.get(x.thing) as Kinded;
+            if (filter.includes(got.kind)) rows.push({ ...x, ...got });
+            else counts.filtered++;
+          }
+        } else unkinded.push(...fresh);
         scan = st;
         next = st === "EXHAUSTED" ? "0x" : info.next;
         if (st === "EXHAUSTED") break;
+      }
+      if (unkinded.length) {
+        const k = await kindsOf(
+          s,
+          basis,
+          ctx,
+          unkinded.map((x) => x.thing),
+          exact,
+        );
+        if (!k.ok) return k;
+        for (const x of unkinded) rows.push({ ...x, ...(k.value.get(x.thing) as Kinded) });
       }
       if (seenList.length > SEEN_MAX) {
         bounded = true;
@@ -755,7 +839,146 @@ async function hiddenBelow(
   return { ok: true, value: hidden };
 }
 
-function rowOf(view: TopicView, x: RawMine | RawPlace, lens: readonly PrincipalId[]): TopicRow {
+type Kinded = { kind: ThingKind; typeId?: Hex };
+/** A padded address: 12 zero bytes, then a nonzero address. */
+const isAddressWord = (word: Hex): boolean => /^0x0{24}/.test(word) && !/^0x0{64}$/.test(word);
+const unsure = (detail: string): Step<never> => ({
+  ok: false,
+  retryElsewhere: true,
+  reason: reason("NOT_YET_DECIDABLE", "transient", detail),
+});
+
+/**
+ * What each thing is, at the basis (ThingKind). An address costs nothing. Every other thing is read in one batched
+ * round trip: records (READ_IDS ids a call) and subjectInfo. With `exact`, a created subject's creator's HEAD
+ * (LensReader.resolve under the creator alone) and the record it names follow, one round trip each. Anything the
+ * chain can't answer fails the step (the page is UNKNOWN), never a guessed kind.
+ */
+async function kindsOf(
+  s: Session,
+  basis: Basis,
+  ctx: Ctx,
+  things: readonly Hex[],
+  exact: boolean,
+): Promise<Step<Map<string, Kinded>>> {
+  const d = ctx.efs.deployment;
+  const types = d.typeIds as Record<string, Hex | undefined>;
+  const type = (k: string): string | null => (types[k] ? lower(types[k] as Hex) : null);
+  const folder = type("files-directory/1");
+  const revision = new Set([type("files-root/1"), type("files-child/1")].filter((t) => t !== null));
+  const topic = new Set([type("topic/1"), type("topic-word/1")].filter((t) => t !== null));
+  const out = new Map<string, Kinded>();
+  const ids = [...new Set(things.filter((t) => !isAddressWord(t)))];
+  for (const t of things) if (isAddressWord(t)) out.set(t, { kind: "address" });
+  if (ids.length === 0) return { ok: true, value: out };
+  const calls: CallRequest[] = [];
+  const chunks: { at: number; ids: Hex[] }[] = [];
+  for (let k = 0; k < ids.length; k += READ_IDS) {
+    const chunk = ids.slice(k, k + READ_IDS);
+    const at = calls.push(
+      callOf(d.readers.ledgerViews, ledgerViewsAbi, "records", [d.ledger, chunk]),
+    );
+    chunks.push({ at: at - 1, ids: chunk });
+  }
+  const subjAt = calls.length;
+  for (const id of ids) calls.push(subjectInfoCall(ctx.efs, id));
+  ctx.requests += calls.length;
+  const outs = await callsIn(s, basis.blockHash, calls);
+  const records = recordKinds(outs, chunks);
+  if (!records.ok) return records;
+  const subjects: { id: Hex; creator: PrincipalId }[] = [];
+  for (const [i, id] of ids.entries()) {
+    const rec = records.value.get(id);
+    if (rec) {
+      const t = rec.typeId;
+      const kind: ThingKind =
+        t === folder && rec.length === 64
+          ? "folder"
+          : revision.has(t)
+            ? "revision"
+            : topic.has(t)
+              ? "topic"
+              : "other";
+      out.set(id, { kind, typeId: t as Hex });
+      continue;
+    }
+    const c = decodeCreator(outs[subjAt + i]);
+    if (!c.ok) return c;
+    if (c.value === null) out.set(id, { kind: "other" });
+    else {
+      out.set(id, { kind: "subject" });
+      subjects.push({ id, creator: c.value });
+    }
+  }
+  if (!exact || subjects.length === 0) return { ok: true, value: out };
+  // The exact tier: a file is a subject whose creator's HEAD is bound to a Files revision.
+  const heads = subjects.map((x) => headCall(ctx.efs, { principals: [x.creator] }, x.id));
+  ctx.requests += heads.length;
+  const headOuts = await callsIn(s, basis.blockHash, heads);
+  const bound: { id: Hex; target: Hex }[] = [];
+  for (const [i, x] of subjects.entries()) {
+    const h = decodeHead(headOuts[i]);
+    if (!h.ok) return h;
+    const sel = h.value;
+    if (sel.status === "PRESENT") bound.push({ id: x.id, target: sel.target });
+    else if (sel.status === "ABSENT_PROVEN" || sel.status === "MASKED")
+      out.set(x.id, { kind: "other" });
+    else return unsure("a subject's HEAD can't be decided yet");
+  }
+  if (bound.length === 0) return { ok: true, value: out };
+  const targets = [...new Set(bound.map((b) => b.target))];
+  const tCalls: CallRequest[] = [];
+  const tChunks: { at: number; ids: Hex[] }[] = [];
+  for (let k = 0; k < targets.length; k += READ_IDS) {
+    const chunk = targets.slice(k, k + READ_IDS);
+    const at = tCalls.push(
+      callOf(d.readers.ledgerViews, ledgerViewsAbi, "records", [d.ledger, chunk]),
+    );
+    tChunks.push({ at: at - 1, ids: chunk });
+  }
+  ctx.requests += tCalls.length;
+  const tRecords = recordKinds(await callsIn(s, basis.blockHash, tCalls), tChunks);
+  if (!tRecords.ok) return tRecords;
+  for (const b of bound) {
+    const rec = tRecords.value.get(b.target);
+    if (!rec) return badReply("records (a bound HEAD names no record)");
+    out.set(b.id, { kind: revision.has(rec.typeId) ? "file" : "other" });
+  }
+  return { ok: true, value: out };
+}
+
+/** The records among `chunks`' ids (absent ones left out), or a failed step for any answer but PRESENT or absent. */
+function recordKinds(
+  outs: readonly (RpcOutcome | undefined)[],
+  chunks: readonly { at: number; ids: readonly Hex[] }[],
+): Step<Map<string, { typeId: string; length: number }>> {
+  const found = new Map<string, { typeId: string; length: number }>();
+  for (const c of chunks) {
+    const rec = decoded<[readonly number[], readonly { typeId: Hex; length: number }[]]>(
+      ledgerViewsAbi,
+      "records",
+      outs[c.at],
+    );
+    if (!rec.ok) return rec;
+    const [statuses, headers] = rec.value;
+    if (statuses.length !== c.ids.length || headers.length !== c.ids.length)
+      return badReply("records (one per id)");
+    for (const [i, st] of statuses.entries()) {
+      const cs = chainStatus(st);
+      const h = headers[i] as { typeId: Hex; length: number };
+      if (cs === "PRESENT")
+        found.set(c.ids[i] as string, { typeId: lower(h.typeId), length: Number(h.length) });
+      else if (cs !== "ABSENT_PROVEN") return unsure(`records answered ${cs}`);
+    }
+  }
+  return { ok: true, value: found };
+}
+
+function rowOf(
+  view: TopicView,
+  x: RawMine | RawPlace,
+  lens: readonly PrincipalId[],
+): Omit<TopicRow, "kind" | "typeId"> {
   const base = {
     thing: lower(x.thing),
     topic: lower(x.topic),

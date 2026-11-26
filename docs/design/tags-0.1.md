@@ -16,6 +16,18 @@
 >   public tier); the scan status, where only EXHAUSTED ends a listing and every other page carries a cursor; two
 >   limits per page (rows wanted, entries read); repeats removed by thing across calls and pages (`dedup`); per-call
 >   bounds from the gas model's `reads` section;
+> - row kinds: every `topicItems` row says what its thing is at the page's block (`kind`, and `typeId` for a record).
+>   A record is a `folder`, a `revision`, a `topic` (a word page or a path record) or `other` (its Type in `typeId`);
+>   a padded address is an `address` (free); a created subject is a `subject`. That costs one batched round trip a
+>   page (`records` and `subjectInfo`). A subject is a file or another app's subject, so it is never called `file`
+>   without the exact tier (`kindsExact`): its creator's HEAD and the record that HEAD names, two more round trips,
+>   give `file` for a Files revision and `other` for anything else. A `kinds` filter is applied by the SDK per call:
+>   - a page reads further to fill `rows`;
+>   - what it leaves out is counted (`counts.filtered`) and remembered for de-duplication;
+>   - it never ends a page (only EXHAUSTED does) and is part of the cursor;
+>   - `file` in it turns the exact tier on, and `subject` can't be asked for with that tier.
+>
+>   A kind the chain can't answer makes the page UNKNOWN, never a guessed kind;
 > - `tagsOf`, `topicChildren` (each child's word read back and checked against its parent; an optional fold skips a
 >   word that is not its own fold), `wordPage`, `topicPath`, and `placeCount` / `authorCount` ("about" figures);
 >   a word nobody has used (`wordPage`) or a topic nobody registered (`topicChildren`) is ABSENT_PROVEN, never a
