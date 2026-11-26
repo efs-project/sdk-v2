@@ -235,6 +235,14 @@ describe("topic row kinds (fixture)", () => {
     expect(sum((p) => p.dedup.dropped)).toBe(1);
   });
 
+  it("one vocabulary with folder listings: a folder-only kind (invalid) is accepted and matches nothing here", async () => {
+    const page = await topicItems(efs, ["kinds"], { view: "mine", lens, kinds: ["invalid"] });
+    if (page.status !== "PRESENT") throw new Error(page.status);
+    expect(page.rows).toEqual([]);
+    expect(page.counts.filtered).toBe(8);
+    expect(page.finished).toBe(true);
+  });
+
   it("a filter is part of the listing: a cursor from another filter is MISUSE, and so is a kind that is not one", async () => {
     const first = await topicItems(efs, ["kinds"], { view: "mine", lens, entries: 1 });
     if (first.status !== "PRESENT" || !first.next) throw new Error("expected a cursor");

@@ -30,6 +30,7 @@ import {
   type SubjectId,
   uniquePrincipals,
 } from "../core/hex.js";
+import { checkKinds, type ViewKind } from "../core/kinds.js";
 import { utf8Encode } from "../core/platform.js";
 import {
   filesPageReaderAbi,
@@ -164,8 +165,12 @@ export interface FolderCursor {
 
 export interface ListFolderOpts extends CallOpts {
   lens?: Lens;
-  /** Only these kinds. Rows of other kinds are counted in `skipped.filtered`, never silently dropped. */
-  kinds?: readonly EntryKind[];
+  /**
+   * Only these kinds, from the one vocabulary of every view (core/kinds.ts): a kind a folder never holds (revision,
+   * topic, address, subject) matches nothing; a string outside it is MISUSE. Rows of other kinds are counted in
+   * `skipped.filtered`, never silently dropped.
+   */
+  kinds?: readonly ViewKind[];
   /** Rows the chain returns per page, before filtering (default 50, at most 64). */
   limit?: number;
   /**
@@ -736,7 +741,7 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
   const dir = checkParent(folder);
   const subject = parentSubject(dir);
   const principals = lensOf(efs, o.lens);
-  const kinds = o.kinds ?? [];
+  const kinds: ViewKind[] = o.kinds === undefined ? [] : checkKinds(o.kinds);
   const limit = o.limit ?? 50;
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIST_LIMIT)
     throw misuse(`limit is a whole number from 1 to ${MAX_LIST_LIMIT}`);

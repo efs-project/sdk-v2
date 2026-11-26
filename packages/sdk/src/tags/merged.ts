@@ -24,6 +24,7 @@ import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.j
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import { type Hex, lower, type PrincipalId, uniquePrincipals } from "../core/hex.js";
+import type { ViewKind } from "../core/kinds.js";
 import { utf8Encode } from "../core/platform.js";
 import { type Ctx, EMPTY_BASIS, type Evidence } from "../files/bytes.js";
 import {
@@ -58,7 +59,6 @@ import {
   SCAN,
   type ScanStatus,
   SEEN_MAX,
-  type ThingKind,
   type TopicPlace,
   type TopicRow,
 } from "./read.js";
@@ -112,7 +112,7 @@ export interface MergedItemsOpts extends CallOpts {
   cursor?: MergedCursor;
   sample?: number;
   fold?: FoldStep;
-  kinds?: readonly ThingKind[];
+  kinds?: readonly ViewKind[];
   kindsExact?: boolean;
   /** How far the synonym set reaches: hops 1 to 4 (default 4), lists 1 to 16 with the topic (default 16), and the
    *  newest entries topicSynonyms reads per list, 1 to 16 (default 16). Read on the first page only. */

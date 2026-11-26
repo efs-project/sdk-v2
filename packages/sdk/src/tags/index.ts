@@ -48,6 +48,7 @@ export type {
   PlaceCountRow,
   PlacesOpts,
   ScanStatus,
+  ThingKind,
   TopicCursor,
   TopicItemsOpts,
   TopicPage,

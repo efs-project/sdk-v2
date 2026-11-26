@@ -987,14 +987,30 @@ default. An address-shaped word (12 leading zero bytes) given as a folder's `dir
 takes a home as a parent (create, move to or from it, `via` from it, remove, restore, hide, unhide), and
 `listRemoved` lists a home's removed entries. In effects and reviews' `folder` words a home is its padded address.
 
+**Kinds, one vocabulary in every view** (`VIEW_KINDS` and `ViewKind` from `@efs/sdk`). The same `kinds` array works
+in `listFolder` (folders and homes), `topicItems` and `topicItemsMerged`, so one filter control serves them all. A
+kind that can't occur in a view matches nothing there, and is counted with what the filter left out
+(`skipped.filtered` in folders, `counts.filtered` in topic pages). A string outside the vocabulary is MISUSE: a typo
+is never a filter that matches nothing, which a scan from the start would report as COMPLETE and empty.
+
+| kind | folders and homes (`listFolder`) | topic pages (`topicItems`, `topicItemsMerged`) |
+|---|---|---|
+| `file` | a subject whose HEAD under the Lens is a Files revision | the exact tier: the creator's HEAD names a Files revision (`file` turns the tier on) |
+| `folder` | a files-directory/1 record | a files-directory/1 record |
+| `other` | a subject with no Files HEAD under the Lens | any other record (its `typeId`), or, with the exact tier, a subject that is not a file |
+| `subject` | never | a created subject before the exact tier (can't be asked for with the tier on) |
+| `revision` | never | a files-root/1 or files-child/1 record |
+| `topic` | never | a topic-word/1 or topic/1 record |
+| `address` | never | a padded address |
+| `invalid` | a row that breaks a Files rule | never |
+
 **Reads** (`@efs/sdk/files`, all at one block):
 - `listFolder(efs, folder, { lens?, kinds?, limit?, cursor?, withSize? })` → `PRESENT { folder, rows, skipped,
   coverage, next? }` | `ABSENT_PROVEN` (no such folder: never "empty") | `UNKNOWN` | `INVALID`. One row per name.
   A row has `name`, `position`, `kind` (`folder` | `file` | `other` | `invalid`), `typeId` (files-directory/1, or the
   HEAD revision's Type), `target`, `author`, `admission`, `head?` and, with `withSize`, `size`. `kinds` is a kind
   filter run by the SDK, counted in `skipped.filtered`; names an earlier author hid are `skipped.hidden`. In this
-  generation the chain admits only files and folders as entries, so the kind is the Type; a filter by Type id comes
-  with tag and topic views, where items of any Type appear. `coverage` is COMPLETE only for a listing scanned from its
+  generation the chain admits only files and folders as entries, so the kind is the Type. `coverage` is COMPLETE only for a listing scanned from its
   start to its end on one page; a page from a cursor is at most PARTIAL (`RESUMED`); a fresh scan that ended but that
   the index cannot vouch for is PARTIAL `INDEX_PARTIAL`; an empty PARTIAL page with a `next` means "keep reading". A
   page with no rows is PRESENT only when COMPLETE (or the end of a resumed listing): a fresh scan that found nothing

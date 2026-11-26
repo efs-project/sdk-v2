@@ -27,6 +27,7 @@ import {
   type PrincipalId,
   uniquePrincipals,
 } from "../core/hex.js";
+import { checkKinds, type ViewKind } from "../core/kinds.js";
 import { utf8Encode } from "../core/platform.js";
 import { type Ctx, decodeHead, EMPTY_BASIS, type Evidence, headCall } from "../files/bytes.js";
 import { decodeCreator, subjectInfoCall } from "../files/folders.js";
@@ -142,7 +143,7 @@ export interface TopicItemsOpts extends CallOpts {
    * `rows`; what it leaves out is counted in `counts.filtered` and still remembered for de-duplication. With "file",
    * the exact tier is on, and "subject" can't be asked for with it. The filter is part of the listing (its cursor).
    */
-  kinds?: readonly ThingKind[];
+  kinds?: readonly ViewKind[];
   /** The exact tier: a created subject is "file" (its creator's HEAD names a Files revision) or "other". Two more
    *  round trips a page, for the subjects only. */
   kindsExact?: boolean;
@@ -246,17 +247,16 @@ function decoded<T>(
   }
 }
 
-/** @internal The `kinds` options, checked: the sorted filter (null for none) and whether the exact tier is on. */
-export function kindsQuery(o: { kinds?: readonly ThingKind[]; kindsExact?: boolean }): {
-  filter: ThingKind[] | null;
+/**
+ * @internal The `kinds` options, checked: the sorted filter (null for none) and whether the exact tier is on. Kinds
+ * come from the one vocabulary of every view (core/kinds.ts): a folder-only kind ("invalid") is accepted and matches
+ * nothing here; a string outside it is MISUSE.
+ */
+export function kindsQuery(o: { kinds?: readonly ViewKind[]; kindsExact?: boolean }): {
+  filter: ViewKind[] | null;
   exact: boolean;
 } {
-  const filter = o.kinds === undefined ? null : [...new Set(o.kinds)].sort();
-  if (filter) {
-    if (filter.length === 0) throw misuse("`kinds` names at least one kind");
-    const bad = filter.find((k) => !THING_KINDS.includes(k));
-    if (bad !== undefined) throw misuse(`"${bad}" is not a kind (${THING_KINDS.join(", ")})`);
-  }
+  const filter = o.kinds === undefined ? null : checkKinds(o.kinds);
   // "file" can only be decided by the exact tier, so asking for it turns the tier on.
   const exact = o.kindsExact === true || (filter?.includes("file") ?? false);
   if (exact && filter?.includes("subject"))

@@ -28,6 +28,8 @@ export type {
 export { EfsFault } from "./core/errors.js";
 export type { Address, Hex, PrincipalId, RecordId, SubjectId, TypeId } from "./core/hex.js";
 export { fromJson, toJson } from "./core/json.js";
+export type { ViewKind } from "./core/kinds.js";
+export { VIEW_KINDS } from "./core/kinds.js";
 export type {
   ChainFacts,
   DeploymentInfo,

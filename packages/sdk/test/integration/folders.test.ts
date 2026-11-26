@@ -85,6 +85,22 @@ describe("folder reads (fixture)", () => {
     expect(files.status === "PRESENT" && files.rows.length).toBe(3);
   });
 
+  it("kinds are one vocabulary across views: a kind a folder can't hold matches nothing; a string that is no kind is MISUSE", async () => {
+    // "revision" and "topic" are topic-view kinds: a folder never holds one, so nothing matches, and it is counted.
+    const none = await listFolder(efs, docs, { kinds: ["revision", "topic"] });
+    if (none.status !== "PRESENT") throw new Error(none.status);
+    expect(none.rows).toEqual([]);
+    expect(none.skipped.filtered).toBe(3);
+    // A typo is never a filter that matches nothing (a scan from the start would read COMPLETE and empty: a false
+    // "none of that kind").
+    await expect(listFolder(efs, docs, { kinds: ["files" as never] })).rejects.toMatchObject({
+      code: "MISUSE",
+    });
+    await expect(listFolder(efs, docs, { kinds: ["File" as never] })).rejects.toMatchObject({
+      code: "MISUSE",
+    });
+  });
+
   it("pages: PARTIAL with a cursor until the end, never COMPLETE from a cursor; a cursor is bound to its query", async () => {
     const names: string[] = [];
     let page = await listFolder(efs, docs, { limit: 1 });
