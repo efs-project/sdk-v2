@@ -14,6 +14,7 @@ import { scheduleCheck } from "./schedule.js";
 import {
   classifyWalletError,
   estimate,
+  fundsRefusal,
   inFlightTwin,
   notify,
   type SendOpts,
@@ -196,6 +197,12 @@ export async function sendPlansAsBatch(
               ...walletCode,
             };
           }
+          // Refused for funds: recorded on every part, so each may go again as the same plan (part by part)
+          if (how.ambiguous.code === "INSUFFICIENT_FUNDS")
+            for (const r of records)
+              await bestEffort(
+                journal.put(fundsRefusal(r, how.ambiguous.detail ?? "insufficient funds")),
+              );
           return {
             kind: "efs.sendBatch",
             status: "AMBIGUOUS",

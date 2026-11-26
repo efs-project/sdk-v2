@@ -85,9 +85,10 @@ if (edit.status === "BASE_CHANGED") {
   `reconcileSequence` settles it from the ledger.
 - **A wallet short of funds is named.** An account that can't cover the gas limit is `AMBIGUOUS` (a save stops
   `IN_FLIGHT`) with reason `INSUFFICIENT_FUNDS` and, for a single send, `reason.funds.gasLimit`: "Your wallet needs
-  enough to cover the gas limit of N; a save is charged only the gas it uses." It can be sent again only once
-  reconcile proves it never went out (past the plan's deadline, 15 minutes by default, and finalized). A wallet that
-  just disables its confirm button gives a plain `USER_REJECTED`.
+  enough to cover the gas limit of N; a save is charged only the gas it uses." Once the account is topped up, "Send
+  again" (`resume`, or `send` of the same plan) sends the same plan again, so it can't land twice; if the wallet had
+  queued the original and it landed, nothing more is sent. With under a minute left before the plan's deadline, it
+  waits for reconcile instead. A wallet that just disables its confirm button gives a plain `USER_REJECTED`.
 - **What people type is folded, and some words wait.** Tag words go through `foldWord` (interim, until the tag text
   rule is chosen): an all-ASCII word is trimmed, its spaces become underscores, and A–Z become a–z ("Notes" saves as
   `notes`: say so). Adding a tag refuses a word with a non-ASCII character a candidate rule would change (MISUSE,

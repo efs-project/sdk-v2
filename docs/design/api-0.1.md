@@ -1085,9 +1085,23 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   signed transaction could still send it. A single send carries `reason.funds.gasLimit`, the limit it asked for; a
   batch carries none (the wallet sets each call's gas) and keeps its batch size. The detail says "the wallet needs
   enough to cover the gas limit of N; a save is charged only the gas it uses", and the copy should say the same: the
-  limit, never the cost. The part stays in flight; it can be sent again (Send
-  again, `resume`) once reconcile proves it never went out, as EXPIRED: past its deadline (900 s by default) at a
-  finalized block, about 15 minutes on a local chain and up to about half an hour on a public one. A wallet that
+  limit, never the cost. The part stays in flight, and the attempt's journal entry records the refusal
+  (`history[].refusal: "INSUFFICIENT_FUNDS"`).
+  - **Sending it again is the same plan.** Once the account is topped up, Send again (`resume(sequenceId)`, or
+    `send(plan)` with the same plan) sends the same plan, with the same ledger nonce and digest. It goes through the
+    account lock, the twin guard and the estimate like a first send; the only rule relaxed is "this plan id is never
+    sent twice". It applies only when the attempt's latest entry is the funds refusal and no wallet ever returned a
+    hash for it (`fundsResendable`). Every other attempt in flight (a lost response, a disconnect) still waits for
+    reconcile. A local account's refusal counts only when it came from the first endpoint that took the signed
+    transaction: after a transport failure the original may be out, so a later endpoint's funds answer is a lost
+    response.
+  - **If the wallet had queued the original** and it landed meanwhile, the resend's estimate fails (`AlreadyAdmitted`):
+    STALE, nothing is sent, and reconcile finds the attempt COMMITTED. At most one of them is ever admitted.
+  - **Near the deadline:** with under a minute (`RESEND_MARGIN_SECONDS`, 60) between the latest block and the plan's
+    deadline, it is not sent again; it waits for reconcile, then EXPIRED, then Send again with a new plan.
+  - A save sent as an atomic batch goes again part by part, each part as its own same plan.
+
+  A wallet that
   disables its confirm button instead (MetaMask) leaves the person only Reject, which is a plain 4001
   USER_REJECTED. eth_estimateGas is never asked with fee fields, so it never answers for funds.
 - **EXPIRED:** a part that was sent and never committed, then proven not committed (a finalized block past its

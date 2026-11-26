@@ -68,6 +68,62 @@ const stamp = (r: AttemptRecord, stage: AttemptStage, detail?: string): AttemptR
   history: [...r.history, { stage, at: Date.now(), ...(detail ? { detail } : {}) }],
 });
 
+/**
+ * @internal The attempt with a funds refusal recorded: still SUBMISSION_POSSIBLE (it may have gone out), its latest
+ * history entry marked INSUFFICIENT_FUNDS, so the same plan may be sent again (fundsResendable).
+ */
+export function fundsRefusal(r: AttemptRecord, detail: string): AttemptRecord {
+  return {
+    ...r,
+    stage: "SUBMISSION_POSSIBLE",
+    history: [
+      ...r.history,
+      { stage: "SUBMISSION_POSSIBLE", at: Date.now(), detail, refusal: "INSUFFICIENT_FUNDS" },
+    ],
+  };
+}
+
+/**
+ * @internal Whether the same plan may be sent again: its attempt is SUBMISSION_POSSIBLE, its latest entry is a funds
+ * refusal, and it never reached SUBMITTED (no wallet ever returned a hash for it). The resend is the same plan, with
+ * the same ledger nonce and digest, so if a wallet had queued the original and it lands, the resend's estimate fails on
+ * the used nonce and nothing is sent; at most one of them is ever admitted. Every other attempt that may have gone
+ * out (a lost response, a disconnect) keeps the rule that a plan id is never sent twice.
+ */
+export function fundsResendable(r: AttemptRecord): boolean {
+  return (
+    r.stage === "SUBMISSION_POSSIBLE" &&
+    r.history.at(-1)?.refusal === "INSUFFICIENT_FUNDS" &&
+    !r.history.some((h) => h.stage === "SUBMITTED")
+  );
+}
+
+/** How far ahead of the chain's clock a plan's deadline must be for the same plan to be sent again, in seconds. */
+export const RESEND_MARGIN_SECONDS = 60;
+
+/**
+ * Whether the plan's deadline is at least RESEND_MARGIN_SECONDS past the latest block's timestamp, so a resend can
+ * still be admitted. Unreadable: false (the attempt waits for reconcile, as any other).
+ */
+async function resendWindow(efs: Efs, plan: Plan, o: CallOpts): Promise<boolean> {
+  const r = await onEndpoint<bigint>(
+    efs._internal.pool,
+    async (s) => {
+      const out = await s.request("eth_getBlockByNumber", ["latest", false]);
+      const ts = out.ok ? (out.result as { timestamp?: unknown } | null)?.timestamp : undefined;
+      return typeof ts === "string" && /^0x[0-9a-fA-F]+$/.test(ts)
+        ? { ok: true, value: BigInt(ts) }
+        : {
+            ok: false,
+            retryElsewhere: true,
+            reason: reason("RPC_ERROR", "transient", "no latest block"),
+          };
+    },
+    o,
+  );
+  return r.ok && plan.deadline - r.value >= BigInt(RESEND_MARGIN_SECONDS);
+}
+
 /** Decode a revert into the contracts' error name, if it is one of theirs. */
 /**
  * Decode revert data as far as the vendored contracts tables allow: the selector always, the error's name only when
@@ -352,9 +408,12 @@ export async function sendPlan(
   let got: SendResult | "BUSY";
   try {
     got = await journal.withLock(lock, o.waitForLock ?? false, async (): Promise<SendResult> => {
-      // Re-read the journal under the lock: an attempt for this exact plan is never sent twice.
+      // Re-read the journal under the lock: an attempt for this exact plan is never sent twice, except the same plan
+      // after a funds refusal, while its deadline is far enough ahead (fundsResendable, resendWindow).
       const prior = await journal.get(plan.id);
-      if (prior && prior.stage !== "PLANNED" && prior.stage !== "NOT_SENT") {
+      const resending =
+        prior !== undefined && fundsResendable(prior) && (await resendWindow(efs, prior.plan, o));
+      if (prior && prior.stage !== "PLANNED" && prior.stage !== "NOT_SENT" && !resending) {
         return prior.txHash && prior.stage === "SUBMITTED"
           ? { kind: "efs.send", status: "SUBMITTED", planId: plan.id, txHash: prior.txHash }
           : {
@@ -364,7 +423,9 @@ export async function sendPlan(
               reason: reason(
                 "ALREADY_ATTEMPTED",
                 "after-reconcile",
-                `journal stage ${prior.stage}`,
+                fundsResendable(prior)
+                  ? `refused for funds, with under ${RESEND_MARGIN_SECONDS} s left before its deadline: it is not sent again as the same plan; once reconcile proves it never went out (EXPIRED), Send again plans it anew`
+                  : `journal stage ${prior.stage}`,
               ),
             };
       }
@@ -409,13 +470,10 @@ export async function sendPlan(
         };
       }
       const gas = limit?.ok ? limit.gas : undefined;
-      let record: AttemptRecord = {
-        schema: "efs-sdk-attempt/1",
-        planId: plan.id,
-        plan,
-        stage: "PLANNED",
-        history: [],
-      };
+      let record: AttemptRecord =
+        resending && prior
+          ? stamp(prior, "SUBMISSION_POSSIBLE", "sent again after a funds refusal")
+          : { schema: "efs-sdk-attempt/1", planId: plan.id, plan, stage: "PLANNED", history: [] };
 
       if (authorizer.kind === "eip1193") {
         const p = authorizer.provider;
@@ -469,6 +527,10 @@ export async function sendPlan(
             );
             return { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: how.notSent };
           }
+          if (how.ambiguous.code === "INSUFFICIENT_FUNDS")
+            await bestEffort(
+              journal.put(fundsRefusal(record, how.ambiguous.detail ?? "insufficient funds")),
+            );
           return { kind: "efs.send", status: "AMBIGUOUS", planId: plan.id, reason: how.ambiguous };
         }
       }
@@ -531,26 +593,40 @@ export async function sendPlan(
       record = { ...stamp(record, "SUBMISSION_POSSIBLE"), txHash };
       await journal.put(record);
       mayHaveBroadcast = true;
+      // Set when an endpoint failed in transport: it may have received and broadcast the signed transaction before
+      // its response was lost, so a later endpoint's refusal proves nothing about the original.
+      let lostAnEndpoint = false;
       const sent = await onEndpoint(
         efs._internal.pool,
         async (s) => {
           const out = await s.request("eth_sendRawTransaction", [signed]);
+          if (!out.ok && out.kind === "transport") lostAnEndpoint = true;
           return out.ok
             ? { ok: true, value: out.result }
             : { ok: false, retryElsewhere: out.kind === "transport", reason: out.reason };
         },
         o,
       );
-      if (!sent.ok)
+      if (!sent.ok) {
+        // The node refused it for funds (the limit at these fees is more than the balance): named, still AMBIGUOUS,
+        // and recorded so the same plan may go again, but only when that answer came from the first endpoint that
+        // took the send. After a transport failure the original may be out: a lost response, waiting for reconcile.
+        if (FUNDS_WORDS.test(sent.reason.detail ?? "") && !lostAnEndpoint) {
+          const why = insufficientFunds(gas);
+          await bestEffort(journal.put(fundsRefusal(record, why.detail ?? "insufficient funds")));
+          return { kind: "efs.send", status: "AMBIGUOUS", planId: plan.id, reason: why };
+        }
         return {
           kind: "efs.send",
           status: "AMBIGUOUS",
           planId: plan.id,
-          // The node refused it for funds (the limit at these fees is more than the balance): named, still AMBIGUOUS.
-          reason: FUNDS_WORDS.test(sent.reason.detail ?? "")
-            ? insufficientFunds(gas)
-            : reason("RESPONSE_LOST", "after-reconcile", sent.reason.detail ?? sent.reason.code),
+          reason: reason(
+            "RESPONSE_LOST",
+            "after-reconcile",
+            sent.reason.detail ?? sent.reason.code,
+          ),
         };
+      }
       await bestEffort(journal.put(stamp(record, "SUBMITTED")));
       return { kind: "efs.send", status: "SUBMITTED", planId: plan.id, txHash };
     });
