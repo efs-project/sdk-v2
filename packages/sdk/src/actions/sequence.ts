@@ -780,7 +780,8 @@ export function sequenceOps(d: Deps) {
         if (sent.status === "SUBMITTED") await waitForReceipt(efs, sent.txHash, o, settleMs);
         const sentAt = r;
         // Wait the settle window only for a send this call may have made. ALREADY_ATTEMPTED (too close to the
-        // deadline to send again) and NOT_SENT asked no wallet: settle at once, the original still undecided.
+        // deadline to send again) and NOT_SENT asked no wallet: settle at once, the original still undecided. Every
+        // other AMBIGUOUS from sendPlan comes after its write-ahead (JOURNAL_UNAVAILABLE before it is NOT_SENT).
         const mayHaveSent =
           sent.status === "SUBMITTED" ||
           (sent.status === "AMBIGUOUS" && sent.reason.code !== "ALREADY_ATTEMPTED");
