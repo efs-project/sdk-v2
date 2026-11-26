@@ -474,9 +474,10 @@ export type NameInput = string | Uint8Array;
 export interface ListOpts extends ReadOpts {
   limit?: number;                         // ≤ 64 rows per page
   resume?: ResumeToken;
-  filter?: {
-    kinds?: readonly ("folder" | "file" | "masked")[];    // on-chain kinds bitmask; default folder + file
-  };                                     // filter by Type: waits for James's ruling (no unbuilt surface)
+  // Filtering by kind (the MVP's "filter by schema") is built as `kinds`, one vocabulary for every view
+  // (VIEW_KINDS / ViewKind: file, folder, other, subject, revision, topic, address, invalid): see "Kinds, one
+  // vocabulary in every view" in section 7 and listFolder's `kinds` (ListFolderOpts).
+  kinds?: readonly ViewKind[];
   include?: { header?: boolean };         // size, media type, admission (default true)
 }
 
