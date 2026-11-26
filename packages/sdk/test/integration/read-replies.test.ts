@@ -9,10 +9,12 @@ import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
-import type { Address, Hex, RecordId, SubjectId } from "../../src/core/hex.ts";
+import type { Address, Hex, PrincipalId, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { openFile } from "../../src/files/bytes.ts";
 import { planCreateFile, planRemoveEntries } from "../../src/files/entries.ts";
 import { listRemoved } from "../../src/files/removed.ts";
+import { PURPOSES } from "../../src/generated/constants.ts";
+import { positionKey } from "../../src/protocol/keys.ts";
 import { type FolderRef, listFolder } from "../../src/files/folders.ts";
 import {
   filesPageReaderAbi,
@@ -35,7 +37,8 @@ import { lyingEfs } from "./lying.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
-  root: { directoryRecordId: RecordId };
+  root: { directoryRecordId: RecordId; principalId: PrincipalId };
+  seed: { folder: { directoryRecordId: Hex }; files: { name: string; subjectId: SubjectId }[] };
 };
 const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
 const root: FolderRef = { kind: "folder", directory: deployment.root.directoryRecordId };
@@ -215,6 +218,36 @@ describe("topic readers", () => {
     await expect(topicItems(efs, ["rr-tags"], { lens: many })).rejects.toMatchObject({
       code: "MISUSE",
     });
+  });
+});
+
+describe("an unnamed listing row is tied to the folder by its cell", () => {
+  it("listFolder: a row moved to another folder's entry (its name dropped) is not listed here", async () => {
+    // Under a Lens of you then the seeder, your file's row in the root is forged to name no name and stand at the
+    // seed's docs/readme.txt position with its target: headsAt there agrees (the seeder's entry), so only the
+    // position's cell (docs, not the root) can tell.
+    const docs = deployment.seed.folder.directoryRecordId;
+    const readme = deployment.seed.files.find((f) => f.name === "readme.txt")
+      ?.subjectId as SubjectId;
+    const elsewhere = positionKey(PURPOSES.folder, docs, keccak256(toHex("readme.txt")));
+    const lens = { principals: [efs.lens.principalOf(me.address), deployment.root.principalId] };
+    const honest = await listFolder(efs, root, { lens });
+    expect(honest.status).toBe("PRESENT");
+    const lie = lying(filesPageReaderAbi, "listDirectory", ([page]) => {
+      const p = page as { rows: { target: Hex }[] };
+      return [
+        {
+          ...p,
+          rows: p.rows.map((r) =>
+            r.target.toLowerCase() === file.toLowerCase()
+              ? { ...r, name: "0x", position: elsewhere, target: readme }
+              : r,
+          ),
+        },
+      ];
+    });
+    const r = await listFolder(lie, root, { lens });
+    expect(r).toMatchObject({ status: "UNKNOWN" });
   });
 });
 

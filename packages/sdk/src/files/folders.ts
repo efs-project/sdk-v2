@@ -906,6 +906,18 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
               args: [d.ledger, principals as Hex[], lower(x.position)],
             }),
           });
+        // An unnamed row's position can't be recomputed from its name: its cell, in the same call, ties it to this
+        // folder.
+        const ci = calls.length;
+        for (const x of unnamed)
+          calls.push({
+            to: d.readers.ledgerReads,
+            data: encodeFunctionData({
+              abi: ledgerReadsAbi,
+              functionName: "positionCell",
+              args: [d.ledger, lower(x.position)],
+            }),
+          });
         ctx.requests += calls.length;
         const outs = await callsAt(s, basis.blockHash, calls);
         if (fi >= 0) {
@@ -986,6 +998,28 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
           } catch {
             return badReply("headsAt");
           }
+          if (all.length !== principals.length)
+            return badReply("headsAt (one head per Lens author)");
+          const cellOut = outs[ci + i];
+          if (!cellOut?.ok) return failed(cellOut);
+          let cell: [number, Hex, Hex, Hex];
+          try {
+            cell = decodeFunctionResult({
+              abi: ledgerReadsAbi,
+              functionName: "positionCell",
+              data: cellOut.result as Hex,
+            }) as unknown as [number, Hex, Hex, Hex];
+          } catch {
+            return badReply("positionCell");
+          }
+          const [cst, purpose, cellSubject, role] = cell;
+          if (
+            chainStatus(cst) !== "PRESENT" ||
+            lower(purpose) !== lower(PURPOSES.folder) ||
+            lower(cellSubject) !== lower(subject) ||
+            lower(positionKey(PURPOSES.folder, cellSubject, role)) !== lower(row.position)
+          )
+            return badReply("positionCell (an unnamed row that is not an entry of this folder)");
           const st = chainStatus(status);
           if (
             st !== "PRESENT" ||
