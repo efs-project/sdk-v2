@@ -8,7 +8,7 @@
 // early stop, a moved list (`changed`), and a list the index does not vouch for (the public tier UNKNOWN, the Lens tier
 // and the decision exact). Accounts 36 to 42 of anvil's public development mnemonic (used by no other test file).
 import { readFileSync } from "node:fs";
-import { encodeFunctionData } from "viem";
+import { decodeFunctionResult, encodeFunctionResult, toFunctionSelector } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
@@ -20,7 +20,7 @@ import { planEditFile } from "../../src/files/edit.ts";
 import { planCreateFile } from "../../src/files/entries.ts";
 import type { FolderRef } from "../../src/files/folders.ts";
 import { type FileVersionsCursor, fileVersions } from "../../src/files/versions.ts";
-import { indexAbi } from "../../src/generated/abis.ts";
+import { indexAbi, ledgerViewsAbi, lensReaderAbi } from "../../src/generated/abis.ts";
 import { ACTION, PURPOSES } from "../../src/generated/constants.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -65,6 +65,55 @@ const lensOf = (...who: (typeof C)[]) => efs.lens.from(who.map((x) => x.address)
 const ZERO = `0x${"0".repeat(64)}` as Hex;
 let file: SubjectId;
 const revisions = new Map<string, RecordId>();
+
+/**
+ * A client on the same endpoint whose replies to one function are decoded, edited and encoded again: an endpoint that
+ * lies about exactly one thing.
+ */
+const rewriting = (
+  abi: readonly unknown[],
+  functionName: string,
+  edit: (r: unknown[]) => unknown[],
+): Efs => {
+  const item = (abi as { type: string; name?: string }[]).find(
+    (x) => x.type === "function" && x.name === functionName,
+  );
+  const selector = toFunctionSelector(item as never);
+  const lying: FetchLike = async (url, init) => {
+    const res = await fetch(url, init as RequestInit);
+    const body = JSON.parse(init.body ?? "null");
+    const json = await res.json();
+    const reqs = (Array.isArray(body) ? body : [body]) as {
+      id: number;
+      method: string;
+      params: [{ data?: string }];
+    }[];
+    const ids = new Set(
+      reqs
+        .filter((r) => r.method === "eth_call" && r.params[0]?.data?.startsWith(selector))
+        .map((r) => r.id),
+    );
+    for (const o of (Array.isArray(json) ? json : [json]) as { id: number; result?: Hex }[])
+      if (ids.has(o.id) && typeof o.result === "string") {
+        const got = decodeFunctionResult({
+          abi: abi as never,
+          functionName,
+          data: o.result,
+        } as never);
+        const out = Array.isArray(got) ? [...got] : [got];
+        o.result = encodeFunctionResult({
+          abi: abi as never,
+          functionName,
+          result: (out.length === 1 ? edit(out)[0] : edit(out)) as never,
+        } as never);
+      }
+    return new Response(JSON.stringify(json), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }) as never;
+  };
+  return createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: lying });
+};
 
 /** A HEAD statement the SDK's planners never make: a "not this" (UNBIND) or taking a version back (RELEASE). */
 const headStatement = async (who: typeof C, kind: number, expectedRevision: bigint) => {
@@ -307,35 +356,8 @@ describe("fileVersions (fixture)", () => {
   });
 
   it("a list the index does not vouch for: the public tier and its counts UNKNOWN, the Lens tier and decision exact", async () => {
-    // The same endpoint, with every postingHeadOf reply's coverage word rewritten to PARTIAL (1).
-    const selector = encodeFunctionData({
-      abi: indexAbi,
-      functionName: "postingHeadOf",
-      args: [ZERO, ZERO, 0, ZERO],
-    }).slice(0, 10);
-    const partial: FetchLike = async (url, init) => {
-      const res = await fetch(url, init as RequestInit);
-      const body = JSON.parse(init.body ?? "null");
-      const json = await res.json();
-      const reqs = (Array.isArray(body) ? body : [body]) as {
-        id: number;
-        method: string;
-        params: [{ data?: string }];
-      }[];
-      const ids = new Set(
-        reqs
-          .filter((r) => r.method === "eth_call" && r.params[0]?.data?.startsWith(selector))
-          .map((r) => r.id),
-      );
-      for (const o of (Array.isArray(json) ? json : [json]) as { id: number; result?: string }[])
-        if (ids.has(o.id) && typeof o.result === "string")
-          o.result = `0x${"1".padStart(64, "0")}${o.result.slice(66)}`;
-      return new Response(JSON.stringify(json), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }) as never;
-    };
-    const lying: Efs = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: partial });
+    // The same endpoint, with every postingHeadOf reply's coverage rewritten to PARTIAL (1).
+    const lying = rewriting(indexAbi, "postingHeadOf", ([, ...rest]) => [1, ...rest]);
     const v = await fileVersions(lying, { kind: "file", subject: file }, { lens: lensOf(A) });
     if (v.status !== "PRESENT") throw new Error(v.status);
     expect(v.decision).toEqual({ kind: "version", author: p(A), revision: rev(A), lensIndex: 0 });
@@ -343,6 +365,33 @@ describe("fileVersions (fixture)", () => {
     expect(v.creator).toEqual(present(C, true));
     expect(v.public).toMatchObject({ status: "UNKNOWN", reason: { code: "NOT_YET_DECIDABLE" } });
     expect("rows" in v.public || "count" in v.public || "live" in v.public).toBe(false);
+  });
+
+  it("an endpoint whose Lens walk names a decider outside the Lens is not believed: the read fails over (UNKNOWN here)", async () => {
+    const stranger = `0x${"0".repeat(24)}${"ee".repeat(20)}` as Hex;
+    const lying = rewriting(lensReaderAbi, "resolve", ([q, sel]) => [
+      q,
+      { ...(sel as object), principalId: stranger },
+    ]);
+    const v = await fileVersions(lying, { kind: "file", subject: file }, { lens: lensOf(C) });
+    expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+  });
+
+  it("a MASKED walk whose selection is not MASKED names no one: the decision is unknown, never hidden", async () => {
+    const lying = rewriting(lensReaderAbi, "resolve", ([q, sel]) => [
+      { ...(q as object), status: 4 }, // MASKED, while the selection still says PRESENT
+      sel,
+    ]);
+    const v = await fileVersions(lying, { kind: "file", subject: file }, { lens: lensOf(C) });
+    if (v.status !== "PRESENT") throw new Error(v.status);
+    expect(v.decision).toMatchObject({ kind: "unknown" });
+    expect(v.lens).toEqual([{ ...present(C, true), lensIndex: 0 }]);
+  });
+
+  it("a headsAt reply with a status no headsAt read accepts is the endpoint's fault (UNKNOWN here)", async () => {
+    const lying = rewriting(ledgerViewsAbi, "headsAt", ([, ...rest]) => [9, ...rest]); // INVALID
+    const v = await fileVersions(lying, { kind: "file", subject: file }, { lens: lensOf(C) });
+    expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
   });
 
   it("a subject never created is ABSENT_PROVEN", async () => {

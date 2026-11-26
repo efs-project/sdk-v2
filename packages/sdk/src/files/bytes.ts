@@ -229,8 +229,22 @@ export function decodeHead(out: RpcOutcome | undefined): Step<HeadSelection> {
   // LensReader.resolve: q.status equals the selection's status (PRESENT, MASKED, ABSENT_PROVEN, UNKNOWN), or is a
   // refusal (INVALID, LIMIT_EXCEEDED, BASIS_STALE, UNSUPPORTED). Anything else is not guessed at.
   const qs = chainStatus(q.status);
-  if (qs === "MASKED")
+  if (qs === "MASKED") {
+    // the selection must agree with the qualified status before its principal is trusted as who hid it
+    if (chainStatus(sel.status) !== "MASKED")
+      return {
+        ok: true,
+        value: {
+          status: "UNKNOWN",
+          reason: reason(
+            "RPC_ERROR",
+            "never",
+            `unexpected lens status MASKED/${chainStatus(sel.status)}`,
+          ),
+        },
+      };
     return { ok: true, value: { status: qs, author: lower(sel.principalId) as PrincipalId } };
+  }
   if (qs === "ABSENT_PROVEN" || qs === "UNKNOWN") return { ok: true, value: { status: qs } };
   if (qs === "BASIS_STALE")
     return {

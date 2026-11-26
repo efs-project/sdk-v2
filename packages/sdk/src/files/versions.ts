@@ -184,6 +184,12 @@ export type FileVersionsResult =
 
 type RawHead = { state: number; targetKind: number; target: Hex };
 
+/** headsAt's status, as every headsAt read in the SDK accepts it (src/files/entries.ts): anything else is the endpoint's fault. */
+const headsAtOk = (st: number): boolean => {
+  const cs = chainStatus(st);
+  return cs === "PRESENT" || cs === "MASKED" || cs === "ABSENT_PROVEN";
+};
+
 /** A head as a version, or null when it is none: UNSET, a lone no (never bound), or removed without includeRemoved. */
 function versionOf(
   author: PrincipalId,
@@ -287,10 +293,9 @@ export async function fileVersions(
         out1[2],
       );
       if (!lensHeads.ok) return lensHeads;
-      if (
-        chainStatus(lensHeads.value[0]) === "UNKNOWN" ||
-        lensHeads.value[3].length !== principals.length
-      )
+      if (!headsAtOk(lensHeads.value[0]))
+        return badReply(`headsAt (the Lens heads read ${chainStatus(lensHeads.value[0])})`);
+      if (lensHeads.value[3].length !== principals.length)
         return badReply("headsAt (one head per Lens author)");
       const heads = lensHeads.value[3];
 
@@ -300,16 +305,24 @@ export async function fileVersions(
         if (v) lens.push({ ...v, lensIndex: i });
       }
       const h = sel.value;
+      // The deciding author must be one of the Lens's principals: a reply naming anyone else is the endpoint's fault,
+      // so the read moves to the next endpoint.
+      const lensAt =
+        h.status === "PRESENT" || (h.status === "MASKED" && h.author)
+          ? principals.indexOf(h.author as PrincipalId)
+          : -1;
+      if ((h.status === "PRESENT" || h.status === "MASKED") && lensAt < 0)
+        return badReply("LensReader.resolve (a decision by an author outside the Lens)");
       const decision: VersionsDecision =
         h.status === "PRESENT"
           ? {
               kind: "version",
               author: h.author,
               revision: lower(h.target) as RecordId,
-              lensIndex: principals.indexOf(h.author),
+              lensIndex: lensAt,
             }
-          : h.status === "MASKED" && h.author
-            ? { kind: "hidden", author: h.author, lensIndex: principals.indexOf(h.author) }
+          : h.status === "MASKED"
+            ? { kind: "hidden", author: h.author as PrincipalId, lensIndex: lensAt }
             : h.status === "ABSENT_PROVEN"
               ? { kind: "none" }
               : {
@@ -334,6 +347,8 @@ export async function fileVersions(
           out,
         );
         if (!ch.ok) return ch;
+        if (!headsAtOk(ch.value[0]))
+          return badReply(`headsAt (the creator's head reads ${chainStatus(ch.value[0])})`);
         const head = ch.value[3][0];
         if (!head || ch.value[3].length !== 1) return badReply("headsAt (the creator's head)");
         creatorRow = versionOf(creator, head, creator, includeRemoved) ?? undefined;
