@@ -171,7 +171,7 @@ describe("the realm part of a route", () => {
 });
 
 describe("@efs/sdk/links has no runtime dependencies", () => {
-  it("its runtime import graph is six local files (string code only) and nothing else", async () => {
+  it("its runtime import graph is seven local files (string code only) and nothing else", async () => {
     const { readFileSync } = await import("node:fs");
     const { dirname, join, relative } = await import("node:path");
     const src = join(import.meta.dirname, "../src");
@@ -194,6 +194,7 @@ describe("@efs/sdk/links has no runtime dependencies", () => {
       "core/errors.ts",
       "core/platform.ts",
       "links/index.ts",
+      "names/fold.ts",
       "names/links.ts",
       "names/name.ts",
       "names/segment.ts",

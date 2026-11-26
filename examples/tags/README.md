@@ -10,10 +10,12 @@ node tools/pack.mjs --only sdk,fixture && node tools/consumers.mjs --only fixtur
 
 What trips people up:
 
-- **Words are checked as given.** The chain's word grammar refuses ASCII uppercase, spaces and controls, so `"Notes"`
-  is MISUSE before anything is read. Until the fold rule is ruled, fold what people type yourself and pass the
-  result (or pass a `fold` step to the planners and reads). A topic is its path of words: `/cars/tesla` and
-  `/people/tesla` are different topics, and `/tesla` (the word's page) shows every place the word is used.
+- **Words are folded, then checked.** The planners, reads and links fold what people type (`foldWord`, interim until
+  the fold rule is ruled), so `"Notes"` saves as `notes` and `"My Notes"` as `my_notes`. Say so ("Saved as notes"),
+  and put the folded form in the address bar. An all-ASCII word is trimmed, a run of white space (with any underscore
+  touching it) becomes one underscore, and A–Z become a–z. Any other word is left exactly as typed and judged by the chain's grammar, which
+  still refuses an ASCII capital (`"Straße"`). A topic is its path of words: `/cars/tesla` and `/people/tesla` are
+  different topics, and `/tesla` (the word's page) shows every place the word is used.
 - **A page is not a list.** `topicItems`, `lensTagsOf` and the directory reads say `finished: true` only when the chain
   said the list ended. A short or empty page with `finished: false` means "read on with `next`", never "that's all".
 - **Absent is proven, unknown is not.** A word nobody has used is `ABSENT_PROVEN` (`wordPage`), so say "no tag uses it

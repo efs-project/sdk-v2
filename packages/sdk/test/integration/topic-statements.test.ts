@@ -26,6 +26,7 @@ import { fileNames } from "../../src/tags/filenames.ts";
 import { lensTagsOf } from "../../src/tags/lenstags.ts";
 import { labelOf, topicName } from "../../src/tags/names.ts";
 import { planDeny, planTag, planUntag } from "../../src/tags/plan.ts";
+import { topicItems } from "../../src/tags/read.ts";
 import { planBroader, planLabel, planSame } from "../../src/tags/statements.ts";
 import { topicBroader, topicSynonyms } from "../../src/tags/synonyms.ts";
 import {
@@ -847,5 +848,35 @@ describe("synonym direction and broader reads (fixture)", () => {
         remove: true,
       }),
     ).toMatchObject({ status: "PLANNED" });
+  });
+});
+
+describe("the interim fold on a real chain (fixture)", () => {
+  it("a typed word saves and reads as its fold: My Notes is my_notes everywhere, and a mixed word is judged as typed", async () => {
+    const fileRef = (
+      (await run(
+        wc,
+        planCreateFile(efs, wc, {
+          folder: { kind: "home", address: cleo.address },
+          name: "fold.txt",
+          content: new TextEncoder().encode("fold"),
+          lens: lens(C),
+        }) as never,
+      )) as { file: { kind: "file"; subject: Hex } }
+    ).file;
+    const p = await planTag(efs, wc, { topic: ["My Notes", "  Todo "], targets: [fileRef] });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect(p.review.place).toMatchObject({ kind: "topic", words: ["my_notes", "todo"] });
+    expect((await wc.runSequence(p.parts)).state).toBe("COMPLETE");
+    const typed = await topicItems(efs, ["MY NOTES", "Todo"], { view: "mine", lens: lens(C) });
+    const folded = await topicItems(efs, ["my_notes", "todo"], { view: "mine", lens: lens(C) });
+    expect(typed.status === "PRESENT" && typed.place).toBe(pathId(T, ["my_notes", "todo"]));
+    expect(typed.status === "PRESENT" && typed.rows.map((r) => r.thing)).toEqual(
+      folded.status === "PRESENT" ? folded.rows.map((r) => r.thing) : null,
+    );
+    // A word that mixes ASCII capitals with other text is left as typed, and the grammar refuses it as today.
+    await expect(planTag(efs, wc, { topic: ["Straße"], targets: [fileRef] })).rejects.toThrow(
+      /not a word the chain admits/,
+    );
   });
 });

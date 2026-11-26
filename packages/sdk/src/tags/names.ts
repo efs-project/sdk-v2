@@ -13,6 +13,7 @@ import { type Hex, hexToBytes, lower, type PrincipalId, uniquePrincipals } from 
 import type { Ctx, Evidence } from "../files/bytes.js";
 import { ledgerReadsAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
+import { foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { decodeScalars } from "../names/name.js";
 import { positionKey, recordId } from "../protocol/keys.js";
@@ -292,12 +293,9 @@ export async function topicName(
   if (Array.isArray(topic)) {
     if (topic.length === 0) throw misuse("a topic is at least one word");
     words = (topic as readonly string[]).map((typed, i) => {
-      let w = typed;
-      if (o.fold) {
-        const f = o.fold(typed);
-        if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`, { index: i });
-        w = f.word;
-      }
+      const f = (o.fold ?? foldWord)(typed);
+      if (!f.ok) throw misuse(`word ${i} does not fold (${f.rule})`, { index: i });
+      const w = f.word;
       const c = checkWord(w);
       if (!c.ok)
         throw misuse(`word ${i} is not a word the chain admits (code ${c.code}: ${c.rule})`);

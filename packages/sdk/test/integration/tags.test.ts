@@ -218,8 +218,18 @@ describe("tags (fixture)", () => {
     await expect(
       planTag(efs, wa, { topic: words, targets: [files[0] as never], number: 65_536 }),
     ).rejects.toThrow(/number/);
+    // The interim fold leaves a word that mixes ASCII capitals with other text as typed: the grammar refuses it. So
+    // does a caller's own fold that leaves capitals (here, none at all), while by default "Cars" saves as "cars".
     await expect(
-      planTag(efs, wa, { topic: ["Cars"], targets: [files[0] as never] }),
+      planTag(efs, wa, { topic: ["Straße"], targets: [files[0] as never] }),
+    ).rejects.toThrow(/code 3/);
+    await expect(
+      planTag(
+        efs,
+        wa,
+        { topic: ["Cars"], targets: [files[0] as never] },
+        { fold: (word) => ({ ok: true, word }) },
+      ),
     ).rejects.toThrow(/code 3/);
   });
 
