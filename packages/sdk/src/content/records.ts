@@ -5,6 +5,7 @@ import { decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak25
 import { type ByteStore, cacheGet, cachePut } from "../cache/stores.js";
 import { callsAt } from "../chain/basis.js";
 import type { Session, Step } from "../chain/pool.js";
+import type { RpcOutcome } from "../chain/rpc.js";
 import { reason } from "../core/errors.js";
 import { bytesToHex, type Hex, hexToBytes, lower } from "../core/hex.js";
 import type { DeploymentInfo } from "../deployment/manifest.js";
@@ -82,61 +83,16 @@ export async function readRecords(
     const results = await callsAt(
       s,
       blockHash,
-      slice.map((id) => ({
-        to: d.readers.ledgerReads,
-        data: encodeFunctionData({
-          abi: ledgerReadsAbi,
-          functionName: "record",
-          args: [d.ledger, id],
-        }),
-      })),
+      slice.map((id) => recordCall(d, id)),
     );
     for (let j = 0; j < slice.length; j++) {
-      const res = results[j];
       const id = lower(slice[j] as Hex);
-      if (!res?.ok)
-        return {
-          ok: false,
-          retryElsewhere: true,
-          reason: res ? res.reason : reason("RPC_UNAVAILABLE", "transient"),
-        };
-      let decoded: RecordOut;
-      try {
-        decoded = decodeFunctionResult({
-          abi: ledgerReadsAbi,
-          functionName: "record",
-          data: res.result as Hex,
-        }) as unknown as RecordOut;
-      } catch {
-        return {
-          ok: false,
-          retryElsewhere: true,
-          reason: reason("RPC_ERROR", "transient", "record() did not decode"),
-        };
-      }
-      const [st, h, body] = decoded;
-      const status = chainStatus(st);
-      const rec: LedgerRecord = {
-        id,
-        status,
-        typeId: lower(h.typeId),
-        length: Number(h.length),
-        firstAdmission: BigInt(h.firstAdmission),
-      };
-      if (status === "PRESENT") {
-        const bytes = hexToBytes(body);
-        if (recordId(h.typeId, bytes) !== id) {
-          return {
-            ok: false,
-            retryElsewhere: true,
-            reason: reason(
-              "DIGEST_MISMATCH",
-              "transient",
-              `endpoint returned a body that does not hash to record ${id}`,
-            ),
-          };
-        }
-        rec.body = bytes;
+      const got = decodeRecord(id, results[j]);
+      if (!got.ok) return got;
+      const rec = got.value;
+      if (rec.body) {
+        const bytes = rec.body;
+        const h = { typeId: rec.typeId };
         if (cache) {
           const entry = new Uint8Array(32 + bytes.length);
           entry.set(hexToBytes(lower(h.typeId)), 0);
@@ -150,4 +106,61 @@ export async function readRecords(
   // Answer in the order asked for, cache hits and fresh reads alike.
   for (const id of ids) out.push(found.get(lower(id)) as LedgerRecord);
   return { ok: true, value: out };
+}
+
+/** @internal The LedgerReads.record call for one id, to batch with other reads at one basis. */
+export const recordCall = (d: DeploymentInfo, id: Hex): { to: Hex; data: Hex } => ({
+  to: d.readers.ledgerReads as Hex,
+  data: encodeFunctionData({ abi: ledgerReadsAbi, functionName: "record", args: [d.ledger, id] }),
+});
+
+/**
+ * @internal Decode one record() reply for `id`: a PRESENT record's body must hash, with its own typeId, to the id
+ * (the type and body are then both verified), else the read fails over. Never a value from an unchecked reply.
+ */
+export function decodeRecord(id: Hex, res: RpcOutcome | undefined): Step<LedgerRecord> {
+  if (!res?.ok)
+    return {
+      ok: false,
+      retryElsewhere: true,
+      reason: res ? res.reason : reason("RPC_UNAVAILABLE", "transient"),
+    };
+  let decoded: RecordOut;
+  try {
+    decoded = decodeFunctionResult({
+      abi: ledgerReadsAbi,
+      functionName: "record",
+      data: res.result as Hex,
+    }) as unknown as RecordOut;
+  } catch {
+    return {
+      ok: false,
+      retryElsewhere: true,
+      reason: reason("RPC_ERROR", "transient", "record() did not decode"),
+    };
+  }
+  const [st, h, body] = decoded;
+  const status = chainStatus(st);
+  const rec: LedgerRecord = {
+    id: lower(id),
+    status,
+    typeId: lower(h.typeId),
+    length: Number(h.length),
+    firstAdmission: BigInt(h.firstAdmission),
+  };
+  if (status === "PRESENT") {
+    const bytes = hexToBytes(body);
+    if (recordId(h.typeId, bytes) !== lower(id))
+      return {
+        ok: false,
+        retryElsewhere: true,
+        reason: reason(
+          "DIGEST_MISMATCH",
+          "transient",
+          `endpoint returned a body that does not hash to record ${lower(id)}`,
+        ),
+      };
+    rec.body = bytes;
+  }
+  return { ok: true, value: rec };
 }

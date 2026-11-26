@@ -12,7 +12,7 @@ import { createEfs } from "../../src/client.ts";
 import type { Address, Hex, PrincipalId, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { openFile } from "../../src/files/bytes.ts";
 import { planCreateFile, planRemoveEntries } from "../../src/files/entries.ts";
-import { type FolderRef, listFolder } from "../../src/files/folders.ts";
+import { type FolderRef, listFolder, openObject } from "../../src/files/folders.ts";
 import { listRemoved } from "../../src/files/removed.ts";
 import {
   filesPageReaderAbi,
@@ -277,6 +277,45 @@ describe("topicPath: a parent below the first level is the endpoint's fault when
       forParent,
     );
     expect(await topicPath(lie, child())).toMatchObject({ status: "UNKNOWN" });
+  });
+});
+
+describe("a folder's owner comes from its hash-checked record, never an unchecked header", () => {
+  const rootId = () => deployment.root.directoryRecordId.slice(2).toLowerCase();
+  /** The root folder's record body with its first word (the owner) changed: it no longer hashes to its id. */
+  const forgedOwner = () =>
+    lying(
+      ledgerReadsAbi,
+      "record",
+      ([st, h, body, ...rest]) => [
+        st,
+        h,
+        `0x${"ab".repeat(32)}${(body as string).slice(66)}`,
+        ...rest,
+      ],
+      (calldata) => calldata.toLowerCase().includes(rootId()),
+    );
+
+  it("listFolder: the listed folder's owner", async () => {
+    const honest = await listFolder(efs, root, { lens: mine() });
+    expect(honest).toMatchObject({
+      status: "PRESENT",
+      folder: { owner: deployment.root.principalId },
+    });
+    expect(await listFolder(forgedOwner(), root, { lens: mine() })).toMatchObject({
+      status: "UNKNOWN",
+    });
+  });
+
+  it("openObject: a folder link's owner (which builds a path's default Lens)", async () => {
+    const honest = await openObject(efs, deployment.root.directoryRecordId);
+    expect(honest).toMatchObject({
+      status: "FOLDER",
+      folder: { owner: deployment.root.principalId },
+    });
+    expect(await openObject(forgedOwner(), deployment.root.directoryRecordId)).toMatchObject({
+      status: "UNKNOWN",
+    });
   });
 });
 

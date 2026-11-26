@@ -2,12 +2,13 @@
 // Verified byte reads against the fixture's seed: inline, a 3-chunk span tree, and an external web3:// file
 // (more web3:// in web3.test.ts).
 import { readFileSync } from "node:fs";
-import { encodeAbiParameters, keccak256, stringToHex } from "viem";
+import { encodeAbiParameters, getAbiItem, keccak256, stringToHex, toFunctionSelector } from "viem";
 import { describe, expect, inject, it } from "vitest";
 import type { Eip1193Like } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Hex, SubjectId } from "../../src/core/hex.ts";
 import { openFile, readBytes, readRange } from "../../src/files/bytes.ts";
+import { ledgerReadsAbi } from "../../src/generated/abis.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8")) as {
@@ -79,7 +80,11 @@ describe("byte reads (fixture)", () => {
     expect(r.status).toBe("ABSENT_PROVEN");
   });
   it("detects a lying endpoint (a forged record body) and fails over to an honest one", async () => {
-    // A provider that flips one byte inside every eth_call result: record bodies no longer hash to their ids.
+    // A provider that flips one byte inside every record() result: record bodies no longer hash to their ids. (Only
+    // record(): another reply forged this way is caught by its own check first, a decider outside the Lens for one.)
+    const recordSelector = toFunctionSelector(
+      getAbiItem({ abi: ledgerReadsAbi, name: "record" } as never) as never,
+    );
     const liar: Eip1193Like = {
       async request({ method, params }) {
         const res = await fetch(fixture.rpcUrl, {
@@ -88,7 +93,13 @@ describe("byte reads (fixture)", () => {
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
         });
         const json = (await res.json()) as { result: string };
-        if (method === "eth_call" && typeof json.result === "string" && json.result.length > 600) {
+        const data = String((params as [{ data?: string }] | undefined)?.[0]?.data ?? "");
+        if (
+          method === "eth_call" &&
+          data.startsWith(recordSelector) &&
+          typeof json.result === "string" &&
+          json.result.length > 600
+        ) {
           const i = json.result.length - 70;
           return (
             json.result.slice(0, i) +

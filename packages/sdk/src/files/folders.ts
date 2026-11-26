@@ -18,6 +18,7 @@ import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { RpcOutcome } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
+import { decodeRecord, recordCall } from "../content/records.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import {
   type Address,
@@ -396,6 +397,36 @@ type FolderRecord =
   | { status: "PRESENT"; directory: boolean; owner: PrincipalId }
   | { status: "ABSENT_PROVEN" };
 
+/**
+ * Verified folder owners by directory record id, per client. A files-directory/1 id commits to its Type and its body
+ * (creator, salt), so an owner read from a hash-checked body is never stale.
+ */
+const OWNERS = new WeakMap<Efs, Map<string, PrincipalId>>();
+const ownersOf = (efs: Efs): Map<string, PrincipalId> => {
+  let m = OWNERS.get(efs);
+  if (!m) {
+    m = new Map();
+    OWNERS.set(efs, m);
+  }
+  return m;
+};
+/**
+ * A folder id read with LedgerReads.record, its body hash-checked with its own Type (decodeRecord): whether it is a
+ * files-directory/1 record and, when it is, its owner (the body's first word), never taken from an unchecked header.
+ */
+function decodeFolderRecord(efs: Efs, id: Hex, out: Outcome): Step<FolderRecord> {
+  const r = decodeRecord(id, out);
+  if (!r.ok) return r;
+  const rec = r.value;
+  if (rec.status === "ABSENT_PROVEN") return { ok: true, value: { status: "ABSENT_PROVEN" } };
+  if (rec.status !== "PRESENT" || !rec.body) return badReply(`record (${rec.status})`);
+  const dirType = lower(efs.deployment.typeIds["files-directory/1"] as Hex);
+  const directory = rec.typeId === dirType && rec.body.length === 64;
+  const owner = lower(bytesToHex(rec.body.subarray(0, 32))) as PrincipalId;
+  if (directory) ownersOf(efs).set(lower(id), owner);
+  return { ok: true, value: { status: "PRESENT", directory, owner } };
+}
+
 /** @internal The ledger's records call for folder ids: whether each is a files-directory/1 record, and its subject. */
 const recordsCall = (efs: Efs, ids: readonly Hex[]) => ({
   to: efs.deployment.readers.ledgerViews,
@@ -405,45 +436,6 @@ const recordsCall = (efs: Efs, ids: readonly Hex[]) => ({
     args: [efs.deployment.ledger, ids as Hex[]],
   }),
 });
-const decodeRecords = (
-  efs: Efs,
-  out: Awaited<ReturnType<typeof callsAt>>[number] | undefined,
-  n: number,
-): Step<FolderRecord[]> => {
-  if (!out?.ok) return failed(out);
-  let statuses: readonly number[];
-  let headers: readonly { typeId: Hex; word0: Hex; length: number }[];
-  try {
-    [statuses, headers] = decodeFunctionResult({
-      abi: ledgerViewsAbi,
-      functionName: "records",
-      data: out.result as Hex,
-    }) as unknown as [typeof statuses, typeof headers];
-  } catch {
-    return badReply("records");
-  }
-  if (statuses.length !== n || headers.length !== n) return badReply("records (one per id)");
-  const dirType = lower(efs.deployment.typeIds["files-directory/1"] as Hex);
-  const res: FolderRecord[] = [];
-  for (let i = 0; i < n; i++) {
-    const st = chainStatus(statuses[i] as number);
-    const h = headers[i] as { typeId: Hex; word0: Hex; length: number };
-    if (st === "ABSENT_PROVEN") res.push({ status: "ABSENT_PROVEN" });
-    else if (st === "PRESENT")
-      res.push({
-        status: "PRESENT",
-        directory: lower(h.typeId) === dirType && Number(h.length) === 64,
-        owner: lower(h.word0) as PrincipalId, // the body is (creator, salt)
-      });
-    else
-      return {
-        ok: false,
-        retryElsewhere: true,
-        reason: reason("RPC_ERROR", "transient", `records: ${st}`),
-      };
-  }
-  return { ok: true, value: res };
-};
 
 /**
  * @internal A deployless eth_call that answers `Keys.principalFor`'s inputs for `address` at the call's block: a zero
@@ -469,7 +461,7 @@ export const decodePrincipal = (efs: Efs, address: Address, out: Outcome): Step<
 };
 /** @internal The call that proves a parent and names its owner: a folder's record, a home's code probe. */
 export const parentCall = (efs: Efs, p: ParentRef): CallRequest =>
-  p.kind === "home" ? principalProbe(p.address) : recordsCall(efs, [lower(p.directory)]);
+  p.kind === "home" ? principalProbe(p.address) : recordCall(efs.deployment, lower(p.directory));
 /**
  * @internal `parentCall`'s answer: PRESENT with the owner (a folder's creator, a home's author identity),
  * ABSENT_PROVEN (no record has a folder's id) or NOT_A_FOLDER (a record of another Type). A home is always PRESENT.
@@ -487,9 +479,9 @@ export const decodeParent = (
     const o = decodePrincipal(efs, p.address, out);
     return o.ok ? { ok: true, value: { status: "PRESENT", owner: o.value } } : o;
   }
-  const r = decodeRecords(efs, out, 1);
+  const r = decodeFolderRecord(efs, p.directory, out);
   if (!r.ok) return r;
-  const x = r.value[0] as FolderRecord;
+  const x = r.value;
   if (x.status === "ABSENT_PROVEN") return { ok: true, value: { status: "ABSENT_PROVEN" } };
   if (!x.directory) return { ok: true, value: { status: "NOT_A_FOLDER" } };
   return { ok: true, value: { status: "PRESENT", owner: x.owner } };
@@ -895,7 +887,11 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
                 }),
               }) - 1
             : -1;
-        const fi = folderIds.length > 0 ? calls.push(recordsCall(efs, folderIds)) - 1 : -1;
+        // Folder rows' owners: hash-checked records, in this same batch, for the ids this client hasn't verified yet.
+        const known = ownersOf(efs);
+        const fresh = folderIds.filter((id) => !known.has(lower(id)));
+        const fi = calls.length;
+        for (const id of fresh) calls.push(recordCall(d, lower(id)));
         const hi = calls.length;
         for (const x of unnamed)
           calls.push({
@@ -921,12 +917,15 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
         ctx.requests += calls.length;
         const outs = await callsAt(s, basis.blockHash, calls);
         if (fi >= 0) {
-          const fr = decodeRecords(efs, outs[fi], folderIds.length);
-          if (!fr.ok) return fr;
-          fr.value.forEach((x, i) => {
-            // The chain admits only files-directory/1 records as folder entries; anything else is not given a subject.
-            if (x.status === "PRESENT" && x.directory) owners.set(folderIds[i] as Hex, x.owner);
-          });
+          for (const [k, id] of fresh.entries()) {
+            const fr = decodeFolderRecord(efs, id, outs[fi + k]);
+            if (!fr.ok) return fr;
+          }
+          // The chain admits only files-directory/1 records as folder entries; anything else is not given a subject.
+          for (const id of folderIds) {
+            const owner = known.get(lower(id));
+            if (owner) owners.set(id, owner);
+          }
         }
         if (si >= 0) {
           const sel = outs[si];
@@ -1355,10 +1354,12 @@ export async function lookupAt(
     }
     if (r.target?.kind === "folder") {
       ctx.requests += 1;
-      const [rec] = await callsAt(s, basis.blockHash, [recordsCall(ctx.efs, [r.target.directory])]);
-      const fr = decodeRecords(ctx.efs, rec, 1);
+      const [rec] = await callsAt(s, basis.blockHash, [
+        recordCall(ctx.efs.deployment, lower(r.target.directory)),
+      ]);
+      const fr = decodeFolderRecord(ctx.efs, r.target.directory, rec);
       if (!fr.ok) return fr;
-      const x = fr.value[0] as FolderRecord;
+      const x = fr.value;
       if (x.status === "PRESENT" && x.directory) r.target = { ...r.target, owner: x.owner };
       else r.kind = "invalid";
     }
@@ -1708,7 +1709,6 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
       evidence: pin.evidence,
     };
   const basis = pin.basis;
-  const dirType = lower(efs.deployment.typeIds["files-directory/1"] as Hex);
   const lens = o.lens ?? efs.lens.default;
   type Kind =
     | { kind: "folder"; owner: PrincipalId }
@@ -1730,30 +1730,20 @@ export async function openObject(efs: Efs, id: Hex, o: ReadOpts = {}): Promise<O
       // openFile does. The HEAD answer is read only when the kind is FILE, and discarded otherwise.
       ctx.requests += 3;
       const [rec, sub, head] = await callsAt(s, basis.blockHash, [
-        recordsCall(efs, [target]),
+        recordCall(efs.deployment, lower(target)),
         subjectInfoCall(efs, target),
         headCall(efs, lens, target),
       ]);
-      if (!rec?.ok) return failed(rec);
-      let statuses: readonly number[];
-      let headers: readonly { typeId: Hex; length: number; word0: Hex }[];
-      try {
-        [statuses, headers] = decodeFunctionResult({
-          abi: ledgerViewsAbi,
-          functionName: "records",
-          data: rec.result as Hex,
-        }) as unknown as [number[], { typeId: Hex; length: number; word0: Hex }[]];
-      } catch {
-        return badReply("records");
+      // The record, hash-checked with its own Type: a folder (and its owner) or another record, never from a header.
+      const fr = decodeFolderRecord(efs, target, rec);
+      if (!fr.ok) return fr;
+      if (fr.value.status === "PRESENT") {
+        if (fr.value.directory)
+          return { ok: true, value: { kind: "folder", owner: fr.value.owner } };
+        const typed = decodeRecord(target, rec);
+        if (!typed.ok) return typed;
+        return { ok: true, value: { kind: "other", typeId: typed.value.typeId } };
       }
-      const st = chainStatus(statuses[0] as number);
-      const h = headers[0];
-      if (st === "PRESENT" && h) {
-        if (lower(h.typeId) === dirType && Number(h.length) === 64)
-          return { ok: true, value: { kind: "folder", owner: lower(h.word0) as PrincipalId } };
-        return { ok: true, value: { kind: "other", typeId: lower(h.typeId) } };
-      }
-      if (st !== "ABSENT_PROVEN") return badReply(`records (${st})`);
       const c = decodeCreator(sub);
       if (!c.ok) return c;
       if (!c.value) return { ok: true, value: { kind: "absent" } };

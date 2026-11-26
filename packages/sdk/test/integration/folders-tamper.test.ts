@@ -213,7 +213,6 @@ describe("folder reads against tampered or failing replies (fixture)", () => {
 describe("openObject when the file's open fails on every endpoint (fixture)", () => {
   const readme = deployment.seed.files.find((f) => f.name === "readme.txt")?.subjectId as Hex;
   const RESOLVE = sel(lensReaderAbi, "resolve");
-  const RECORDS = sel(ledgerViewsAbi, "records");
   const SUBJECT_INFO = sel(ledgerReadsAbi, "subjectInfo");
   const B = "http://endpoint-b.invalid/";
   /** Two endpoints, both the fixture chain, each with its own edits; counts each endpoint's HEAD calls. */
@@ -248,6 +247,26 @@ describe("openObject when the file's open fails on every endpoint (fixture)", ()
   // Only a failure a healthy endpoint can have keeps the kind; a reply that failed validation drops it.
   const malformed: Edit = () => "0x1234" as Hex;
   const RECORD = sel(ledgerReadsAbi, "record");
+  // openObject's kind probe and the revision read are both LedgerReads.record: the probe asks about the file's subject
+  // id, which is no record (ABSENT_PROVEN), the revision read about a record that exists (PRESENT).
+  const recordStatus = (result: Hex): number =>
+    Number(
+      (
+        decodeFunctionResult({
+          abi: ledgerReadsAbi,
+          functionName: "record",
+          data: result,
+        }) as unknown as [number]
+      )[0],
+    );
+  const onRevisionRead =
+    (edit: Edit): Edit =>
+    (result) =>
+      recordStatus(result) === 2 ? edit(result) : result;
+  const onKindProbe =
+    (edit: Edit): Edit =>
+    (result) =>
+      recordStatus(result) === 3 ? edit(result) : result;
   const staleHead: Edit = (result) => {
     const [q, selection] = decodeFunctionResult({
       abi: lensReaderAbi,
@@ -279,13 +298,15 @@ describe("openObject when the file's open fails on every endpoint (fixture)", ()
   });
 
   it("the revision read: a JSON-RPC error keeps the kind, a malformed reply drops it", async () => {
-    const erring = await openObject(only({ [RECORD]: failWith }), readme);
+    const erring = await openObject(only({ [RECORD]: onRevisionRead(failWith) }), readme);
     expect(erring.status === "FILE" && erring.open.status).toBe("UNKNOWN");
-    expect((await openObject(only({ [RECORD]: malformed }), readme)).status).toBe("UNKNOWN");
+    expect((await openObject(only({ [RECORD]: onRevisionRead(malformed) }), readme)).status).toBe(
+      "UNKNOWN",
+    );
   });
 
   it("the kind itself can't be read anywhere: the whole answer is UNKNOWN", async () => {
-    const down: Record<Hex, Edit> = { [RECORDS]: failWith, [RESOLVE]: failWith };
+    const down: Record<Hex, Edit> = { [RECORD]: onKindProbe(failWith), [RESOLVE]: failWith };
     const { efs } = twoEndpoints(down, down);
     expect((await openObject(efs, readme)).status).toBe("UNKNOWN");
   });

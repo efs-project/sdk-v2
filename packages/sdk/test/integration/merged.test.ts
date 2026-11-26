@@ -374,9 +374,10 @@ describe("topicItemsMerged (fixture)", () => {
     ]);
   });
 
-  it("a synonym list the chain refuses is named in `missing`, and the rest still shows; the topic's own refused is INVALID", async () => {
-    // Reuses /ma1 and /ma2.
-    const refuse = (place: Hex) => {
+  it("a synonym list the chain refuses is named in `missing`, and the rest still shows; the topic's own refused is the page's", async () => {
+    // Reuses /ma1 and /ma2. The refusal a sound reader gives a list is UNKNOWN (the index can't vouch for it); one it
+    // can't give this query (LIMIT_EXCEEDED) is the endpoint's fault and fails over (read-validation audit).
+    const refuse = (place: Hex, status = 1) => {
       const edit: Edit = (result) => {
         const out = decodeFunctionResult({
           abi: topicMineReaderAbi,
@@ -388,7 +389,7 @@ describe("topicItemsMerged (fixture)", () => {
         return encodeFunctionResult({
           abi: topicMineReaderAbi,
           functionName: "mine",
-          result: [{ ...out[0], q: { ...q, status: 12 } }, out[1]] as never,
+          result: [{ ...out[0], q: { ...q, status } }, out[1]] as never,
         }) as Hex;
       };
       return createEfs({
@@ -408,8 +409,8 @@ describe("topicItemsMerged (fixture)", () => {
       {
         place: pathId(T, ["ma2"]),
         how: "same",
-        status: "INVALID",
-        reason: { code: "LIMIT_EXCEEDED" },
+        status: "UNKNOWN",
+        reason: { code: "NOT_YET_DECIDABLE" },
       },
     ]);
     expect(synonymRefused.complete).toBe(false);
@@ -417,7 +418,14 @@ describe("topicItemsMerged (fixture)", () => {
     expect(synonymRefused.finished).toBe(true);
     expect(
       await topicItemsMerged(refuse(pathId(T, ["ma1"])), ["ma1"], { view: "mine", lens: lens(E) }),
-    ).toMatchObject({ status: "INVALID", reason: { code: "LIMIT_EXCEEDED" } });
+    ).toMatchObject({ status: "UNKNOWN", reason: { code: "NOT_YET_DECIDABLE" } });
+    // LIMIT_EXCEEDED on a synonym's list: the endpoint's fault, the whole read fails over (never a missing list)
+    expect(
+      await topicItemsMerged(refuse(pathId(T, ["ma2"]), 12), ["ma1"], {
+        view: "mine",
+        lens: lens(E),
+      }),
+    ).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR", retry: "transient" } });
   });
 
   it("a list whose entries do not strictly fall is the endpoint's fault: UNKNOWN, never a row", async () => {
@@ -559,7 +567,7 @@ describe("the reader frontier (fixture)", () => {
 
   it("a refused page carries frontier 0 and never ends a list: the synonym is missing, not finished", async () => {
     const refused = forgeList("everyone", mp2(), (info, rows) => [
-      { ...info, q: { ...(info["q"] as Info), status: 12 }, scanStatus: 1, frontier: 0n },
+      { ...info, q: { ...(info["q"] as Info), status: 1 }, scanStatus: 1, frontier: 0n },
       rows,
     ]);
     const page = present(
@@ -569,7 +577,7 @@ describe("the reader frontier (fixture)", () => {
       [thing(136), "self"],
       [thing(135), "self"],
     ]);
-    expect(page.missing.map((m) => [m.place, m.status])).toEqual([[mp2(), "INVALID"]]);
+    expect(page.missing.map((m) => [m.place, m.status])).toEqual([[mp2(), "UNKNOWN"]]);
     expect(page.complete).toBe(false);
   });
 
