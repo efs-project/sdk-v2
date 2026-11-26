@@ -81,7 +81,30 @@ export type SequenceEvent =
    * INSUFFICIENT_FUNDS, so a page can say "Your wallet needs enough to cover the gas limit" while the save keeps
    * checking; also WALLET_DISCONNECTED, WALLET_CHAIN_DISCONNECTED and RESPONSE_LOST.
    */
-  | { kind: "wallet-answer"; parts: readonly number[]; reason: Reason };
+  | { kind: "wallet-answer"; parts: readonly number[]; reason: WalletAnswerReason };
+
+/** The reasons a "wallet-answer" event carries: exactly these, the ones meaning the wallet or its node answered. */
+export const WALLET_ANSWER_CODES = [
+  "INSUFFICIENT_FUNDS",
+  "WALLET_DISCONNECTED",
+  "WALLET_CHAIN_DISCONNECTED",
+  "RESPONSE_LOST",
+] as const;
+export type WalletAnswerCode = (typeof WALLET_ANSWER_CODES)[number];
+export type WalletAnswerReason = Reason & { code: WalletAnswerCode };
+
+/**
+ * @internal The reason a send's "wallet-answer" event carries, or null: an AMBIGUOUS send whose reason is one of
+ * WALLET_ANSWER_CODES. An allow-list, so a new AMBIGUOUS code reports nothing until someone decides it should.
+ */
+export function walletAnswer(sent: { status: string; reason?: Reason }): WalletAnswerReason | null {
+  const why = sent.reason;
+  return sent.status === "AMBIGUOUS" &&
+    why !== undefined &&
+    (WALLET_ANSWER_CODES as readonly string[]).includes(why.code)
+    ? (why as WalletAnswerReason)
+    : null;
+}
 
 /** What the client shows: N, how many committed, and where the save is now. */
 export interface SequenceProgress {
@@ -662,10 +685,7 @@ export function sequenceOps(d: Deps) {
         }
       : o;
 
-  /**
-   * Report a send that came back AMBIGUOUS after the wallet or node answered (a "wallet-answer"), before the settle
-   * wait. Not for ALREADY_ATTEMPTED (no wallet was asked) or a journal fault (the journal, not the wallet, failed).
-   */
+  /** Report a send that came back AMBIGUOUS after the wallet or node answered (a "wallet-answer"), before the settle wait. */
   const answered = (
     o: SequenceOpts,
     r: SequenceRecord,
@@ -673,9 +693,8 @@ export function sequenceOps(d: Deps) {
     mode: "batch" | "sequential",
     sent: { status: string; reason?: Reason },
   ): void => {
-    const why = sent.reason;
-    if (!o.onProgress || sent.status !== "AMBIGUOUS" || !why) return;
-    if (why.code === "ALREADY_ATTEMPTED" || why.code === "JOURNAL_UNAVAILABLE") return;
+    const why = walletAnswer(sent);
+    if (!o.onProgress || !why) return;
     tell(o, () => snapshot(r, { mode, reason: why }, "SUBMISSION_POSSIBLE"), {
       kind: "wallet-answer",
       parts,

@@ -1013,7 +1013,8 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   part that is not sent), `{ kind: "wallet-answer"; parts; reason }` as soon as a send comes back AMBIGUOUS after
   the wallet or its node answered (INSUFFICIENT_FUNDS above all, so the page can show "Your wallet needs enough to
   cover the gas limit" at once while the save checks the ledger for its settle window; also WALLET_DISCONNECTED,
-  WALLET_CHAIN_DISCONNECTED and RESPONSE_LOST; never ALREADY_ATTEMPTED or a journal fault), or
+  WALLET_CHAIN_DISCONNECTED and RESPONSE_LOST, and only these: `WALLET_ANSWER_CODES`, an allow-list, so a new
+  AMBIGUOUS code reports nothing until someone decides it should; `reason.code` is typed `WalletAnswerCode`), or
   `{ kind: "committed"; index }` as each part commits. Narrow on `kind` for each: a handler written as
   "wallet-request, else a part index" must handle the new kind. It is advisory: not awaited,
   anything it throws is ignored, and a missed or extra event changes nothing. The returned `SequenceProgress`, the
@@ -1763,6 +1764,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `TX_GAS_CAP` | const | EIP-7825's per-transaction gas cap (2^24): the default when the deployment document states none. |
 | `TX_GAS_HARD_MAX` | const | EIP-8037's ceiling on tx.gas (2^32 − 1): the reservoir profile's limit never goes above it. |
 | `txGasCapOf` | const | The cap of this deployment's chain (efs-deployment.chain.txGasCap). |
+| `WALLET_ANSWER_CODES` | const | The reasons a "wallet-answer" event carries: exactly these, the ones meaning the wallet or its node answered. |
 | `ActionData` | interface | One ledger action (contracts src/interfaces/Actions.sol), as plain data. |
 | `AttemptRecord` | interface |  |
 | `AttemptStage` | type |  |
@@ -1805,6 +1807,8 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `SplitOptions` | interface |  |
 | `SplitPart` | interface |  |
 | `SplitResult` | type |  |
+| `WalletAnswerCode` | type |  |
+| `WalletAnswerReason` | type |  |
 | `WithLock` | type |  |
 | `WriterConfig` | interface |  |
 
