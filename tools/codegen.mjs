@@ -247,6 +247,20 @@ const files = {};
     "unbindTag",
     "releaseTag",
     "restoreTag",
+    // Statements about topics (contracts 0fb4804): a label (PROPERTY), "same as" and "broader", first and later.
+    "bindPropertyFresh",
+    "bindPropertyRebind",
+    "unbindProperty",
+    "releaseProperty",
+    "bindSameFreshWord",
+    "bindSameFreshPath",
+    "unbindSame",
+    "releaseSame",
+    "restoreSame",
+    "bindBroaderFresh",
+    "unbindBroader",
+    "releaseBroader",
+    "restoreBroader",
   ];
   const TAG_LEVELS = ["mineNew", "mineExisting", "sharedNew", "sharedExisting"];
   const constants = (where, c) => {

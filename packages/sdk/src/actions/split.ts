@@ -50,6 +50,20 @@ export interface GasConstants {
   unbindTag: number;
   releaseTag: number;
   restoreTag: number;
+  /** Statements about topics: a label (PROPERTY), "same as" and "broader", first and later (contracts 0fb4804). */
+  bindPropertyFresh: number;
+  bindPropertyRebind: number;
+  unbindProperty: number;
+  releaseProperty: number;
+  bindSameFreshWord: number;
+  bindSameFreshPath: number;
+  unbindSame: number;
+  releaseSame: number;
+  restoreSame: number;
+  bindBroaderFresh: number;
+  unbindBroader: number;
+  releaseBroader: number;
+  restoreBroader: number;
   withdraw: number;
   /** Added once to a principal's first publication ever. */
   firstWriteSurcharge: number;
@@ -116,7 +130,20 @@ export type BindRow =
   | "unbindTagLone"
   | "unbindTag"
   | "releaseTag"
-  | "restoreTag";
+  | "restoreTag"
+  | "bindPropertyFresh"
+  | "bindPropertyRebind"
+  | "unbindProperty"
+  | "releaseProperty"
+  | "bindSameFreshWord"
+  | "bindSameFreshPath"
+  | "unbindSame"
+  | "releaseSame"
+  | "restoreSame"
+  | "bindBroaderFresh"
+  | "unbindBroader"
+  | "releaseBroader"
+  | "restoreBroader";
 const BIND_ROWS: readonly BindRow[] = [
   "bindHeadFresh",
   "bindHeadRebind",
@@ -127,9 +154,29 @@ const BIND_ROWS: readonly BindRow[] = [
   "bindTagSecondAuthor",
   "bindTagNumberChange",
   "restoreTag",
+  "bindPropertyFresh",
+  "bindPropertyRebind",
+  "bindSameFreshWord",
+  "bindSameFreshPath",
+  "restoreSame",
+  "bindBroaderFresh",
+  "restoreBroader",
 ];
-const UNBIND_ROWS: readonly BindRow[] = ["unbindFolder", "unbindTagLone", "unbindTag"];
-const RELEASE_ROWS: readonly BindRow[] = ["releaseFolder", "releaseTag"];
+const UNBIND_ROWS: readonly BindRow[] = [
+  "unbindFolder",
+  "unbindTagLone",
+  "unbindTag",
+  "unbindProperty",
+  "unbindSame",
+  "unbindBroader",
+];
+const RELEASE_ROWS: readonly BindRow[] = [
+  "releaseFolder",
+  "releaseTag",
+  "releaseProperty",
+  "releaseSame",
+  "releaseBroader",
+];
 /** Rows that are never a first statement: the author's head at the position already exists. */
 const LATER_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
   "bindHeadRebind",
@@ -138,6 +185,9 @@ const LATER_ROWS: ReadonlySet<BindRow> = new Set<BindRow>([
   "restoreTag",
   "unbindTag",
   "unbindFolder",
+  "bindPropertyRebind",
+  "restoreSame",
+  "restoreBroader",
 ]);
 
 export interface PlannedAction {

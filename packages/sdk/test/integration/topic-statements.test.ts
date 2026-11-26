@@ -8,11 +8,12 @@ import { readFileSync } from "node:fs";
 import { decodeFunctionResult, encodeFunctionResult, keccak256 } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
-import { ACTION, createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { ACTION, type ActionData, createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { type BindRow, type PlannedAction, publicationGas } from "../../src/actions/split.ts";
 import { createEfs } from "../../src/client.ts";
 import { type Address, type Hex, lower, type PrincipalId, ZERO_WORD } from "../../src/core/hex.ts";
 import { planCreateFile, planRemoveEntries } from "../../src/files/entries.ts";
-import { plain, publish } from "../../src/files/plan.ts";
+import { gasSetup, plain, publish } from "../../src/files/plan.ts";
 import {
   bitmapStoreAbi,
   indexAbi,
@@ -321,27 +322,66 @@ describe("same as and broader (fixture)", () => {
     ).rejects.toThrow();
   });
 
-  it("the planned gas covers the contracts' measured figures (planning only; eth_estimateGas decides)", async () => {
-    // contracts step 2, each alone: label with a new text 983,001, with an existing one 684,437; SAME 689,400;
-    // BROADER 694,701.
-    const gasOf = (p: { status: string; review?: { gas: { perPart: readonly number[] } } }) => {
-      if (p.status !== "PLANNED" || !p.review) throw new Error(p.status);
-      return p.review.gas.perPart.reduce((a, b) => a + b, 0);
+  it("each statement is priced by its own measured row (planning only; eth_estimateGas decides)", async () => {
+    // contracts 0fb4804's rows: a first label bindPropertyFresh (with a new text, the text/1 row too), a later label
+    // bindPropertyRebind, a removal releaseProperty, a first SAME bindSameFreshWord (the dearer first-SAME row), a
+    // first BROADER bindBroaderFresh. Each part's gas is recomputed with the row it must use.
+    const g = gasSetup(efs.deployment, {});
+    if (!g.ok) throw new Error(g.reason.detail);
+    const m = g.gas.model;
+    const check = async (
+      planned: Promise<unknown>,
+      rows: (BindRow | "text/1")[],
+      first: boolean,
+    ) => {
+      const p = (await planned) as {
+        status: string;
+        parts?: { actions: ActionData[]; bodies: Hex[] }[];
+        review?: unknown;
+      };
+      if (p.status !== "PLANNED" || !p.parts) throw new Error(p.status);
+      expect(p.parts.length).toBe(1);
+      const part = p.parts[0] as { actions: ActionData[]; bodies: Hex[] };
+      expect(part.actions.length).toBe(rows.length);
+      const acts: PlannedAction[] = part.actions.map((a, i) =>
+        rows[i] === "text/1"
+          ? { action: a, body: part.bodies[i] as Hex, shape: "text/1" }
+          : { action: a, body: "0x", bindRow: rows[i] as BindRow, firstStatement: first },
+      );
+      expect((p.review as { gas: { perPart: number[] } }).gas.perPart[0]).toBe(
+        publicationGas(acts, m, true),
+      );
     };
-    expect(
-      gasOf(
-        (await planLabel(efs, wd, { topic: ["nmcars"], lang: "en", text: "A new name" })) as never,
-      ),
-    ).toBeGreaterThanOrEqual(983_001);
-    expect(
-      gasOf((await planLabel(efs, wd, { topic: ["nmcars"], lang: "fr", text: "Cars" })) as never),
-    ).toBeGreaterThanOrEqual(684_437);
-    expect(
-      gasOf((await planSame(efs, wd, { topic: ["nmcars"], other: ["nmtesla"] })) as never),
-    ).toBeGreaterThanOrEqual(689_400);
-    expect(
-      gasOf((await planBroader(efs, wd, { topic: ["nmtesla"], broader: ["nmcars"] })) as never),
-    ).toBeGreaterThanOrEqual(694_701);
+    await check(
+      planLabel(efs, wd, { topic: ["nmcars"], lang: "fr", text: "Cars" }),
+      ["bindPropertyFresh"],
+      true,
+    );
+    await check(
+      planLabel(efs, wd, { topic: ["nmcars"], lang: "it", text: "Un nome nuovo" }),
+      ["text/1", "bindPropertyFresh"],
+      true,
+    );
+    await check(
+      planLabel(efs, wd, { topic: ["nmcars"], lang: "de", text: "Cars" }),
+      ["bindPropertyRebind"],
+      false,
+    );
+    await check(
+      planLabel(efs, wd, { topic: ["nmcars"], lang: "de", remove: true }),
+      ["releaseProperty"],
+      false,
+    );
+    await check(
+      planSame(efs, wd, { topic: ["nmcars"], other: ["nmtesla"] }),
+      ["bindSameFreshWord"],
+      true,
+    );
+    await check(
+      planBroader(efs, wd, { topic: ["nmtesla"], broader: ["nmcars"] }),
+      ["bindBroaderFresh"],
+      true,
+    );
   });
 });
 
