@@ -41,6 +41,7 @@ import { badReply, callOf, decoded, READ_IDS } from "./plan.js";
 import {
   bounds,
   chainsBelow,
+  endpointFault,
   frontierFault,
   GAS_RESERVE,
   hiddenBelow,
@@ -199,6 +200,7 @@ export async function topicItemsMerged(
   if (!reader) throw misuse("this deployment names no topic readers (it predates the tag release)");
   const lensList = uniquePrincipals((o.lens ?? efs.lens.default).principals);
   if (lensList.length === 0) throw misuse("a Lens names at least one principal");
+  if (lensList.length > 64) throw misuse("a Lens names at most 64 principals");
   const { filter, exact } = kindsQuery(o);
   const maxHops = o.synonyms?.maxHops ?? MAX_HOPS;
   const maxLists = o.synonyms?.maxLists ?? MAX_LISTS;
@@ -506,6 +508,8 @@ export async function topicItemsMerged(
           const dec = decoded<[RawInfo, readonly (RawMine | RawPlace)[]]>(abi, fn, out);
           if (!dec.ok) return dec;
           const [info, raw] = dec.value;
+          const fault = endpointFault(Number(info.q.status));
+          if (fault) return { ok: false, retryElsewhere: true, reason: fault };
           const refused = refusal(Number(info.q.status));
           if (refused) {
             // The topic's own list, or a basis gone stale anywhere, is the page's status; a synonym's is `missing`.

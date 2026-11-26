@@ -334,7 +334,11 @@ export async function openSelected(
     return {
       ok: false,
       retryElsewhere: true,
-      reason: reason("RPC_ERROR", "transient", "the HEAD names a revision this endpoint says is absent"),
+      reason: reason(
+        "RPC_ERROR",
+        "transient",
+        "the HEAD names a revision this endpoint says is absent",
+      ),
     };
   return r;
 }
@@ -370,12 +374,17 @@ export async function resolveRevision(
   const rev = await readOne(ctx, s, basis, revisionId);
   if (!rev.ok) return rev;
   if (rev.value.status !== "PRESENT" || !rev.value.body) {
-    if (rev.value.status === "ABSENT_PROVEN") return { ok: true, value: { status: "ABSENT_PROVEN" } };
+    if (rev.value.status === "ABSENT_PROVEN")
+      return { ok: true, value: { status: "ABSENT_PROVEN" } };
     return {
       ok: true,
       value: {
         status: "UNKNOWN",
-        reason: reason("NOT_YET_DECIDABLE", "transient", `the revision record reads ${rev.value.status}`),
+        reason: reason(
+          "NOT_YET_DECIDABLE",
+          "transient",
+          `the revision record reads ${rev.value.status}`,
+        ),
       },
     };
   }

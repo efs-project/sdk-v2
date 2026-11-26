@@ -21,7 +21,7 @@ import { positionKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import { callsIn } from "./filenames.js";
 import { badReply, callOf, decoded } from "./plan.js";
-import { type Decider, refusal, type ScanStatus, type TopicCursor } from "./read.js";
+import { type Decider, endpointFault, refusal, type ScanStatus, type TopicCursor } from "./read.js";
 import { numberOf } from "./topics.js";
 
 const SCAN: Readonly<Record<number, ScanStatus>> = {
@@ -208,6 +208,8 @@ export async function lensTagsOf(
         const dec = decoded<[RawInfo, readonly RawPlace[]]>(topicLookupReaderAbi, "about", out);
         if (!dec.ok) return dec;
         const [info, raw] = dec.value;
+        const fault = endpointFault(Number(info.q.status));
+        if (fault) return { ok: false, retryElsewhere: true, reason: fault };
         const refused = refusal(Number(info.q.status));
         if (refused) {
           if (refused.reason.code === "BASIS_STALE" && !o.cursor)

@@ -378,6 +378,7 @@ export const checkParent = (p: ParentRef): ParentRef => {
 const lensOf = (efs: Efs, lens: Lens | undefined): PrincipalId[] => {
   const ps = uniquePrincipals((lens ?? efs.lens.default).principals);
   if (ps.length === 0) throw misuse("a Lens names at least one principal");
+  if (ps.length > 64) throw misuse("a Lens names at most 64 principals");
   return ps;
 };
 const failed = (out: { ok: false; reason: Reason } | undefined): Step<never> => ({
@@ -847,12 +848,19 @@ async function listFolderOnce(efs: Efs, folder: ParentRef, o: ListFolderOpts): P
       if (refused) {
         if (refused.failOver) return failOver(refused.reason);
         if (!o.cursor) return failOver(refused.reason); // a fresh listing: another endpoint may agree
-        return { ok: true, value: { kind: "refused", status: refused.status, reason: refused.reason } };
+        return {
+          ok: true,
+          value: { kind: "refused", status: refused.status, reason: refused.reason },
+        };
       }
       // A served page is PRESENT, never ABSENT_PROVEN or MASKED (FilesPageReader's page laws).
       if (chainStatus(page.q.status) !== "PRESENT")
         return failOver(
-          reason("RPC_ERROR", "transient", `listDirectory served a page as ${chainStatus(page.q.status)}`),
+          reason(
+            "RPC_ERROR",
+            "transient",
+            `listDirectory served a page as ${chainStatus(page.q.status)}`,
+          ),
         );
       // Authors: the reader's rows do not carry them. Named rows resolve under the Lens in one call; a row with no
       // name (an INVALID row: no files-name/3 record for its role) is resolved by its position, so one bad row never

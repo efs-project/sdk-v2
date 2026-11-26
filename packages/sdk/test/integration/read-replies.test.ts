@@ -17,8 +17,18 @@ import {
   ledgerReadsAbi,
   ledgerViewsAbi,
   lensReaderAbi,
+  topicEveryoneReaderAbi,
+  topicLookupReaderAbi,
 } from "../../src/generated/abis.ts";
-import { fileNames, planLabel, planSame, planTag, topicSynonyms } from "../../src/tags/index.ts";
+import {
+  fileNames,
+  placeCount,
+  planLabel,
+  planSame,
+  planTag,
+  topicItems,
+  topicSynonyms,
+} from "../../src/tags/index.ts";
 import { lyingEfs } from "./lying.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -168,5 +178,40 @@ describe("a HEAD whose revision reads absent", () => {
     const lie = lying(ledgerReadsAbi, "record", ([, ...rest]) => [3, ...rest]); // every record ABSENT_PROVEN
     const r = await openFile(lie, { kind: "file", subject: file }, { lens: mine() });
     expect(r).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+  });
+});
+
+describe("topic readers", () => {
+  it("placeCount: a count served PRESENT with a coverage other than COMPLETE is not a count", async () => {
+    const honest = await placeCount(efs, ["rr-tags"]);
+    expect(honest).toMatchObject({ status: "PRESENT", coverage: "COMPLETE" });
+    const lie = lying(topicLookupReaderAbi, "placeCount", ([q, , ...rest]) => [q, 2, ...rest]); // PARTIAL
+    const r = await placeCount(lie, ["rr-tags"]);
+    expect(r).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+  });
+
+  it("topicItems: a refusal a sound reader can't give this query (LIMIT_EXCEEDED) fails over, never INVALID for good", async () => {
+    const lie = lying(topicEveryoneReaderAbi, "everyone", ([info, rows]) => [
+      { ...(info as { q: object }), q: { ...(info as { q: object }).q, status: 12 } },
+      rows,
+    ]);
+    const r = await topicItems(lie, ["rr-tags"], { lens: mine() });
+    expect(r).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR", retry: "transient" },
+    });
+  });
+
+  it("a hand-built Lens of more than 64 principals is MISUSE before any request (listFolder, topicItems)", async () => {
+    // efs.lens.from refuses it already; a Lens written as a literal reaches the reads
+    const many = {
+      principals: Array.from({ length: 65 }, (_, i) =>
+        efs.lens.principalOf(`0x${(i + 1).toString(16).padStart(40, "0")}` as Address),
+      ),
+    };
+    await expect(listFolder(efs, root, { lens: many })).rejects.toMatchObject({ code: "MISUSE" });
+    await expect(topicItems(efs, ["rr-tags"], { lens: many })).rejects.toMatchObject({
+      code: "MISUSE",
+    });
   });
 });

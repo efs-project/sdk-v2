@@ -289,6 +289,18 @@ export function placeId(efs: Efs, p: TopicPlace, fold?: FoldStep): { id: Hex; to
 }
 
 /** @internal Status of a reader reply, as a refusal for anything but PRESENT. */
+/**
+ * @internal A topic reader's status that a sound reader can't give the SDK's well-formed query (a Lens of 1 to 64
+ * principals, calls sized by the read bounds, the pinned deployment's own readers, continuations it built): LIMIT_EXCEEDED,
+ * INVALID, UNSUPPORTED or a status outside the vocabulary. The endpoint's fault: fail over, never "this can never work".
+ * Null for a status refusal() answers (BASIS_STALE, UNKNOWN) or a served one.
+ */
+export function endpointFault(code: number): Reason | null {
+  const st = chainStatus(code);
+  if (st === "PRESENT" || st === "BASIS_STALE" || st === "UNKNOWN") return null;
+  return reason("RPC_ERROR", "transient", `the reader answered ${st}`);
+}
+
 export function refusal(code: number): { status: "UNKNOWN" | "INVALID"; reason: Reason } | null {
   const st = chainStatus(code);
   if (st === "PRESENT") return null;
@@ -387,6 +399,7 @@ export async function topicItems(
   if (!reader) throw misuse("this deployment names no topic readers (it predates the tag release)");
   const lensList = view === "raw" ? [] : uniquePrincipals((o.lens ?? efs.lens.default).principals);
   if (view !== "raw" && lensList.length === 0) throw misuse("a Lens names at least one principal");
+  if (lensList.length > 64) throw misuse("a Lens names at most 64 principals");
   const { filter, exact } = kindsQuery(o);
   const query = keccak256(
     utf8Encode(
@@ -538,6 +551,8 @@ export async function topicItems(
         const dec = decoded<[RawInfo, readonly (RawMine | RawPlace)[]]>(abi, fn, out);
         if (!dec.ok) return dec;
         const [info, raw] = dec.value;
+        const fault = endpointFault(Number(info.q.status));
+        if (fault) return { ok: false, retryElsewhere: true, reason: fault };
         const refused = refusal(Number(info.q.status));
         if (refused) return { ok: true, value: { kind: "refused", ...refused } };
         calls++;
@@ -1227,6 +1242,8 @@ async function paged<R, X>(
           };
         return { ok: true, value: { kind: "absent" } };
       }
+      const fault = endpointFault(Number(info.q.status));
+      if (fault) return { ok: false, retryElsewhere: true, reason: fault };
       const refused = refusal(Number(info.q.status));
       if (refused) return { ok: true, value: { kind: "refused", ...refused } };
       const st = SCAN[Number(info.scanStatus)];
@@ -1620,7 +1637,8 @@ export type CountResult<C> =
   | ({
       kind: "efs.topicCount";
       status: "PRESENT";
-      coverage: "COMPLETE" | "PARTIAL";
+      /** Always COMPLETE: a count the index can't vouch for is UNKNOWN (contracts' list-coverage rule). */
+      coverage: "COMPLETE";
       basis: Basis;
       evidence: Evidence;
     } & C)
@@ -1653,14 +1671,39 @@ async function counted<C>(
     };
   const basis = pin.basis;
   const ctx: Ctx = { efs, requests: 0 };
-  const r = await onEndpoint<[{ status: number }, number, bigint, bigint]>(
+  // The count views (Readers.sol, the list-coverage rule): PRESENT only with coverage COMPLETE; a list the index can't
+  // vouch for is status UNKNOWN. Anything else is the endpoint's fault, so it fails over.
+  type Counted = { known: true; a: bigint; b: bigint } | { known: false; refused: Refusal };
+  type Refusal = { status: "UNKNOWN" | "INVALID"; reason: Reason };
+  const r = await onEndpoint<Counted>(
     efs._internal.pool,
     async (s) => {
       ctx.requests += 1;
       const [out] = await callsAt(s, basis.blockHash, [
         callOf(lookup, topicLookupReaderAbi, fn, args),
       ]);
-      return decoded<[{ status: number }, number, bigint, bigint]>(topicLookupReaderAbi, fn, out);
+      const d = decoded<[{ status: number }, number, bigint, bigint]>(
+        topicLookupReaderAbi,
+        fn,
+        out,
+      );
+      if (!d.ok) return d;
+      const [q, coverage, a, b] = d.value;
+      const fault = endpointFault(Number(q.status));
+      if (fault) return { ok: false, retryElsewhere: true, reason: fault };
+      const refused = refusal(Number(q.status));
+      if (refused) return { ok: true, value: { known: false, refused } };
+      if (Number(coverage) !== 3)
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason(
+            "RPC_ERROR",
+            "transient",
+            `a count served PRESENT with coverage ${coverage}`,
+          ),
+        };
+      return { ok: true, value: { known: true, a: BigInt(a), b: BigInt(b) } };
     },
     o,
   );
@@ -1670,24 +1713,14 @@ async function counted<C>(
   };
   if (!r.ok)
     return { kind: "efs.topicCount", status: "UNKNOWN", reason: r.reason, basis, evidence };
-  const [q, coverage, a, b] = r.value;
-  const refused = refusal(Number(q.status));
-  if (refused) return { kind: "efs.topicCount", ...refused, basis, evidence };
-  if (Number(coverage) === 1)
-    return {
-      kind: "efs.topicCount",
-      status: "UNKNOWN",
-      reason: reason("NOT_YET_DECIDABLE", "transient", "the index can't vouch for this count yet"),
-      basis,
-      evidence,
-    };
+  if (!r.value.known) return { kind: "efs.topicCount", ...r.value.refused, basis, evidence };
   return {
     kind: "efs.topicCount",
     status: "PRESENT",
-    coverage: Number(coverage) === 3 ? "COMPLETE" : "PARTIAL",
+    coverage: "COMPLETE",
     basis,
     evidence,
-    ...shape(BigInt(a), BigInt(b)),
+    ...shape(r.value.a, r.value.b),
   };
 }
 
