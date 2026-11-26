@@ -247,36 +247,47 @@ const SPLIT_TARGET = 14_000_000n;
 const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
 
 /**
- * @internal The attempt of another plan for the same publication (the same actions and bodies) from this account that
- * may be on its way (SUBMISSION_POSSIBLE or SUBMITTED, not yet decided), or undefined. A second plan of one
- * publication (a double submit, or the same parts saved again while the first is still in flight) has a new id, so
- * the plan id alone can't stop it, and its simulation passes while the first is unconfirmed. Read under the account's
- * lock, so two sends can't both miss each other. Once the first is decided COMMITTED the ledger itself refuses the
- * second in simulation (E_CAS: STALE).
+ * @internal The open attempt of another plan for the same publication (the same actions and bodies) from this
+ * account, with its save when the journal knows it, or undefined. Open: on its way (SUBMISSION_POSSIBLE, SUBMITTED)
+ * or COMMITTED and not yet final. A second plan of one publication (a double submit, or the same parts saved again)
+ * has a new id, so the plan id alone can't stop it. While the first is unconfirmed the second's simulation passes,
+ * and a PUBLISH repeats without any revert (the record only gains an occurrence), so a committed attempt is held too
+ * until it is final. Read under the account's lock, so two sends can't both miss each other.
  */
 export async function inFlightTwin(
   journal: Journal,
   lock: string,
   plan: Plan,
-): Promise<AttemptRecord | undefined> {
+): Promise<{ record: AttemptRecord; sequenceId?: Hex } | undefined> {
   const mine = actionsHash(plan.actions);
   const bodies = plan.bodies.map((b) => b.toLowerCase()).join(",");
-  return (await journal.unresolved(lock)).find(
+  const record = (await journal.unresolved(lock)).find(
     (r) =>
       r.planId !== plan.id &&
-      (r.stage === "SUBMISSION_POSSIBLE" || r.stage === "SUBMITTED") &&
+      (r.stage === "SUBMISSION_POSSIBLE" || r.stage === "SUBMITTED" || r.stage === "COMMITTED") &&
       actionsHash(r.plan.actions) === mine &&
       r.plan.bodies.map((b) => b.toLowerCase()).join(",") === bodies,
   );
+  if (!record) return undefined;
+  const seq = (await journal.openSequences(lock)).find((q) =>
+    q.parts.some((p) => p.planId === record.planId),
+  );
+  return { record, ...(seq ? { sequenceId: seq.sequenceId } : {}) };
 }
 
-/** @internal NOT_SENT's reason when the same publication is already in flight. */
-export const twinReason = (twin: AttemptRecord): Reason =>
-  reason(
+/** @internal NOT_SENT's reason when the same publication is already open: the earlier attempt, structured. */
+export const twinReason = (twin: { record: AttemptRecord; sequenceId?: Hex }): Reason => ({
+  ...reason(
     "ALREADY_ATTEMPTED",
     "after-reconcile",
-    `the same publication is already in flight (attempt ${twin.planId}, ${twin.stage}): settle it from the ledger; it is never sent twice`,
-  );
+    `the same publication is already ${twin.record.stage === "COMMITTED" ? "committed, not yet final" : "on its way"} (attempt ${twin.record.planId}): settle it from the ledger; this call sent nothing`,
+  ),
+  twin: {
+    planId: twin.record.planId,
+    stage: twin.record.stage as "SUBMISSION_POSSIBLE" | "SUBMITTED" | "COMMITTED",
+    ...(twin.sequenceId ? { sequenceId: twin.sequenceId } : {}),
+  },
+});
 
 export async function sendPlan(
   efs: Efs,

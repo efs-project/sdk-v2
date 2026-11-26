@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 // A save is planned and sent once (the client's WebKit case, 2026-11-26): a single-part tag save whose receipt only
 // arrives after settleMs is IN_FLIGHT, and neither reconcileSequence nor resume plans or sends it again; once it lands
-// it is COMPLETE. A second save of the same parts never reaches the wallet: while the first is still in flight the
-// journal names it (ALREADY_ATTEMPTED, nothing sent), and after it lands the ledger refuses the plan in simulation
-// (E_CAS, STALE). The wallet signs locally and holds the transaction, so the test decides when it lands. Two accounts
+// it is COMPLETE. A second save of the same parts never reaches the wallet: while the first is open (on its way, or
+// committed and not yet final) the journal names it (ALREADY_ATTEMPTED with the earlier attempt, nothing sent), and
+// once it is final the ledger refuses the plan in simulation (E_CAS, STALE). A PUBLISH-only part, which the ledger
+// repeats without a revert, is held back the same way. The wallet signs locally and holds the transaction, so the test decides when it lands. Two accounts
 // of anvil's public development mnemonic (indexes 27 and 28, used by no other test file).
 import { readFileSync } from "node:fs";
 import { getAbiItem, keccak256, type TransactionSerializable, toFunctionSelector } from "viem";
@@ -13,7 +14,7 @@ import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Hex } from "../../src/core/hex.ts";
 import { ingressAbi } from "../../src/generated/abis.ts";
-import { planTag } from "../../src/tags/index.ts";
+import { planTag, textRecordAction, topicTypesOf } from "../../src/tags/index.ts";
 import { recordingFetch } from "../../src/testing/index.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -129,7 +130,7 @@ describe("a save is planned and sent once (fixture)", () => {
     expect([plansIn(rec.calls), w.sends.length]).toEqual([1, 1]);
   });
 
-  it("a second save of the same parts never reaches the wallet: in flight it is ALREADY_ATTEMPTED, landed it is STALE", async () => {
+  it("a second save of the same parts never reaches the wallet: held back while the first is open, then refused by the ledger", async () => {
     const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
     const w = holdingWallet(28);
     const writer = await createWriter(efs, {
@@ -150,20 +151,68 @@ describe("a save is planned and sent once (fixture)", () => {
     const first = await writer.runSequence(p.parts, fast);
     expect(first.state).toBe("IN_FLIGHT");
     // The same parts again while the first is in flight (a double submit), a block later: a new plan (its deadline
-    // moved with the block), and still nothing goes to the wallet.
+    // moved with the block), and still nothing goes to the wallet. The earlier attempt comes back structured.
     await rpc("evm_mine", []);
     const twice = await writer.runSequence(p.parts, fast);
     expect(w.sends.length).toBe(1);
     expect(twice.state).toBe("NOT_STARTED");
-    expect(twice.reason).toMatchObject({ code: "ALREADY_ATTEMPTED" });
-    // The first lands. Another try now is refused by the ledger in simulation (the binds' revisions moved).
+    expect(twice.reason).toMatchObject({
+      code: "ALREADY_ATTEMPTED",
+      retry: "after-reconcile",
+      twin: { stage: "SUBMITTED", sequenceId: first.sequenceId },
+    });
+    expect(twice.reason?.twin?.planId).toMatch(/^0x[0-9a-f]{64}$/);
+    // The first lands: COMMITTED, not yet final. A repeat is still held back (the journal still has it open).
     await w.land();
-    expect((await writer.reconcileSequence(first.sequenceId, fast)).state).toBe("COMPLETE");
+    const landed = await writer.reconcileSequence(first.sequenceId, fast);
+    expect([landed.state, landed.final]).toEqual(["COMPLETE", false]);
+    const again = await writer.runSequence(p.parts, fast);
+    expect(w.sends.length).toBe(1);
+    expect(again.reason).toMatchObject({
+      code: "ALREADY_ATTEMPTED",
+      twin: { stage: "COMMITTED", sequenceId: first.sequenceId },
+    });
+    // Final (a finalized block covers it): the journal lets go, and the ledger refuses the repeat in simulation.
+    await rpc("anvil_mine", ["0x80"]);
+    expect((await writer.reconcileSequence(first.sequenceId, fast)).final).toBe(true);
     const after = await writer.runSequence(p.parts, fast);
     expect(w.sends.length).toBe(1);
     expect(after.state).toBe("NOT_STARTED");
     expect(after.reason).toMatchObject({ code: "STALE", revert: { error: "E_CAS" } });
   });
+
+  it("a PUBLISH-only part (the ledger repeats it without a revert) is held back while its first attempt is not final", async () => {
+    const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
+    const w = holdingWallet(28);
+    const writer = await createWriter(efs, {
+      authorizer: {
+        kind: "eip1193",
+        profile: "direct",
+        provider: w.provider,
+        account: w.account.address,
+      },
+      journal: memoryJournal(),
+    });
+    const { action, body } = textRecordAction(
+      topicTypesOf(efs.deployment),
+      "sent once, for the record",
+    );
+    const part = { actions: [action], bodies: [body], effects: [] };
+    const fast = { settleMs: 300, pollMs: 50 };
+    const first = await writer.runSequence([part], fast);
+    expect(first.state).toBe("IN_FLIGHT");
+    await w.land();
+    const landed = await writer.reconcileSequence(first.sequenceId, fast);
+    expect([landed.state, landed.final]).toEqual(["COMPLETE", false]);
+    await rpc("evm_mine", []);
+    const repeat = await writer.runSequence([part], fast);
+    expect(w.sends.length).toBe(1);
+    expect(repeat.reason).toMatchObject({
+      code: "ALREADY_ATTEMPTED",
+      twin: { stage: "COMMITTED", sequenceId: first.sequenceId },
+    });
+  });
+
   it("another save goes out while one is in flight: only the same publication is held back", async () => {
     const efs = createEfs({ rpcs: [fixture.rpcUrl], deployment });
     const w = holdingWallet(27);
