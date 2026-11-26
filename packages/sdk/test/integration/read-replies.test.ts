@@ -34,6 +34,8 @@ import {
   topicItems,
   topicSynonyms,
 } from "../../src/tags/index.ts";
+import { topicPath } from "../../src/tags/read.ts";
+import { pathId } from "../../src/tags/topics.ts";
 import { lyingEfs } from "./lying.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -46,8 +48,12 @@ const root: FolderRef = { kind: "folder", directory: deployment.root.directoryRe
 const me = mnemonicToAccount("test test test test test test test test test test test junk", {
   addressIndex: 43,
 });
-const lying = (abi: readonly unknown[], fn: string, edit: (r: unknown[]) => unknown[]) =>
-  lyingEfs(fixture.rpcUrl, deployment, abi, fn, edit);
+const lying = (
+  abi: readonly unknown[],
+  fn: string,
+  edit: (r: unknown[]) => unknown[],
+  when?: (calldata: string) => boolean,
+) => lyingEfs(fixture.rpcUrl, deployment, abi, fn, edit, when);
 /** Every headsAt reply's status rewritten to INVALID (9), a status no headsAt read accepts. */
 const headsAtInvalid = () => lying(ledgerViewsAbi, "headsAt", ([, ...rest]) => [9, ...rest]);
 let w: Awaited<ReturnType<typeof createWriter>>;
@@ -81,6 +87,9 @@ beforeAll(async () => {
   );
   await run(planLabel(efs, w, { topic: ["rr-label"], lang: "en", text: "one" }));
   await run(planSame(efs, w, { topic: ["rr-a"], other: ["rr-b"] }));
+  await run(
+    planTag(efs, w, { topic: ["rr-p", "rr-c"], targets: [{ kind: "address", address: target }] }),
+  );
   const made = (await run(
     planCreateFile(efs, w, {
       folder: root,
@@ -234,6 +243,40 @@ describe("a label's text record is read hash-checked", () => {
     ]);
     const r = await labelOf(lie, ["rr-label"], { lens: mine(), langs: ["en"] });
     expect(r).toMatchObject({ status: "UNKNOWN" });
+  });
+});
+
+describe("topicPath: a parent below the first level is the endpoint's fault when it fails", () => {
+  const types = deployment as unknown as { typeIds: Record<string, Hex> };
+  const T = () => ({
+    word: types.typeIds["topic-word/1"] as Hex,
+    path: types.typeIds["topic/1"] as Hex,
+    text: types.typeIds["text/1"] as Hex,
+  });
+  const child = () => pathId(T(), ["rr-p", "rr-c"]);
+  const parent = () => pathId(T(), ["rr-p"]).slice(2).toLowerCase();
+  const forParent = (calldata: string) => calldata.toLowerCase().includes(parent());
+
+  it("honestly, the words of a two-word topic", async () => {
+    expect(await topicPath(efs, child())).toMatchObject({
+      status: "PRESENT",
+      words: ["rr-p", "rr-c"],
+    });
+  });
+
+  it("a parent read as absent: fail over (UNKNOWN), never ABSENT_PROVEN", async () => {
+    const lie = lying(ledgerReadsAbi, "record", ([, ...rest]) => [3, ...rest], forParent);
+    expect(await topicPath(lie, child())).toMatchObject({ status: "UNKNOWN" });
+  });
+
+  it("a parent read as another Type: fail over (UNKNOWN), never INVALID", async () => {
+    const lie = lying(
+      ledgerReadsAbi,
+      "record",
+      ([st, h, ...rest]) => [st, { ...(h as object), typeId: T().text }, ...rest],
+      forParent,
+    );
+    expect(await topicPath(lie, child())).toMatchObject({ status: "UNKNOWN" });
   });
 });
 

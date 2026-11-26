@@ -1552,12 +1552,17 @@ export async function topicPath(efs: Efs, id: Hex, o: CallOpts = {}): Promise<To
         const h = decoded<[number, { typeId: Hex }]>(ledgerReadsAbi, "record", rec);
         if (!h.ok) return h;
         const st = chainStatus(h.value[0]);
-        if (st === "ABSENT_PROVEN") return { ok: true, value: null };
+        // Only the topic asked about can be absent: a parent a path record names was admitted before it.
+        if (st === "ABSENT_PROVEN" && depth === 0) return { ok: true, value: null };
         if (st !== "PRESENT")
           return {
             ok: false,
             retryElsewhere: true,
-            reason: reason("RPC_ERROR", "transient", `record (${st})`),
+            reason: reason(
+              "RPC_ERROR",
+              "transient",
+              `record (${st}${depth > 0 ? ", a parent" : ""})`,
+            ),
           };
         const typeId = lower(h.value[1].typeId);
         ids.unshift(at as TopicId);
@@ -1572,9 +1577,29 @@ export async function topicPath(efs: Efs, id: Hex, o: CallOpts = {}): Promise<To
               reason: reason("RPC_ERROR", "transient", "a word page breaks the grammar"),
             };
           words.unshift(w);
+          // The words must give back the id (each id commits to its parent and word): checked here, so an endpoint
+          // that answers another path is failed over, never believed.
+          if (pathId(t, words) !== lower(id))
+            return {
+              ok: false,
+              retryElsewhere: true,
+              reason: reason(
+                "RPC_ERROR",
+                "transient",
+                "the words do not give back this topic's id",
+              ),
+            };
           return { ok: true, value: { words, ids } };
         }
-        if (typeId !== t.path) return { ok: true, value: { words: [], ids: [] } };
+        // A record that isn't a topic: the answer for the id asked about, the endpoint's fault for a parent.
+        if (typeId !== t.path) {
+          if (depth === 0) return { ok: true, value: { words: [], ids: [] } };
+          return {
+            ok: false,
+            retryElsewhere: true,
+            reason: reason("RPC_ERROR", "transient", "a topic's parent is not a topic"),
+          };
+        }
         const b = await bodies(s, basis, ctx, [at], 64);
         if (!b.ok) return b;
         const body = b.value[0] as Uint8Array;
@@ -1611,15 +1636,6 @@ export async function topicPath(efs: Efs, id: Hex, o: CallOpts = {}): Promise<To
       kind: "efs.topicPath",
       status: "INVALID",
       reason: reason("UNSUPPORTED_PROFILE", "never", "not a topic record"),
-      basis,
-      evidence,
-    };
-  // The words must give back the id: a check against an endpoint that answers another path.
-  if (pathId(t, r.value.words) !== lower(id))
-    return {
-      kind: "efs.topicPath",
-      status: "UNKNOWN",
-      reason: reason("RPC_ERROR", "transient", "the words do not give back this topic's id"),
       basis,
       evidence,
     };

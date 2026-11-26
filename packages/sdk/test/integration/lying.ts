@@ -13,6 +13,8 @@ export function lyingEfs(
   abi: readonly unknown[],
   functionName: string,
   edit: (outputs: unknown[]) => unknown[],
+  /** Forge only the calls whose calldata this accepts (default: every call to the function). */
+  when: (calldata: string) => boolean = () => true,
 ): Efs {
   const item = (abi as { type: string; name?: string }[]).find(
     (x) => x.type === "function" && x.name === functionName,
@@ -30,7 +32,12 @@ export function lyingEfs(
     }[];
     const ids = new Set(
       reqs
-        .filter((r) => r.method === "eth_call" && r.params[0]?.data?.startsWith(selector))
+        .filter(
+          (r) =>
+            r.method === "eth_call" &&
+            r.params[0]?.data?.startsWith(selector) &&
+            when(r.params[0].data),
+        )
         .map((r) => r.id),
     );
     for (const o of (Array.isArray(json) ? json : [json]) as { id: number; result?: Hex }[])
