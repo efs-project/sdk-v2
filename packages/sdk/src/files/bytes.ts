@@ -182,7 +182,9 @@ export const typeName = (efs: Efs, typeId: Hex): string | undefined => {
 /** @internal A file's HEAD under a Lens at the basis block (LensReader.resolve). */
 export type HeadSelection =
   | { status: "PRESENT"; target: Hex; author: PrincipalId; admission: bigint }
-  | { status: "ABSENT_PROVEN" | "MASKED" }
+  | { status: "ABSENT_PROVEN" }
+  /** A Lens author's MASKED head decided (a hidden version or a lone "not this"): `author` is who. */
+  | { status: "MASKED"; author?: PrincipalId }
   | { status: "UNKNOWN" | "INVALID"; reason?: Reason };
 
 /** @internal The LensReader.resolve call for `subject`'s HEAD under `lens`, to batch with other reads at one basis. */
@@ -227,8 +229,9 @@ export function decodeHead(out: RpcOutcome | undefined): Step<HeadSelection> {
   // LensReader.resolve: q.status equals the selection's status (PRESENT, MASKED, ABSENT_PROVEN, UNKNOWN), or is a
   // refusal (INVALID, LIMIT_EXCEEDED, BASIS_STALE, UNSUPPORTED). Anything else is not guessed at.
   const qs = chainStatus(q.status);
-  if (qs === "ABSENT_PROVEN" || qs === "MASKED" || qs === "UNKNOWN")
-    return { ok: true, value: { status: qs } };
+  if (qs === "MASKED")
+    return { ok: true, value: { status: qs, author: lower(sel.principalId) as PrincipalId } };
+  if (qs === "ABSENT_PROVEN" || qs === "UNKNOWN") return { ok: true, value: { status: qs } };
   if (qs === "BASIS_STALE")
     return {
       ok: false,

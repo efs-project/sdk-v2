@@ -108,7 +108,7 @@ if (edit.status === "BASE_CHANGED") {
 | --- | --- |
 | `@efs/sdk` | `createEfs`, pinning, names, links, ids, `principalDisplay` (and `efs.lens.displayOf`), the JSON codec, memory caches |
 | `@efs/sdk/links` | the route and link grammar alone, with no runtime dependencies (for startup routers) |
-| `@efs/sdk/files` | `openFile`, `readBytes`, `readRange`, `fileChunks`, `unverifiedChunks`, `planEditFile`; folders and homes (an address as a parent): `listFolder`, `lookupEntry`, `resolvePath`, `openObject`, `openPath`, `openHome`, `listRemoved`, and the planners `planCreateFile`, `planCreateFolder`, `planMoveEntries`, `planRemoveEntries`, `planRestoreEntries`, `planHideEntries`, `planUnhideEntries` |
+| `@efs/sdk/files` | `openFile`, `readBytes`, `readRange`, `fileChunks`, `unverifiedChunks`, `planEditFile`, `fileVersions` (everyone's versions of a file); folders and homes (an address as a parent): `listFolder`, `lookupEntry`, `resolvePath`, `openObject`, `openPath`, `openHome`, `listRemoved`, and the planners `planCreateFile`, `planCreateFolder`, `planMoveEntries`, `planRemoveEntries`, `planRestoreEntries`, `planHideEntries`, `planUnhideEntries` |
 | `@efs/sdk/actions` | `createWriter`: plan, review, send and reconcile writes, exactly once |
 | `@efs/sdk/tags` | topics, tags and homes: `planTag`, `planDeny`, `planUntag`, `planLabel`, `planSame`, `planBroader`, `topicItems`, `tagsOf`, `topicChildren`, `wordPage`, `labelOf`, `topicName`, `fileNames`, `topicSynonyms`, `topicBroader`, `lensTagsOf` |
 | `@efs/sdk/web` | `streamFile` / `streamUnverified` (ReadableStream) |

@@ -112,3 +112,13 @@ export type { FileChunks, StreamFailure, StreamOpts } from "./stream.js";
 export { fileChunks } from "./stream.js";
 export type { UnverifiedChunks, UnverifiedOpts, UnverifiedResult } from "./unverified.js";
 export { unverifiedChunks } from "./unverified.js";
+export type {
+  FileVersion,
+  FileVersionsCursor,
+  FileVersionsOpts,
+  FileVersionsResult,
+  LensVersion,
+  PublicVersions,
+  VersionsDecision,
+} from "./versions.js";
+export { fileVersions, MAX_VERSIONS_PAGE } from "./versions.js";
