@@ -33,7 +33,7 @@ import {
 import { indexAbi, ledgerAbi, ledgerReadsAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { checkName, decodeScalars, NAME_PROFILE } from "../names/name.js";
-import { recordFromHash } from "../protocol/keys.js";
+import { positionKey, recordFromHash } from "../protocol/keys.js";
 import { chainStatus, headState, headsAtServed } from "../protocol/status.js";
 import { badReply, callOf, decoded } from "./plan.js";
 
@@ -304,7 +304,12 @@ export async function fileNames(
         const cell = decoded<[number, Hex, Hex, Hex]>(ledgerReadsAbi, "positionCell", out5[2 * k]);
         if (!cell.ok) return cell;
         const [cst, purpose, parent, role] = cell.value;
-        if (chainStatus(cst) !== "PRESENT" || lower(purpose) !== lower(PURPOSES.folder))
+        if (
+          chainStatus(cst) !== "PRESENT" ||
+          lower(purpose) !== lower(PURPOSES.folder) ||
+          // the cell is the entry's own position: its parent and role (the name) are bound to it
+          lower(positionKey(PURPOSES.folder, parent, role)) !== lower(e.position as Hex)
+        )
           return badReply("positionCell (a FOLDER backlink that is not a FOLDER position)");
         e.parent = lower(parent);
         e.role = lower(role);

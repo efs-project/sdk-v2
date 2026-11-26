@@ -4,13 +4,15 @@
 // read to fail over (with one endpoint: UNKNOWN), never a value or an absence; each guard removed, its case fails.
 // Account 43 of anvil's public development mnemonic (used by no other test file).
 import { readFileSync } from "node:fs";
+import { keccak256, toHex } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Address, Hex, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { openFile } from "../../src/files/bytes.ts";
-import { planCreateFile } from "../../src/files/entries.ts";
+import { planCreateFile, planRemoveEntries } from "../../src/files/entries.ts";
+import { listRemoved } from "../../src/files/removed.ts";
 import { type FolderRef, listFolder } from "../../src/files/folders.ts";
 import {
   filesPageReaderAbi,
@@ -213,5 +215,32 @@ describe("topic readers", () => {
     await expect(topicItems(efs, ["rr-tags"], { lens: many })).rejects.toMatchObject({
       code: "MISUSE",
     });
+  });
+});
+
+describe("a position's cell is bound to the position asked about", () => {
+  // The role of a name that has a record (the seed's "docs"), so only the position binding can catch the swap.
+  const otherRole = keccak256(toHex("docs"));
+  const forgedRole = () =>
+    lying(ledgerReadsAbi, "positionCell", ([st, purpose, subject]) => [
+      st,
+      purpose,
+      subject,
+      otherRole,
+    ]);
+
+  it("fileNames: a cell whose role isn't the entry's is not believed", async () => {
+    expect((await fileNames(efs, [{ file }])).status).toBe("PRESENT");
+    const r = await fileNames(forgedRole(), [{ file }]);
+    expect(r).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+  });
+
+  it("listRemoved: a cell whose role isn't the removed entry's is not believed (runs last: it removes the file)", async () => {
+    await run(planRemoveEntries(efs, w, { entries: [{ folder: root, name: "read-replies.txt" }] }));
+    const author = efs.lens.principalOf(me.address);
+    const honest = await listRemoved(efs, { folder: root, author });
+    expect(honest.status).toBe("PRESENT");
+    const r = await listRemoved(forgedRole(), { folder: root, author });
+    expect(r).toMatchObject({ status: "UNKNOWN" });
   });
 });

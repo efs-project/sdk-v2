@@ -19,7 +19,7 @@ import {
 } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { decodeScalars, NAME_PROFILE } from "../names/name.js";
-import { bindingKey, recordFromHash, scopeKey } from "../protocol/keys.js";
+import { bindingKey, positionKey, recordFromHash, scopeKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
 import type { Ctx, Evidence } from "./bytes.js";
 import {
@@ -324,7 +324,9 @@ export async function listRemoved(
           if (
             chainStatus(cst) !== "PRESENT" ||
             lower(purpose) !== lower(PURPOSES.folder) ||
-            lower(cellSubject) !== subject
+            lower(cellSubject) !== subject ||
+            // the cell is the position asked about: its role (the name) is bound to it, never taken on trust
+            lower(positionKey(PURPOSES.folder, cellSubject, role)) !== lower(position)
           )
             return {
               ok: false,
