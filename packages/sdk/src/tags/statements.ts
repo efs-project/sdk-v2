@@ -200,14 +200,14 @@ async function plan(
   const d = efs.deployment;
   const t = topicTypesOf(d);
   const me = lower(writer.principal) as PrincipalId;
-  const subject = placeOf(t, spec.topic, o.fold);
+  const subject = placeOf(t, spec.topic, o.fold, !remove);
   const other =
     spec.purpose === "label"
       ? undefined
       : (() => {
           if (!Array.isArray(spec.other))
             throw misuse(`${spec.purpose}'s other end is a topic: a list of words`);
-          const p = placeOf(t, spec.other, o.fold);
+          const p = placeOf(t, spec.other, o.fold, !remove);
           if (p.place.kind !== "topic") throw misuse("both ends are topics");
           return p;
         })();

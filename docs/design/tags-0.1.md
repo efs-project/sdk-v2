@@ -121,12 +121,28 @@
     A–Z become a–z. White space (tab, LF, VT, FF, CR, space) is trimmed at both ends, and a run of white space together
     with the underscores touching it becomes one underscore: `Notes` → `notes`, `My Notes` → `my_notes`,
     `model _ y` → `model_y`. An underscore with no white space next to it stays: `model__y`, `__init__`, `_tesla`.
-  - **Any other word is left exactly as typed** and judged by the grammar as before. `Straße` is still refused for its
-    `S`, and `École` is still admitted as typed: É is not ASCII A–Z, so a word with only non-ASCII capitals keeps
-    them. That is how such a word stood before the interim, and the ruled rule decides it.
+  - **Any other word is left exactly as typed** and judged by the grammar as before (`Straße` is refused for its `S`).
+    Writes then apply the guard below.
+  - **The write guard** (`checkStableWord`, tag PM 2026-11-26). A write that adds a statement (planTag, planDeny,
+    planLabel, planSame, planBroader) refuses a word with any non-ASCII character unless both candidate rules leave
+    it unchanged. MISUSE carries `details: { rule: "unstable-until-ruled", check }`, and the message says "can't be
+    used until the tag text rule is chosen". The word must pass all of these:
+    - `nfc`: it is NFC already;
+    - `lowercase`: lowercasing leaves it unchanged (rule A's fixed point, the final sigma included);
+    - `nfkc-casefold`: no character changes under NFKC_Casefold (rule B's fixed point: ß, ς, both Cherokee cases,
+      full-width forms, ligatures, default-ignorables);
+    - `unassigned-or-private`: no private-use or unassigned character;
+    - `leading-mark`: it doesn't start with a combining mark.
+
+    So `café`, `kırmızı`, `日本語` and `🚗` are written, and `École`, `Ｔesla`, `ﬁle`, `straße` and `οδος` are refused.
+    Every non-ASCII vector of the fold evaluation is a test: the guard admits exactly when both rules give the input
+    back. Taking a statement back (planUntag, `remove: true`) is never refused, and reads and links still pass such a
+    word through, so anything written before can be found and cleaned up. It uses the engine's Unicode data (Node 24
+    and current browsers: Unicode 16), so until a version is pinned two engines can disagree on very new characters.
   - **It never contradicts the ruling.** Both candidates give the same word for every ASCII input: every all-ASCII
-    vector of the evaluation is a test (`test/fold.test.ts`). So the word's text the interim makes is the text under
-    either rule, and the ruled rule extends it. Its topic id is not promised to stay: the word Type's id covers the
+    vector of the evaluation is a test (`test/fold.test.ts`). With the guard, every word written now is one both
+    rules give back as it is. So the word's text the interim writes is the text under either rule, and the ruled rule
+    extends it. Its topic id is not promised to stay: the word Type's id covers the
     chain's refused-character table, which is regenerated from the pinned Unicode version.
 - **Vectors are shared with the contracts**, including words that must be refused. Two SDKs with two fold tables would
   give two ids for one typed word.

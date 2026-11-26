@@ -31,7 +31,7 @@ import { decodeCreator, type FolderRef, subjectInfoCall } from "../files/folders
 import { type GasOpts, gasSetup } from "../files/plan.js";
 import { ledgerViewsAbi, topicLookupReaderAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
-import { foldWord } from "../names/fold.js";
+import { checkStableWord, foldWord } from "../names/fold.js";
 import type { FoldStep } from "../names/links.js";
 import { positionKey } from "../protocol/keys.js";
 import { chainStatus, headState } from "../protocol/status.js";
@@ -185,6 +185,8 @@ export function placeOf(
   t: TopicTypes,
   p: TagPlace,
   fold: FoldStep | undefined,
+  /** A write that adds a statement: refuse a word that isn't stable until the fold rule is ruled (checkStableWord). */
+  adds = false,
 ): { place: TagReview["place"]; words: string[]; ids: TopicId[] } {
   if (!Array.isArray(p)) {
     const home = p as { kind: "home"; address: Address };
@@ -207,6 +209,14 @@ export function placeOf(
       throw misuse(`word ${i} is not a word the chain admits (code ${c.code}: ${c.rule})`, {
         index: i,
       });
+    if (adds) {
+      const st = checkStableWord(w);
+      if (!st.ok)
+        throw misuse(
+          `word ${i} can't be used until the tag text rule is chosen (${st.check}): "${w}"`,
+          { index: i, rule: "unstable-until-ruled", check: st.check },
+        );
+    }
     return w;
   });
   const ids = pathIds(t, words);
@@ -282,7 +292,7 @@ async function plan(
     if (mode === "deny" && !s.unbind)
       throw misuse("planDeny's number is below 0: use planTag for 0 or more");
   }
-  const { place, words, ids } = placeOf(t, input.topic, o.fold);
+  const { place, words, ids } = placeOf(t, input.topic, o.fold, mode !== "untag");
   const placeId = place.id;
   // Every word's page, so a tag on an existing topic republishes nothing.
   const pageIds = words.map((w) => lower(wordPageId(t, w)) as Hex);
