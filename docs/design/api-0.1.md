@@ -1092,7 +1092,9 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
     account lock, the twin guard and the estimate like a first send; the only rule relaxed is "this plan id is never
     sent twice". It applies only when the attempt's latest entry is the funds refusal and no wallet ever returned a
     hash for it (`fundsResendable`). Every other attempt in flight (a lost response, a disconnect) still waits for
-    reconcile.
+    reconcile. A local account's refusal counts only when it came from the first endpoint that took the signed
+    transaction: after a transport failure the original may be out, so a later endpoint's funds answer is a lost
+    response.
   - **If the wallet had queued the original** and it landed meanwhile, the resend's estimate fails (`AlreadyAdmitted`):
     STALE, nothing is sent, and reconcile finds the attempt COMMITTED. At most one of them is ever admitted.
   - **Near the deadline:** with under a minute (`RESEND_MARGIN_SECONDS`, 60) between the latest block and the plan's

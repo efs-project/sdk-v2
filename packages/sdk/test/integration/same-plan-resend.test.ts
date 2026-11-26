@@ -233,6 +233,50 @@ describe("the same plan, sent again after a funds refusal (fixture)", () => {
     expect(await nonce()).toBe(before + 1);
   }, 120_000);
 
+  it("a local account whose raw send failed over (a transport error at A, then funds at B): never resent", async () => {
+    // A may have broadcast the signed transaction before its response was lost, so B's funds answer proves nothing.
+    const A = "http://endpoint-a.test/";
+    let aRaw = 0;
+    const failingA = async (url: string, init: { body?: unknown }) => {
+      const body = JSON.parse(String(init.body));
+      const reqs = Array.isArray(body) ? body : [body];
+      if (
+        url === A &&
+        reqs.some((r: { method: string }) => r.method === "eth_sendRawTransaction")
+      ) {
+        aRaw++;
+        throw new TypeError("fetch failed (the connection dropped)");
+      }
+      return fetch(url === A ? fixture.rpcUrl : url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: String(init.body),
+      });
+    };
+    const twoEndpoints = createEfs({
+      rpcs: [A, fixture.rpcUrl],
+      deployment,
+      fetch: failingA as never,
+    });
+    const journal = memoryJournal();
+    const writer = await createWriter(twoEndpoints, {
+      authorizer: { kind: "local", profile: "direct", account: local },
+      journal,
+    });
+    const planned = await writer.planActions(chunkPart());
+    if (planned.status !== "PLANNED") throw new Error(planned.status);
+    const sent = await writer.send(planned.plan);
+    expect(aRaw).toBe(1); // A was tried first, and failed in transport
+    expect(sent).toMatchObject({ status: "AMBIGUOUS", reason: { code: "RESPONSE_LOST" } });
+    const rec = await journal.get(planned.plan.id);
+    expect(rec?.history.some((h) => h.refusal)).toBe(false);
+    await topUp();
+    expect(await writer.send(planned.plan)).toMatchObject({
+      status: "AMBIGUOUS",
+      reason: { code: "ALREADY_ATTEMPTED" },
+    }); // waits for reconcile: never sent again
+  }, 120_000);
+
   it("the same after a save: resume finds the queued original committed and sends nothing", async () => {
     const w = wallet();
     const { writer } = await writerFor(w);

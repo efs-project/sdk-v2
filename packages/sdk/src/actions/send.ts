@@ -593,10 +593,14 @@ export async function sendPlan(
       record = { ...stamp(record, "SUBMISSION_POSSIBLE"), txHash };
       await journal.put(record);
       mayHaveBroadcast = true;
+      // Set when an endpoint failed in transport: it may have received and broadcast the signed transaction before
+      // its response was lost, so a later endpoint's refusal proves nothing about the original.
+      let lostAnEndpoint = false;
       const sent = await onEndpoint(
         efs._internal.pool,
         async (s) => {
           const out = await s.request("eth_sendRawTransaction", [signed]);
+          if (!out.ok && out.kind === "transport") lostAnEndpoint = true;
           return out.ok
             ? { ok: true, value: out.result }
             : { ok: false, retryElsewhere: out.kind === "transport", reason: out.reason };
@@ -605,8 +609,9 @@ export async function sendPlan(
       );
       if (!sent.ok) {
         // The node refused it for funds (the limit at these fees is more than the balance): named, still AMBIGUOUS,
-        // and recorded so the same plan may go again.
-        if (FUNDS_WORDS.test(sent.reason.detail ?? "")) {
+        // and recorded so the same plan may go again, but only when that answer came from the first endpoint that
+        // took the send. After a transport failure the original may be out: a lost response, waiting for reconcile.
+        if (FUNDS_WORDS.test(sent.reason.detail ?? "") && !lostAnEndpoint) {
           const why = insufficientFunds(gas);
           await bestEffort(journal.put(fundsRefusal(record, why.detail ?? "insufficient funds")));
           return { kind: "efs.send", status: "AMBIGUOUS", planId: plan.id, reason: why };
