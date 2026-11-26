@@ -12,7 +12,7 @@
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
-import { type Hex, hexToBytes, lower, type PrincipalId } from "../core/hex.js";
+import { type Hex, hexToBytes, lower, type PrincipalId, uniquePrincipals } from "../core/hex.js";
 import type { Ctx, Evidence } from "../files/bytes.js";
 import {
   bitmapStoreAbi,
@@ -315,7 +315,7 @@ export async function topicSynonyms(
 ): Promise<SynonymsResult> {
   const d = efs.deployment;
   const t = topicTypesOf(d);
-  const principals = (o.lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
+  const principals = uniquePrincipals((o.lens ?? efs.lens.default).principals);
   if (principals.length === 0) throw misuse("a Lens names at least one principal");
   const maxHops = o.maxHops ?? MAX_HOPS;
   const maxTopics = o.maxTopics ?? MAX_TOPICS;
@@ -581,7 +581,7 @@ export async function topicBroader(
 ): Promise<BroaderResult> {
   const d = efs.deployment;
   const t = topicTypesOf(d);
-  const principals = (o.lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
+  const principals = uniquePrincipals((o.lens ?? efs.lens.default).principals);
   if (principals.length === 0) throw misuse("a Lens names at least one principal");
   const scan = o.scan ?? MAX_SCAN;
   if (!Number.isInteger(scan) || scan < 1 || scan > MAX_SCAN)

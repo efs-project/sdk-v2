@@ -11,7 +11,7 @@ import { keccak256 } from "viem";
 import { type Basis, onEndpoint, type Session } from "../chain/pool.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
-import { type Hex, lower, type PrincipalId } from "../core/hex.js";
+import { type Hex, lower, type PrincipalId, uniquePrincipals } from "../core/hex.js";
 import { utf8Encode } from "../core/platform.js";
 import { type Ctx, EMPTY_BASIS, type Evidence } from "../files/bytes.js";
 import { selectionAgrees } from "../files/folders.js";
@@ -133,7 +133,7 @@ export async function lensTagsOf(
   const lookup = d.readers.topicLookup;
   if (!lookup)
     throw misuse("this deployment names no topic lookup reader (it predates the tag release)");
-  const lensList = (o.lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
+  const lensList = uniquePrincipals((o.lens ?? efs.lens.default).principals);
   if (lensList.length === 0) throw misuse("a Lens names at least one principal");
   if (lensList.length > 64) throw misuse("a Lens names at most 64 principals");
   const sample = o.sample ?? 0;

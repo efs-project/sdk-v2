@@ -35,6 +35,7 @@ import {
   type PrincipalId,
   type RecordId,
   type SubjectId,
+  uniquePrincipals,
   ZERO_WORD,
 } from "../core/hex.js";
 import { indexAbi, ledgerAbi, ledgerViewsAbi } from "../generated/abis.js";
@@ -451,7 +452,7 @@ const targetOf = (h: RawHead): EntryTarget =>
     ? { kind: "folder", directory: lower(h.target) as RecordId }
     : { kind: "file", subject: lower(h.target) as SubjectId };
 const lensPrincipals = (efs: Efs, lens: Lens | undefined): PrincipalId[] => {
-  const ps = (lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
+  const ps = uniquePrincipals((lens ?? efs.lens.default).principals);
   if (ps.length === 0) throw misuse("a Lens names at least one principal");
   if (ps.length > READ_CHUNK) throw misuse(`a Lens names at most ${READ_CHUNK} principals`);
   return ps;

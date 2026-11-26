@@ -7,7 +7,7 @@
 // synonym list that can't be read named in `missing`. Three accounts of anvil's public development mnemonic (indexes
 // 24, 25 and 26, used by no other test file).
 import { readFileSync } from "node:fs";
-import { decodeFunctionResult, encodeFunctionResult } from "viem";
+import { decodeFunctionData, decodeFunctionResult, encodeFunctionResult } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
@@ -25,6 +25,7 @@ import {
   topicItemsMerged,
   topicTypesOf,
 } from "../../src/tags/index.ts";
+import { recordingFetch } from "../../src/testing/index.ts";
 import { type Edit, sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -446,6 +447,30 @@ describe("topicItemsMerged (fixture)", () => {
     expect(page.rows).toEqual([]);
     expect(page.counts.filtered).toBe(4);
     expect(page.finished).toBe(true);
+  });
+
+  it("a hand-built Lens that repeats a principal is read once: no reader sees the repeat", async () => {
+    await same(we, ["mo1"], ["mo2"]);
+    await tag(we, ["mo1"], 120);
+    await tag(we, ["mo2"], 121);
+    const rec = recordingFetch(fetch as never);
+    const traced = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: rec.fetch });
+    const upper = `0x${E.slice(2).toUpperCase()}` as PrincipalId;
+    const twice = { principals: [E, F, upper, E] };
+    const merged = present(await topicItemsMerged(traced, ["mo1"], { view: "mine", lens: twice }));
+    const plain = await topicItems(traced, ["mo1"], { view: "mine", lens: twice });
+    expect(plain.status).toBe("PRESENT");
+    const lenses = rec.calls
+      .flatMap((c) => (Array.isArray(c.request) ? c.request : [c.request]))
+      .filter((r: { method?: string }) => r.method === "eth_call")
+      .map((r: { params: [{ data: Hex }] }) => r.params[0].data)
+      .filter((d) => d.startsWith(sel(topicMineReaderAbi, "mine")))
+      .map(
+        (d) => (decodeFunctionData({ abi: topicMineReaderAbi, data: d }).args[0] as Hex[]).length,
+      );
+    expect(lenses.length).toBeGreaterThan(1);
+    expect(new Set(lenses)).toEqual(new Set([2]));
+    expect(merged.rows.map((r) => r.thing)).toEqual([121, 120].map(thing));
   });
 
   it("MISUSE: Raw (no Lens, so no synonyms), a home, and a cursor from another listing", async () => {

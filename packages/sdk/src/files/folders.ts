@@ -28,6 +28,7 @@ import {
   type PrincipalId,
   type RecordId,
   type SubjectId,
+  uniquePrincipals,
 } from "../core/hex.js";
 import { utf8Encode } from "../core/platform.js";
 import {
@@ -370,7 +371,7 @@ export const checkParent = (p: ParentRef): ParentRef => {
   return { kind: "folder", directory: lower(p.directory) as RecordId };
 };
 const lensOf = (efs: Efs, lens: Lens | undefined): PrincipalId[] => {
-  const ps = (lens ?? efs.lens.default).principals.map((p) => lower(p) as PrincipalId);
+  const ps = uniquePrincipals((lens ?? efs.lens.default).principals);
   if (ps.length === 0) throw misuse("a Lens names at least one principal");
   return ps;
 };

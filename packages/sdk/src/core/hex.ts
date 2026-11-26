@@ -25,6 +25,22 @@ export function isAddress(value: unknown): value is Address {
 export function lower<T extends Hex>(value: T): T {
   return value.toLowerCase() as T;
 }
+/**
+ * A Lens's principals as the readers take them: lowercased, each once, at its first place. A hand-built Lens may
+ * repeat a principal (or differ only in case); the topic readers take "each principal once" as a precondition, and a
+ * decider index means something only in a Lens without repeats.
+ */
+export function uniquePrincipals(ps: readonly PrincipalId[]): PrincipalId[] {
+  const seen = new Set<string>();
+  const out: PrincipalId[] = [];
+  for (const p of ps) {
+    const q = p.toLowerCase() as PrincipalId;
+    if (seen.has(q)) continue;
+    seen.add(q);
+    out.push(q);
+  }
+  return out;
+}
 export function bytesToHex(bytes: Uint8Array): Hex {
   let out = "0x";
   for (const b of bytes) out += b.toString(16).padStart(2, "0");

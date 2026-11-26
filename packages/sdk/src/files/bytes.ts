@@ -42,6 +42,7 @@ import {
   type PrincipalId,
   type RecordId,
   type SubjectId,
+  uniquePrincipals,
   ZERO_WORD,
 } from "../core/hex.js";
 import { clearTimer, setTimer } from "../core/platform.js";
@@ -191,7 +192,11 @@ export function headCall(efs: Efs, lens: Lens, subject: Hex): CallRequest {
     data: encodeFunctionData({
       abi: lensReaderAbi,
       functionName: "resolve",
-      args: [lens.principals, { purpose: PURPOSES.head, subject, role: ZERO_WORD }, EMPTY_BASIS],
+      args: [
+        uniquePrincipals(lens.principals),
+        { purpose: PURPOSES.head, subject, role: ZERO_WORD },
+        EMPTY_BASIS,
+      ],
     }),
   };
 }
