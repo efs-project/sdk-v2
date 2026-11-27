@@ -44,8 +44,8 @@ depend on anything in this repository yet.
   `files-external/1` is one publication for any size, with https, IPFS or Arweave locations verified against the
   author's sha256. There is no upload pipeline, and no host for the external bytes (pending James).
 - **Authoring as a contract principal:** the writer is key-principal only.
-- **Edits of another author's revision:** only the planning-time base check guards them (the ledger's
-  compare-and-swap covers the editor's own HEAD).
+- **Edits of another author's revision:** guarded, the chain checks the base (your HEAD and every Lens author's up to
+  the base's author: `review.chainChecked`); unguarded, only the planning-time base check covers it ("Writes" below).
 - **web3://:** reads cover addresses on the client's own chain in ERC-5219 mode. ENS names, other chains and
   manual-mode contracts are reported as unsupported.
 - **Streaming:**
