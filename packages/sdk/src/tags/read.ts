@@ -288,7 +288,6 @@ export function placeId(efs: Efs, p: TopicPlace, fold?: FoldStep): { id: Hex; to
   throw misuse("a place is a list of words, { kind: 'topic', id } or { kind: 'home', address }");
 }
 
-/** @internal Status of a reader reply, as a refusal for anything but PRESENT. */
 /**
  * @internal A topic reader's status that a sound reader can't give the SDK's well-formed query (a Lens of 1 to 64
  * principals, calls sized by the read bounds, the pinned deployment's own readers, continuations it built): LIMIT_EXCEEDED,
@@ -301,6 +300,10 @@ export function endpointFault(code: number): Reason | null {
   return reason("RPC_ERROR", "transient", `the reader answered ${st}`);
 }
 
+/**
+ * @internal Status of a reader reply, as a refusal for anything but PRESENT. Callers ask endpointFault() first, so in
+ * practice only BASIS_STALE and UNKNOWN reach it.
+ */
 export function refusal(code: number): { status: "UNKNOWN" | "INVALID"; reason: Reason } | null {
   const st = chainStatus(code);
   if (st === "PRESENT") return null;
