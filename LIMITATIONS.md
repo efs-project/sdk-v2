@@ -98,6 +98,40 @@ What stays on one endpoint's word, by design, because checking it at listing tim
   consistent answer. Reading from more than one endpoint is the remedy (the SDK fails over, it doesn't vote).
 
 What never rests on an unverified field (checked 2026-11-26): opening bytes (sha256 and the content-addressed ids), a
-principal that builds a Lens (a folder's owner comes from its hash-checked record), a write planner's choice of row
-or target (a parent folder is checked from its record; every other planner decision rests on a record's presence, a
-head's state and revision, or a hash), and the media gate (it reads the opened revision's verified descriptor).
+principal that builds a Lens (a folder's owner comes from its hash-checked record), a write planner's parent folder
+(checked from its record), and the media gate (it reads the opened revision's verified descriptor).
+
+### Writes: what the endpoint you plan on still decides
+
+The write-path audit (2026-11-26) checked what the person reviews against what they sign
+(test/integration/signed-equals-reviewed.test.ts). On an honest endpoint they are always the same. One endpoint that
+lies can still steer some writes, because the ledger's compare-and-swap binds a head's **revision only**, never its
+state or target. Until the native ReadSet guard lands (a contracts release; the SDK will guard every written head),
+**a head's state and target are that endpoint's word** in these planners:
+
+- `planCreateFile`, `planCreateFolder`: your own entry at the name reported RELEASED (or MASKED) while it is bound, at
+  its true revision: the create rebinds over your entry instead of refusing NAME_TAKEN_MINE.
+- `planMoveEntries` (and renames): the destination is bound to your entry's target as the endpoint reports it, and
+  its kind decides whether the move needs a `via` path.
+- `planHideEntries`, `planUnhideEntries`: your own head reported not bound (or MASKED) while it is bound: the hide
+  masks, or the unhide releases, your own entry.
+- `planRestoreEntries`: the restored target is the endpoint's history (`historyAt`), checked for shape only.
+- the testing planners (`planHeadNo`, `planHeadRelease`, `planLoneHide`, `planOtherEntry`) in the same way.
+
+Also the endpoint's word, by design: the review's description of other people's entries (`visibleInLens`,
+`shownInstead`, `hiddenBy`, `shownAfter`, a hide's `shownNow` author), and the `via` path a folder move or restore
+checks for INTO_ITSELF (a lying endpoint can bypass that refusal; the chain refuses only a folder holding itself).
+Record presence (whether a name, registration or text record is published) and tag counts are fail-safe either way.
+
+**The trusted case is a single node you run yourself** (the MVP's local chain): it isn't adversarial. On a remote RPC,
+read through more than one endpoint, and treat a write planned on one you don't trust as that endpoint's word.
+
+What a write does check, whatever the endpoint says:
+- a head is UNSET exactly at revision 0 (a head that says otherwise fails over): this closes the "UNSET" lies;
+- the execution set signed is the deployment document's, and only while the chain's is the same; an acceptance
+  profile of 0 is never signed (a zero would waive the ledger's check);
+- a basis block more than `CLOCK_SKEW_SECONDS` (900 s) ahead of this device's clock fails over, so a signed deadline is
+  at most the device's clock + 900 s + its window;
+- before any wallet is asked, a plan's calldata and digest are re-derived from its own fields (a plan from the
+  journal included), and a save resumes only the parts it recorded (`partsHash`; a record from before the field
+  resumes as before). These detect a corrupted or version-skewed journal, not a party who can write it.

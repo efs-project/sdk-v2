@@ -59,6 +59,7 @@ interface SequenceRecord {
   lock: string;               // the account's lock key
   chainId: number; realmId: Hex; ledger: Address; account: Address;
   parts: { actions, bodies, effects, planId?: Hex, committed?: boolean, publication?: bigint }[];
+  partsHash?: Hex;            // keccak256 of the parts' content as the SDK last set them (0.1; absent before)
   state: "NOT_STARTED" | "IN_FLIGHT" | "PARTIAL" | "COMPLETE" | "ABANDONED";
   batchMax?: number;          // most parts per wallet request, lowered after a failed batch (1: part by part)
   history: { state, at, detail? }[];
@@ -68,6 +69,11 @@ interface SequenceRecord {
 
 A part's `planId` is set only while it is planned or in flight, and each part's attempt record is the exactly-once
 authority. COMPLETE and ABANDONED are closed, so `openSequences` never returns them.
+
+`partsHash` covers each part's actions, bodies, effects, units, gas figures, split depth and deadline window (never the
+per-attempt fields), set at `runSequence` and at a re-split. Resume refuses parts that don't hash to it (INVARIANT,
+nothing sent); a record without it (written before 0.1) resumes as before. It detects a corrupted or version-skewed
+record; it is no secret, so it can't stop a party who can write the journal.
 
 ## Browser and worker storage (`indexedDbJournal`)
 
