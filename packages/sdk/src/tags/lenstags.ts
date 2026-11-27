@@ -9,6 +9,7 @@
 // one head per Lens author and agrees with the Lens law, and a deciding yes names this thing as its target.
 import { keccak256 } from "viem";
 import { type Basis, onEndpoint, type Session } from "../chain/pool.js";
+import { throttled } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import { type Hex, lower, type PrincipalId, uniquePrincipals } from "../core/hex.js";
@@ -198,8 +199,15 @@ export async function lensTagsOf(
           callOf(lookup, topicLookupReaderAbi, "about", [asked, sample, EMPTY_BASIS, next, limit]),
         ]);
         // The node's own refusal (out of gas, most likely): the same call with half the bounds, a few times. A reply
-        // that fails a check below is the endpoint's fault, never retried smaller.
-        if (out && !out.ok && out.kind === "rpc" && counts.backoffs < MAX_BACKOFFS && limit > 1) {
+        // that fails a check below, or a throttle (429, -32005), is the endpoint's: it fails over, never retried smaller.
+        if (
+          out &&
+          !out.ok &&
+          out.kind === "rpc" &&
+          !throttled(out) &&
+          counts.backoffs < MAX_BACKOFFS &&
+          limit > 1
+        ) {
           counts.backoffs++;
           entryCap = Math.max(1, Math.floor(limit / 2));
           continue;

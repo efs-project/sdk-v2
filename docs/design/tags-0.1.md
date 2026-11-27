@@ -42,7 +42,8 @@
 >   - each place of a word page or of a topic's children is (its parent, that word);
 >   - a page that is not the end gives a resume point;
 > - a read the node refuses as too large (out of gas) is tried again with half the bounds, up to four times, before
->   it is UNKNOWN;
+>   it is UNKNOWN; an endpoint's throttle (HTTP 429, or -32005) is never "too large": the read fails over to the next
+>   endpoint, never asked smaller there;
 > - batches: each planned part carries the planner's own estimate (rows, per-level terms, the floor), which
 >   `packBatches` sums; a part with tag binds and no estimate is never batched;
 > - topic statements: `planLabel` (a topic's or a home's name in one BCP 47 language, lowercased; the text/1 record
@@ -341,7 +342,7 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
 - **Calls stay under the endpoint's gas limit.** A read under a big Lens is expensive (contracts step 4 measured
   `mine` at about 555k gas for a page of 10 at a Lens of 1, and 12.1M for a page of 50 at a Lens of 64). The SDK splits
   each read by Lens and by page so every eth_call stays under a conservative per-call cap. It starts small and backs
-  off when an endpoint runs out of gas. A call that ran out of gas is UNKNOWN or PARTIAL, never an empty page, and a
+  off when an endpoint runs out of gas; a throttled endpoint (429, -32005) is left for the next one instead. A call that ran out of gas is UNKNOWN or PARTIAL, never an empty page, and a
   big Lens never turns into UNKNOWN just because one call was too large.
 - **Skipped rows are counted, never dropped silently:** denied, duplicate, below the junk rule, and not their own
   fold (next point).

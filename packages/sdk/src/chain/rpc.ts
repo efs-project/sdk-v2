@@ -65,6 +65,17 @@ export type RpcOutcome =
   | { ok: false; kind: "transport"; reason: Reason } // retry elsewhere
   | { ok: false; kind: "rpc"; code: number; message: string; data?: unknown; reason: Reason }; // the node answered
 
+/**
+ * @internal The endpoint's "not now": a rate or quota limit (HTTP 429, or -32005, which on eth_call is a rate or
+ * quota limit, never a result size). A read meeting one fails over; it never retries smaller on that endpoint, as it
+ * does when the node refuses a call's size.
+ */
+export function throttled(out: RpcOutcome | undefined): boolean {
+  return (
+    out !== undefined && !out.ok && out.kind === "rpc" && (out.code === 429 || out.code === -32005)
+  );
+}
+
 export interface RequestEvent {
   endpoint: string;
   methods: readonly string[];

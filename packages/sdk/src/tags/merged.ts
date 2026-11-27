@@ -21,6 +21,7 @@
 import { decodeFunctionResult, keccak256 } from "viem";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
+import { throttled } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import { type Hex, lower, type PrincipalId, uniquePrincipals } from "../core/hex.js";
@@ -517,10 +518,12 @@ export async function topicItemsMerged(
             out &&
             !out.ok &&
             out.kind === "rpc" &&
+            !throttled(out) &&
             backoffs < MAX_BACKOFFS &&
             (p.limit > 1 || p.maxRows > 1)
           ) {
-            // The node refused the call (out of gas, most likely): this list is tried again with half the bounds.
+            // The node refused the call (out of gas, most likely): this list is tried again with half the bounds. A
+            // throttle (429, -32005) is the endpoint's "not now": the whole read fails over below.
             backoffs++;
             x.entryCap = Math.max(1, Math.floor(p.limit / 2));
             x.rowCap = Math.max(1, Math.floor(p.maxRows / 2));
