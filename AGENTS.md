@@ -29,7 +29,12 @@ Nothing in `packages/` may import from `tools/` or `examples/`.
 
 ## Commands
 
-| Change touches | Run before you push |
+**Before every push to `main`, docs-only included: `pnpm gates`.** It runs the four CI jobs in order (`pnpm check`,
+the Solidity lane, the integration suite with the packed fixture consumers, and the Solidity package), so a push never
+rests on a partial set (the docs-api check, for one, lives in the unit suite). The lanes below are for iterating
+locally; each is one of `gates:solidity`, `gates:integration`, `gates:solidity-package` or part of `pnpm check`.
+
+| Change touches | Run while you iterate |
 | --- | --- |
 | anything | `pnpm lint` and `pnpm typecheck` |
 | TypeScript source or exports | `pnpm test`, `pnpm build`, `pnpm pack:all`, `pnpm lint:package`, `pnpm test:package` |

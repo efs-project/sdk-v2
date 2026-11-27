@@ -36,7 +36,11 @@
     "test:package": "node tools/consumers.mjs",
     "release:dry-run": "node tools/release-dry-run.mjs",
     "changeset": "changeset",
-    "test:integration": "pnpm -r test:integration"
+    "test:integration": "pnpm -r test:integration",
+    "gates": "pnpm check && pnpm gates:solidity && pnpm gates:integration && pnpm gates:solidity-package",
+    "gates:solidity": "cd packages/solidity && FOUNDRY_PROFILE=ci forge soldeer install && FOUNDRY_PROFILE=ci forge fmt --check && FOUNDRY_PROFILE=ci forge build --sizes && FOUNDRY_PROFILE=ci forge test && cd ../.. && node tools/checks.mjs solidity",
+    "gates:integration": "pnpm test:integration && pnpm --filter @efs/sdk build && node tools/pack.mjs --only sdk,fixture && node tools/consumers.mjs --only fixture",
+    "gates:solidity-package": "node tools/pack.mjs --only solidity && node tools/consumers.mjs --only foundry"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
