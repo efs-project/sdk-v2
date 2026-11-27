@@ -487,6 +487,34 @@ const files = {};
         : {}),
     };
   }
+  // The read-set guard's terms (gas/model.json profiles.<schedule>.guard; the guard release, contracts 19891fe item
+  // 64): added once per guarded publication. Each constants table carries its own: E from `constants` (prague) or
+  // `split.executionGas` (amsterdam), all gas from `constants` (amsterdam's block check), K from `kernel`.
+  const GUARD_TERMS = [
+    "guardFixed",
+    "guardPrincipal",
+    "guardPosition",
+    "guardHeadWritten",
+    "guardHeadWrittenUnread",
+    "guardHeadTwoWords",
+    "guardHeadOneWord",
+    "guardMemoryQuadratic",
+  ];
+  const GUARD_BYTES = "224 + 32·(n + m + n·m)";
+  const guardTerms = (where, t) =>
+    Object.fromEntries(GUARD_TERMS.map((k) => [k, pct(`${where}.${k}`, t?.[k])]));
+  for (const [name, sch] of Object.entries(schedules)) {
+    const gm = model.profiles?.[name]?.guard;
+    const where = `profiles.${name}.guard`;
+    if (typeof gm?.bytes !== "string" || !gm.bytes.startsWith(GUARD_BYTES))
+      throw new Error(
+        `codegen: gas/model.json ${where}.bytes is not ${GUARD_BYTES}: the encoding moved`,
+      );
+    sch.constants.guard = guardTerms(`${where}.constants`, gm.constants);
+    if (sch.executionGas)
+      sch.executionGas.guard = guardTerms(`${where}.split.executionGas`, gm.split?.executionGas);
+    sch.floor.kernel.guard = guardTerms(`${where}.kernel`, gm.kernel);
+  }
   if (!schedules.prague) throw new Error("codegen: gasModel has no prague schedule");
   const env = g.envelope ?? {};
   if (typeof env.txGasCap !== "number" || typeof env.headroomPercent !== "number")
@@ -504,9 +532,14 @@ const files = {};
     typeof pl?.headroomPercent !== "number" ||
     typeof pl?.limits?.maxActions !== "number" ||
     typeof pl?.limits?.maxBindsPerPublication !== "number" ||
-    typeof pl?.limits?.maxBodyBytesPerPublication !== "number"
+    typeof pl?.limits?.maxBodyBytesPerPublication !== "number" ||
+    !Number.isInteger(pl?.limits?.maxReadSetPrincipals) ||
+    !Number.isInteger(pl?.limits?.maxReadSetPositions) ||
+    !Number.isInteger(pl?.limits?.maxReadCount)
   )
-    throw new Error("codegen: gasModel.planning needs txGasCap, headroomPercent and limits");
+    throw new Error(
+      "codegen: gasModel.planning needs txGasCap, headroomPercent and limits (the read-set limits included)",
+    );
   src +=
     "/** The planning rule (gas/model.json planning): inside `limits`, and max(E, V) ≤ ⌊txGasCap × (100 − headroomPercent) / 100⌋. */\n";
   src += `export const GAS_PLANNING = ${literal({ txGasCap: pl.txGasCap, headroomPercent: pl.headroomPercent, limits: pl.limits })} as const;\n\n`;

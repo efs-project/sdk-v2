@@ -120,6 +120,9 @@ export interface ProtocolLimits {
   maxBodyBytesPerPublication: number;// 16 384 on the fixture
   spanChunkBytes: number;            // 8 160 (efs/chunking/1)
   maxLensPrincipals: number;         // 64
+  maxReadSetPrincipals: number;      // 64: the read-set guard's principals
+  maxReadSetPositions: number;       // 128: its positions
+  maxReadCount: number;              // 256: principals × positions
 }
 export interface Capabilities { tags: boolean; properties: boolean; lists: boolean; homes: boolean; web3Gateway: boolean }
 
@@ -950,14 +953,32 @@ and the deployment's fee profile (`gasLimitOf`). A size refusal is NOT_SENT `OVE
 
 `splitPublications(actions, { model, limits, txGasCap, headroom?, blockGasLimit?, firstWrite?, typeNames? })` in
 `@efs/sdk/actions` packs an ordered list of `PlannedAction`s (`{ action, body, shape?, exists?, bindRow?, levels?,
-group?, firstStatement? }`) into publications that each fit one transaction, by the contracts' planning rule
+group?, firstStatement?, guard? }`) into publications that each fit one transaction, by the contracts' planning rule
 (gas/model.json `planning`). The contracts' `tools/gas-plan.mjs` is the reference, and the SDK reproduces its verdicts
-on all twenty-two shared shapes of `test/vectors/floor-plan.json`, on both schedules (`test/floor-plan.test.ts`;
-where a shape's vector is planned with a short list the SDK is held to the reference given the same actions without
-the count, and plans the same batch).
+on all thirty-five shared shapes of `test/vectors/floor-plan.json` (eight of them guarded), on both schedules
+(`test/floor-plan.test.ts`; where a shape's vector is planned with a short list the SDK is held to the reference given
+the same actions without the count, and plans the same batch).
 - **Batch limits** come from the kernel's own checks (`LedgerCore._bounds`): actions ≤ `maxActionsPerPublication`;
   BIND, UNBIND and RELEASE ≤ `maxBindsPerPublication`; summed body bytes ≤ `maxBodyBytesPerPublication`; each
   body ≤ `maxBodyBytes`.
+- **The read-set guard** (contracts 19891fe, the guard release). A `PlannedAction` may carry `guard`: the heads it
+  writes or was decided from, each a `GuardHead { principal, position, expected, term }` whose `expected` snapshot the
+  planner computed from the head it read. A split keeps each head with its action, so a publication guards exactly its
+  own actions' heads. The guard is a grid: n principals × m positions, every principal at every position, so the
+  splitter never puts units together whose heads would leave a principal and a position with no head between them,
+  and holds each publication to the Realm's read-set limits (`maxReadSetPrincipals` 64, `maxReadSetPositions` 128,
+  n·m ≤ `maxReadCount` 256; a unit over one alone is refused LIMIT_EXCEEDED, naming it). It cuts by whichever binds
+  first, the grid or gas: under a 64-author Lens, edits stop at 4 a publication by `maxReadCount` while gas would take
+  5. A head guarded twice in one save, or a unit whose heads form no grid, is a planner's error (INVARIANT). A guarded
+  publication adds `guardFixed + (n − 1)·guardPrincipal + (m − 1)·guardPosition + Σ head terms +
+  guardMemoryQuadratic·(n + m + 3nm)²` once to E and, with the kernel's terms, to K (gas/model.json
+  `profiles.<schedule>.guard`, carried on each `GasConstants` as `guard`); the head terms are `written`,
+  `writtenUnread` (an UNBIND or RELEASE of a MASKED or RELEASED head with a kept target), `twoWords` and `oneWord`
+  (heads read, not written, with and without a target). The shown estimate adds the guard's real bytes (224 + 32·(n
+  + m + nm)) as calldata on top, as it does for actions. The largest guarded batches (unguarded in brackets): folder
+  masks 53 (54) and restores 47 (48) on both schedules; tag number changes 61 / 63 (62 / 64) and moves 20 / 24 (20 /
+  25) on prague / amsterdam. In this release no planner sets `guard` yet: the send path and the planners' heads come
+  in the next steps.
 - **The rule:** a publication is planned when it is inside the limits and `max(E, V) ≤ ⌊txGasCap × (100 −
   headroomPercent) / 100⌋` (14,260,633 at 2^24 and 15%):
   - **E**, the model's execution estimate (release.json `gasModel`, generated as `GAS_SCHEDULES`): `fixed + Σ
@@ -1935,6 +1956,9 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `GasLimitInput` | interface |  |
 | `GasModel` | interface | The model the planner splits with: what the per-transaction cap counts, for one fee schedule. |
 | `GasPlan` | type |  |
+| `GuardHead` | interface | One guarded head: whose, where, and the snapshot hash the plan expects it to have before the publication. |
+| `GuardTerm` | type | How a guarded head is priced, by what the planner read of it before the publication and whether the publication writes it (gas/model.json profiles.<schedule>.guard.note): - `written`: one of the publication's actions writes it (except the next case); - `writtenUnread`: an UNBIND or RELEASE of a head that is MASKED or RELEASED with a kept target (targetKind ≠ 0); - `twoWords`: not written, targetKind ≠ 0 (BOUND, or MASKED or RELEASED with a kept target); - `oneWord`: not written, targetKind 0 (UNSET, or a lone no). |
+| `GuardTerms` | interface | One schedule's guard terms (gas/model.json profiles.<schedule>.guard: constants, split.executionGas or kernel). |
 | `Journal` | interface |  |
 | `JournalView` | interface | Sequences without a wallet: settle and list them before anyone connects (resume still needs the writer). |
 | `KernelQuote` | interface | The kernel's own quote of a publication's floor (LedgerIngress.indexFloor's four numbers). |

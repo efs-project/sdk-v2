@@ -7,11 +7,16 @@
 // The SDK never passes an author's entry count (it prices every later statement at the long tier, gas/model.json
 // laterLists), so where a shape's reference actions carry a short-tier count the SDK is held to the reference planner
 // given the same actions without it, and the batch it plans is stated (SDK_SIZES): never larger than the vector's.
+//
+// A guarded shape (the guard release, contracts 19891fe) carries its read set as the SDK's planners carry it, each head
+// on the action it belongs to; the SDK must price it as the reference does and split a longer run by the read set's
+// grid where that binds before gas (the lens edits: 64 principals × 4 positions, the fifth refused by maxReadCount).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error: a plain ES module from the contracts (no types), vendored with the vectors it wrote.
 import { planner, shapes } from "../../../protocol-inputs/contracts/tools/gas-plan.mjs";
+import { type GuardHead, guardBytes, guardGrid, guardOver } from "../src/actions/guard.ts";
 import {
   type BindRow,
   budgetOf,
@@ -21,7 +26,7 @@ import {
   splitPublications,
 } from "../src/actions/split.ts";
 import { ACTION, type ActionData } from "../src/actions/types.ts";
-import { type Hex, ZERO_WORD } from "../src/core/hex.ts";
+import { type Hex, type PrincipalId, ZERO_WORD } from "../src/core/hex.ts";
 import { PURPOSES } from "../src/generated/constants.ts";
 import { GAS_LATER_LISTS, GAS_PLANNING, GAS_SCHEDULES } from "../src/generated/gas.ts";
 
@@ -43,6 +48,8 @@ interface Vector extends Figures {
   units: number;
   k: number;
   budget: number;
+  /** A guarded shape's guard length at k (gas-plan.mjs guardBytes). */
+  guardBytes?: number;
   next: Partial<Figures> & { k: number; refused: string };
 }
 type RefAction =
@@ -125,7 +132,13 @@ const modelFor = (schedule: string): GasModel => {
   const exec = (sch["executionGas"] ?? sch["constants"]) as Omit<GasModel, "schedule">;
   return { ...exec, schedule, floor: sch["floor"] } as GasModel;
 };
+const GUARD_LIMITS_OF = {
+  maxReadSetPrincipals: GAS_PLANNING.limits.maxReadSetPrincipals,
+  maxReadSetPositions: GAS_PLANNING.limits.maxReadSetPositions,
+  maxReadCount: GAS_PLANNING.limits.maxReadCount,
+};
 const LIMITS = {
+  ...GUARD_LIMITS_OF,
   maxActionsPerPublication: GAS_PLANNING.limits.maxActions,
   maxBindsPerPublication: GAS_PLANNING.limits.maxBindsPerPublication,
   maxBodyBytesPerPublication: GAS_PLANNING.limits.maxBodyBytesPerPublication,
@@ -182,6 +195,8 @@ const SDK_SIZES: Record<string, Record<string, number>> = {
     movesIntoRemovedNames: 18,
     movesIntoRemovedNamesNoName: 25,
     movesToFresh: 20,
+    movesToFreshGuarded: 20,
+    folderRestoresGuarded: 47,
   },
   amsterdam: {
     createFilesAtRemovedNames: 12,
@@ -189,53 +204,98 @@ const SDK_SIZES: Record<string, Record<string, number>> = {
     movesIntoRemovedNames: 19,
     movesIntoRemovedNamesNoName: 25,
     movesToFresh: 25,
+    movesToFreshGuarded: 24,
+    folderRestoresGuarded: 47,
   },
 };
+/** A guarded shape's read set at k units (gas-plan.mjs shapes' `guard`), and the reference planner's guard limits. */
+type RefGuard = {
+  principals: number;
+  positions: number;
+  written: number;
+  writtenUnread: number;
+  twoWords: number;
+  oneWord: number;
+};
+const guardOf = (name: string) => (all[name] as { guard?: (k: number) => RefGuard }).guard;
+const fixedK = (name: string) => (all[name] as { fixedK?: number }).fixedK;
+const AUTHOR = word(0xa0) as PrincipalId;
+const other = (i: number) => word(0xa1 + i) as PrincipalId;
+const head = (principal: PrincipalId, position: Hex, term: GuardHead["term"]): GuardHead => ({
+  principal,
+  position,
+  expected: ZERO_WORD,
+  term,
+});
 /**
- * The guarded shapes (contracts 19891fe, the guard release: a read-set guard over the batch's heads). The SDK prices
- * no guard yet; that is the guard step. Until then each is named here, so a new guarded vector fails, and its actions
- * are held to the reference planner's figures without the guard.
+ * The SDK's form of a guarded shape's read set: each guarded head tied to an action, as the SDK's planners tie them,
+ * so a split carries a head with its action. Three forms, by the reference's read set at the vector's k (and checked
+ * against it there): one author whose every bind writes a head of its own (moves, masks, restores, number changes);
+ * a Lens of n principals at each bind's position, the author's head written and the others' read (the lens edits); or
+ * heads no action writes, spread evenly over the actions (the guarded CREATEs).
  */
-const GUARDED = [
-  "movesToFreshGuarded",
-  "folderMasksGuarded",
-  "folderRestoresGuarded",
-  "tagNumberChangesGuarded",
-  "editsLensGuarded",
-  "editsLensOneGuarded",
-  "createsGuarded1x128",
-  "createsGuarded2x128",
-];
-const guardedShape = (name: string) => (all[name] as { guard?: unknown }).guard !== undefined;
+const withGuard = (name: string, kAt: number, acts: PlannedAction[]): PlannedAction[] => {
+  const g = (guardOf(name) as (k: number) => RefGuard)(kAt);
+  let pos = 0x2000;
+  const binds = (list: PlannedAction[]) => list.filter((a) => isBindLike(a.action.kind)).length;
+  if (g.written > 0 && g.principals === 1)
+    return acts.map((a) =>
+      isBindLike(a.action.kind) ? { ...a, guard: [head(AUTHOR, word(pos++), "written")] } : a,
+    );
+  if (g.written > 0)
+    return acts.map((a) => {
+      if (!isBindLike(a.action.kind)) return a;
+      const at = word(pos++);
+      const others = Array.from({ length: g.principals - 1 }, (_, i) =>
+        head(other(i), at, "twoWords"),
+      );
+      return { ...a, guard: [head(AUTHOR, at, "written"), ...others] };
+    });
+  const perAction = g.positions / unitsOf(name, kAt).length;
+  expect(binds(acts)).toBe(0);
+  expect(Number.isInteger(perAction)).toBe(true);
+  return acts.map((a) => ({
+    ...a,
+    guard: Array.from({ length: perAction }, () => word(pos++)).flatMap((at) =>
+      Array.from({ length: g.principals }, (_, i) =>
+        head(i === 0 ? AUTHOR : other(i - 1), at, "twoWords"),
+      ),
+    ),
+  }));
+};
+const isBindLike = (k: number) => k === ACTION.BIND || k === ACTION.UNBIND || k === ACTION.RELEASE;
+/** A shape's actions as the SDK plans them, with its guard heads where the shape is guarded (`kAt`: its vector's k). */
+const plannedOf = (name: string, k: number, kAt: number): PlannedAction[] =>
+  guardOf(name) ? withGuard(name, kAt, unitsOf(name, k)) : unitsOf(name, k);
+const heads = (acts: readonly PlannedAction[]) => acts.flatMap((a) => a.guard ?? []);
+const GUARD_LIMITS = new Set(["maxReadSetPrincipals", "maxReadSetPositions", "maxReadCount"]);
 
 describe("the planning rule reproduces the contracts' shared verdicts", () => {
   for (const [schedule, rows] of Object.entries(vectors.schedules)) {
     const m = modelFor(schedule);
     const budget = budgetOf(BigInt(GAS_PLANNING.txGasCap), GAS_PLANNING.headroomPercent / 100);
     const ref = planner(model, schedule) as {
-      check: (a: RefAction[]) => Figures & { fits: boolean; refused: string | null };
-      largest: (shape: (k: number) => RefAction[]) => number;
+      check: (
+        a: RefAction[],
+        o?: { guard?: RefGuard },
+      ) => Figures & { fits: boolean; refused: string | null };
+      largest: (
+        shape: (k: number) => RefAction[],
+        max?: number,
+        guardOf?: ((k: number) => RefGuard) | null,
+      ) => number;
     };
-    it(`${schedule}: the guarded shapes are exactly the ones held for the guard step`, () => {
-      expect(Object.keys(rows).filter(guardedShape)).toEqual(GUARDED);
-    });
     for (const [name, v] of Object.entries(rows)) {
       it(`${schedule}: ${name}, ${v.k} per publication`, () => {
         expect(budget).toBe(v.budget);
-        if (guardedShape(name)) {
-          // held for the guard step: the actions alone, as the reference prices them without the guard
-          const acts = shortTier(name, v.k) ? withoutEntries(name)(v.k) : all[name]?.of(v.k);
-          const at = ruleGas(unitsOf(name, v.k), m);
-          const want = ref.check(acts as RefAction[]);
-          expect({ E: at.E, K: at.K, V: at.V }).toEqual({ E: want.E, K: want.K, V: want.V });
-          return;
-        }
         const units = (all[name] as { units: number }).units;
+        const g = guardOf(name);
+        const opt = (j: number) => (g ? { guard: g(j) } : {});
         // what the SDK must find: the vector, or (a short-tier shape) the reference without the entry count
         const short = shortTier(name, v.k);
-        const k = short ? ref.largest(withoutEntries(name)) : v.k;
-        const want = short ? ref.check(withoutEntries(name)(k)) : v;
-        const nextWant = short ? ref.check(withoutEntries(name)(k + 1)) : v.next;
+        const k = short ? ref.largest(withoutEntries(name), undefined, g ?? null) : v.k;
+        const want = short ? ref.check(withoutEntries(name)(k), opt(k)) : v;
+        const nextWant = short ? ref.check(withoutEntries(name)(k + 1), opt(k + 1)) : v.next;
         const nextRefused = short
           ? (nextWant as { refused: string | null }).refused
           : v.next.refused;
@@ -243,7 +303,15 @@ describe("the planning rule reproduces the contracts' shared verdicts", () => {
           expect(k, "the SDK's batch, stated").toBe(SDK_SIZES[schedule]?.[name]);
           expect(k).toBeLessThanOrEqual(v.k);
         } else expect(SDK_SIZES[schedule]?.[name]).toBeUndefined();
-        const at = ruleGas(unitsOf(name, k), m);
+        const acts = plannedOf(name, k, v.k);
+        if (g) {
+          // the SDK's read set is the reference's, head for head (guardGrid: a complete grid)
+          const grid = guardGrid(heads(acts));
+          if (!grid.ok) throw new Error(`${name}: the test's guard is not a grid (${grid.why})`);
+          expect(grid.grid.shape).toEqual(g(k));
+          if ("guardBytes" in v) expect(guardBytes(grid.grid.shape)).toBe(v.guardBytes);
+        }
+        const at = ruleGas(acts, m);
         expect({ E: at.E, K: at.K, V: at.V, ...at.quote }).toEqual({
           E: want.E,
           K: want.K,
@@ -254,20 +322,31 @@ describe("the planning rule reproduces the contracts' shared verdicts", () => {
           rewrites: want.rewrites,
         });
         expect(Math.max(at.E, at.V)).toBeLessThanOrEqual(budget);
+        // a shape checked at one size only (the reference's `fixedK`) says nothing about one unit more
+        if (fixedK(name) !== undefined) {
+          expect(v.next.refused).toBe("fixedK");
+          return;
+        }
+        const next = ruleGas(plannedOf(name, k + 1, v.k), m);
         if (nextRefused === "gas") {
-          const next = ruleGas(unitsOf(name, k + 1), m);
           expect({ E: next.E, K: next.K, V: next.V }).toEqual({
             E: nextWant.E,
             K: nextWant.K,
             V: nextWant.V,
           });
           expect(Math.max(next.E, next.V)).toBeGreaterThan(budget);
+        } else if (nextRefused !== null && GUARD_LIMITS.has(nextRefused)) {
+          // refused by the read set's grid, not by gas: one unit more is within the budget
+          const grid = guardGrid(heads(plannedOf(name, k + 1, v.k)));
+          if (!grid.ok) throw new Error(`${name}: the test's guard is not a grid (${grid.why})`);
+          expect(guardOver(grid.grid.shape, GUARD_LIMITS_OF)).toBe(nextRefused);
+          expect(Math.max(next.E, next.V)).toBeLessThanOrEqual(budget);
         } else {
           expect((k + 1) * units).toBeGreaterThan(GAS_PLANNING.limits.maxActions);
         }
         // The splitter cuts a longer run of the shape at exactly k units.
         const run = Math.min(k + 3, Math.floor(GAS_PLANNING.limits.maxActions / units) * 2);
-        const r = splitPublications(unitsOf(name, run), {
+        const r = splitPublications(plannedOf(name, run, v.k), {
           model: m,
           limits: LIMITS,
           txGasCap: BigInt(GAS_PLANNING.txGasCap),

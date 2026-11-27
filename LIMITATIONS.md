@@ -93,7 +93,17 @@ fails if a file carrying the `S0 placeholder` marker is missing from this list.
   model's `midList` state), it predicts up to 17.25% more than the gas used on prague, and up to 20.57% more of the
   execution gas on amsterdam; it never predicts less there. A wallet must hold enough for the gas limit, which can
   then be that much (plus the limit's own margin) above what the save is charged. Quote these figures in funds copy,
-  not 15% (that is the planning headroom, not an error bound). The full figures come with the guard release.
+  not 15% (that is the planning headroom, not an error bound). They are the guard release's (contracts 19891fe).
+- **A guard's calldata is counted once in the cap proof, and amsterdam's margin there is thin.** The read-set guard's
+  terms hold its calldata (they were measured as whole transactions, guarded minus plain, with a real guard's
+  structure: id, position and keccak hash words), so the proof that a planned part fits the per-transaction cap counts
+  it once, inside E, and its worst part is the widest unguarded one. A unit test checks the claim: a real guard's
+  calldata gas is within the measured one's (0.1% of the guard's cost) at each shape the guard was fitted at.
+  Counted twice, the worst guard (2 × 128 heads, 12,576 bytes) would take prague to 0.9829 and amsterdam to 0.9901 of
+  the cap, past the 0.98 tripwires, though still within the 15% headroom (needed: 13.6% and 14.2%); amsterdam is
+  0.0019 × cap from its tripwire with any guard over about 2,000 bytes counted twice. The shown estimate and the gas
+  limit's floor still add the guard's bytes on top. The contracts' generator release removes the ambiguity for actions
+  and guards alike: the model will exclude intrinsic gas and calldata, and the SDK will add the real values.
 
 ## Residual trust
 

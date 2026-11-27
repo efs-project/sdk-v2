@@ -131,6 +131,16 @@ export const GAS_SCHEDULES = {
         "mineExisting": 22888,
         "sharedNew": 27156,
         "sharedExisting": 15377
+      },
+      "guard": {
+        "guardFixed": 35555,
+        "guardPrincipal": 988,
+        "guardPosition": 1054,
+        "guardHeadWritten": 2948,
+        "guardHeadWrittenUnread": 4946,
+        "guardHeadTwoWords": 6943,
+        "guardHeadOneWord": 4682,
+        "guardMemoryQuadratic": 0.0634
       }
     },
     "floor": {
@@ -351,6 +361,16 @@ export const GAS_SCHEDULES = {
           "mineExisting": 0,
           "sharedNew": 0,
           "sharedExisting": 0
+        },
+        "guard": {
+          "guardFixed": 35555,
+          "guardPrincipal": 988,
+          "guardPosition": 1054,
+          "guardHeadWritten": 2948,
+          "guardHeadWrittenUnread": 4946,
+          "guardHeadTwoWords": 6943,
+          "guardHeadOneWord": 4682,
+          "guardMemoryQuadratic": 0.0634
         }
       }
     },
@@ -480,6 +500,16 @@ export const GAS_SCHEDULES = {
         "mineExisting": 37288,
         "sharedNew": 115176,
         "sharedExisting": 29785
+      },
+      "guard": {
+        "guardFixed": 123475,
+        "guardPrincipal": 988,
+        "guardPosition": 1054,
+        "guardHeadWritten": 2948,
+        "guardHeadWrittenUnread": 4946,
+        "guardHeadTwoWords": 6943,
+        "guardHeadOneWord": 4682,
+        "guardMemoryQuadratic": 0.0634
       }
     },
     "executionGas": {
@@ -601,6 +631,16 @@ export const GAS_SCHEDULES = {
         "mineExisting": 37288,
         "sharedNew": 17256,
         "sharedExisting": 29785
+      },
+      "guard": {
+        "guardFixed": 25555,
+        "guardPrincipal": 988,
+        "guardPosition": 1054,
+        "guardHeadWritten": 2948,
+        "guardHeadWrittenUnread": 4946,
+        "guardHeadTwoWords": 6943,
+        "guardHeadOneWord": 4682,
+        "guardMemoryQuadratic": 0.0634
       }
     },
     "floor": {
@@ -821,6 +861,16 @@ export const GAS_SCHEDULES = {
           "mineExisting": 0,
           "sharedNew": 0,
           "sharedExisting": 0
+        },
+        "guard": {
+          "guardFixed": 25555,
+          "guardPrincipal": 988,
+          "guardPosition": 1054,
+          "guardHeadWritten": 2948,
+          "guardHeadWrittenUnread": 4946,
+          "guardHeadTwoWords": 6943,
+          "guardHeadOneWord": 4682,
+          "guardMemoryQuadratic": 0.0634
         }
       }
     },
