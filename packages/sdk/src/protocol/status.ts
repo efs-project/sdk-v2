@@ -38,6 +38,16 @@ export function neverBoundHead(h: {
 }
 
 /**
+ * Whether a head's state and revision agree: UNSET exactly when the revision is 0 (a binding's revision counts its
+ * statements, so any stated head is at revision 1 or more). The ledger's CAS binds the revision only, never the state,
+ * so a write planner that took "UNSET at revision 5" would plan a first statement the chain admits over a live entry:
+ * a head that breaks this is the endpoint's fault, and the read fails over.
+ */
+export function headConsistent(state: number | bigint, revision: number | bigint): boolean {
+  return (Number(state) === 0) === (BigInt(revision) === 0n);
+}
+
+/**
  * Whether a LedgerViews.headsAt reply's status is one it serves (PRESENT: a head decides; MASKED; ABSENT_PROVEN: none
  * does). Anything else (UNKNOWN, a reserved state, a refusal) is the endpoint's fault: every headsAt read fails over.
  */

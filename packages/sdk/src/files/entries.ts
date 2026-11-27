@@ -45,7 +45,7 @@ import { indexAbi, ledgerAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { ACTION, FILES, PURPOSES } from "../generated/constants.js";
 import { checkName, NAME_PROFILE } from "../names/name.js";
 import { bindingKey, positionKey, recordFromHash, recordId, subjectId } from "../protocol/keys.js";
-import { chainStatus, headState, neverBoundHead } from "../protocol/status.js";
+import { chainStatus, headConsistent, headState, neverBoundHead } from "../protocol/status.js";
 import type { Ctx, FileRef } from "./bytes.js";
 import {
   checkParent,
@@ -287,6 +287,8 @@ async function readSeen(
       return bad("heads");
     }
     if (hs.length !== c.length) return bad("heads (one per key)");
+    if (hs.some((h) => !headConsistent(h.state, h.revision)))
+      return bad("heads (a state its revision contradicts)");
     mine.push(...hs);
   }
   const placesOut = new Map<Hex, PlaceState>();
@@ -312,6 +314,8 @@ async function readSeen(
         reason: reason("RPC_ERROR", "transient", `headsAt reads ${st}`),
       };
     if (all.length !== principals.length) return bad("headsAt (one head per Lens author)");
+    if (all.some((h) => !headConsistent(h.state, h.revision)))
+      return bad("headsAt (a state its revision contradicts)");
     const p = uniquePlaces[i] as Place;
     placesOut.set(p.position, { mine: mine[i] as RawHead, lens: [...all] });
   }
@@ -1879,6 +1883,8 @@ async function planHeadStatement(
       };
     const mine = all[0];
     if (!mine || all.length !== 1) return bad("headsAt (your head)");
+    if (!headConsistent(mine.state, mine.revision))
+      return bad("headsAt (a state its revision contradicts)");
     const before = headState(mine.state);
     if (before === "UNRECOGNIZED") return bad(`headsAt (head state ${mine.state})`);
     const refuse = (why: string): Step<() => Promise<FolderPlanResult<HeadStatementReview>>> => ({
