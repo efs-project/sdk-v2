@@ -258,6 +258,8 @@ export async function planEditFile(
         mediaType: string;
         /** With the guard: your head and each Lens author's up to the decider, at this file's HEAD position. */
         guardHeads: GuardHead[];
+        /** Every head the base rests on is guarded (all but the 65-principal edge). */
+        guardFull: boolean;
       };
   const r = await onEndpoint<Seen>(
     efs._internal.pool,
@@ -306,25 +308,24 @@ export async function planEditFile(
       // An author after the decider can't change the base while those before it don't move, so they are not read.
       const lensList = uniquePrincipals(lens.principals).map((p) => lower(p) as PrincipalId);
       const decider = lensList.indexOf(lower(h.author) as PrincipalId);
-      const guarded: PrincipalId[] = guard.on
-        ? [
-            ...lensList.slice(0, decider + 1),
-            ...(lensList.slice(0, decider + 1).includes(me) ? [] : [me]),
-          ]
-        : [];
-      if (guarded.length > d.limits.maxReadSetPrincipals)
-        return {
-          ok: true,
-          value: {
-            kind: "refused",
-            reason: reason(
-              "LIMIT_EXCEEDED",
-              "never",
-              `a guard over ${guarded.length} principals (your Lens up to the base's author, and you); maxReadSetPrincipals is ${d.limits.maxReadSetPrincipals}`,
-            ),
-          },
-        };
-      ctx.requests += guarded.length ? 3 : 1;
+      const prefix = lensList.slice(0, decider + 1);
+      const read: PrincipalId[] = guard.on ? [...prefix, ...(prefix.includes(me) ? [] : [me])] : [];
+      // The guard names what fits the Realm's read-set limit: you, the base's author, then the Lens before it in order.
+      // Only a full Lens deciding at its last author, with you outside it, needs one more (65); then the save is guarded
+      // by all but one of those heads, every head is still checked at planning, and the review says the base is not
+      // fully chain-checked (chainChecked false). A save is never refused for it.
+      const limit = d.limits.maxReadSetPrincipals;
+      const guardSet: PrincipalId[] =
+        read.length <= limit
+          ? read
+          : [
+              me,
+              lensList[decider] as PrincipalId,
+              ...prefix.filter((p) => p !== me && p !== lensList[decider]),
+            ].slice(0, limit);
+      const keyChunks: PrincipalId[][] = [];
+      for (let k = 0; k < read.length; k += 64) keyChunks.push(read.slice(k, k + 64));
+      ctx.requests += 1 + (read.length ? keyChunks.length + 1 : 0);
       const [out, ...guardOuts] = await callsAt(s, basis.blockHash, [
         {
           to: d.readers.ledgerReads,
@@ -334,17 +335,18 @@ export async function planEditFile(
             args: [d.ledger, myBinding],
           }),
         },
-        ...(guarded.length
+        ...(read.length
           ? [
-              {
+              // LedgerViews.heads takes at most limits.maxReadIds (64) keys a call
+              ...keyChunks.map((c) => ({
                 to: d.readers.ledgerViews,
                 data: encodeFunctionData({
                   abi: ledgerViewsAbi,
                   functionName: "heads",
-                  args: [d.ledger, guarded.map((p) => bindingKey(p, position))],
+                  args: [d.ledger, c.map((p) => bindingKey(p, position))],
                 }),
-              },
-              headSnapshotsCall(d, guarded, [position]),
+              })),
+              headSnapshotsCall(d, guardSet, [position]),
             ]
           : []),
       ]);
@@ -395,11 +397,18 @@ export async function planEditFile(
           },
         };
       const guardHeads: GuardHead[] = [];
-      if (guarded.length) {
-        const g = lensGuard(guardOuts, guarded, decider, me, position, h, {
-          state: mine.state,
-          revision: revisionNow,
-        });
+      if (read.length) {
+        const g = lensGuard(
+          guardOuts.slice(0, keyChunks.length),
+          guardOuts[keyChunks.length],
+          read,
+          guardSet,
+          decider,
+          me,
+          position,
+          h,
+          { state: mine.state, revision: revisionNow },
+        );
         if (!g.ok) return g;
         guardHeads.push(...g.value);
       }
@@ -413,6 +422,7 @@ export async function planEditFile(
           myNeverBound: (cs === "MASKED" || cs === "RELEASED") && neverBoundHead(mine),
           mediaType,
           guardHeads,
+          guardFull: guardHeads.length > 0 && guardSet.length === read.length,
         },
       };
     },
@@ -539,7 +549,7 @@ export async function planEditFile(
     records: records.length + finish.length - 1,
     expectedRevision: seen.myRevision,
     guard: ownHead ? "own-head" : "lens",
-    chainChecked: seen.guardHeads.length > 0,
+    chainChecked: seen.guardFull,
     visibleInLens: ownHead || (authorIndex >= 0 && authorIndex < lensAuthorIndex),
   };
   const n = split.parts.length;
@@ -602,8 +612,10 @@ type LensHead = {
  * snapshot is computed from the head read here and passes the consistency check against the endpoint's own.
  */
 function lensGuard(
-  outs: readonly (RpcOutcome | undefined)[],
+  headsOuts: readonly (RpcOutcome | undefined)[],
+  snapOut: RpcOutcome | undefined,
   guarded: readonly PrincipalId[],
+  guardSet: readonly PrincipalId[],
   decider: number,
   me: PrincipalId,
   position: Hex,
@@ -615,22 +627,24 @@ function lensGuard(
     retryElsewhere: true,
     reason: reason("RPC_ERROR", "transient", what),
   });
-  const [headsOut, snapOut] = outs;
-  if (!headsOut?.ok)
-    return {
-      ok: false,
-      retryElsewhere: true,
-      reason: headsOut ? headsOut.reason : reason("RPC_UNAVAILABLE", "transient"),
-    };
-  let heads: readonly LensHead[];
-  try {
-    [heads] = decodeFunctionResult({
-      abi: ledgerViewsAbi,
-      functionName: "heads",
-      data: headsOut.result as Hex,
-    }) as unknown as [LensHead[]];
-  } catch {
-    return fault("heads did not decode");
+  const heads: LensHead[] = [];
+  for (const headsOut of headsOuts) {
+    if (!headsOut?.ok)
+      return {
+        ok: false,
+        retryElsewhere: true,
+        reason: headsOut ? headsOut.reason : reason("RPC_UNAVAILABLE", "transient"),
+      };
+    try {
+      const [chunk] = decodeFunctionResult({
+        abi: ledgerViewsAbi,
+        functionName: "heads",
+        data: headsOut.result as Hex,
+      }) as unknown as [LensHead[]];
+      heads.push(...chunk);
+    } catch {
+      return fault("heads did not decode");
+    }
   }
   if (heads.length !== guarded.length) return fault("heads (one per guarded author)");
   // the Lens reader's decider is in the Lens (decodeHead checks it); never index past that on a broken reply
@@ -654,11 +668,11 @@ function lensGuard(
   const myHead = heads[mi] as LensHead;
   if (Number(myHead.state) !== mine.state || BigInt(myHead.revision) !== mine.revision)
     return fault("your HEAD reads differently in two reads at one basis");
-  const sn = decodeHeadSnapshots(snapOut, guarded.length);
+  const sn = decodeHeadSnapshots(snapOut, guardSet.length);
   if (!sn.ok) return sn;
   const out: GuardHead[] = [];
-  for (const [i, p] of guarded.entries()) {
-    const h = heads[i] as LensHead;
+  for (const [i, p] of guardSet.entries()) {
+    const h = heads[guarded.indexOf(p)] as LensHead;
     const v = consistentSnapshot(
       h,
       PURPOSES.head,

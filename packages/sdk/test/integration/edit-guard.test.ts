@@ -16,7 +16,7 @@ import { lower, ZERO_WORD } from "../../src/core/hex.ts";
 import { planEditFile } from "../../src/files/edit.ts";
 import { planCreateFile } from "../../src/files/entries.ts";
 import { ledgerViewsAbi } from "../../src/generated/abis.ts";
-import { bindingKey } from "../../src/protocol/keys.ts";
+import { bindingKey, keyPrincipal } from "../../src/protocol/keys.ts";
 import { sel, tampered } from "./tamper.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
@@ -170,6 +170,42 @@ describe("planEditFile's guard: your HEAD and the Lens up to the base's author",
     const out = await w(A).runSequence(p.parts);
     expect(out.state).not.toBe("COMPLETE");
     expect(out.reason).toMatchObject({ code: "STALE", revert: { error: "E_READSET_STALE" } });
+  }, 120_000);
+});
+
+describe("planEditFile's guard: a full Lens deciding at its last author, you outside it (65 heads)", () => {
+  it("guards what fits (you, the base's author, the Lens before it up to 64), says chainChecked false, and lands", async () => {
+    const others = Array.from(
+      { length: 63 },
+      (_, i) =>
+        keyPrincipal(`0x${(0xe000 + i).toString(16).padStart(40, "0")}` as Address) as PrincipalId,
+    );
+    const wide = { principals: [...others, w(C).principal] };
+    const made = (await planCreateFile(efs, w(C), {
+      folder: { kind: "home", address: C.address.toLowerCase() as Address },
+      name: `${tag}-wide.txt`,
+      content: text("C, last of 64"),
+    })) as {
+      status: string;
+      parts: unknown[];
+      review: { file: { subject: SubjectId }; revision: RecordId };
+    };
+    if (made.status !== "PLANNED") throw new Error(made.status);
+    expect((await w(C).runSequence(made.parts as never)).state).toBe("COMPLETE");
+    const p = await planEditFile(efs, w(A), {
+      file: { kind: "file", subject: made.review.file.subject },
+      base: { kind: "revision", recordId: made.review.revision },
+      content: text("A, from outside"),
+      lens: wide,
+    });
+    if (p.status !== "PLANNED") throw new Error(p.status);
+    expect(p.review).toMatchObject({ guard: "lens", chainChecked: false });
+    const g = (p.parts.at(-1)?.guard ?? []).map((h) => lower(h.principal));
+    expect(g).toHaveLength(64);
+    // you, the base's author, then the Lens before it in order: only the author just before the base's is left out
+    expect(g.slice(0, 2)).toEqual([lower(w(A).principal), lower(w(C).principal)]);
+    expect(g.slice(2)).toEqual(others.slice(0, 62).map((x) => lower(x)));
+    expect((await w(A).runSequence(p.parts)).state).toBe("COMPLETE");
   }, 120_000);
 });
 

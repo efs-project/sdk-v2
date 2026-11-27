@@ -150,7 +150,10 @@ Still the endpoint's word **where a writer is unguarded** (`guard: "never"`, or 
 those lies lands as the reviewed save's opposite, as before the guard. An unguarded restore at least requires the
 binding's history (`historyAt`, checked for shape) and the stored target to name the same one. An unguarded
 `planEditFile` whose base is another author's version rests on the planning-time base check alone; guarded, the
-chain checks it (your HEAD and every Lens author's up to the base's author: `review.chainChecked`).
+chain checks it (your HEAD and every Lens author's up to the base's author: `review.chainChecked`). One edge: a full
+64-author Lens deciding at its last author, with you outside it, needs 65 guarded heads and a guard names at most 64.
+The save goes ahead guarded by all but one of them (the one left out is the Lens author just before the base's),
+every head still checked at planning, and `chainChecked` is false: that one head is the endpoint's word.
 
 Also the endpoint's word, by design: the review's description of other people's entries (`visibleInLens`,
 `shownInstead`, `hiddenBy`, `shownAfter`, a hide's `shownNow` author), and the `via` path a folder move or restore

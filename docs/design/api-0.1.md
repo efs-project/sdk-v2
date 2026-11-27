@@ -1376,8 +1376,9 @@ type EditPlanResult =
   selection, your head the one the CAS read; anything else fails over). If any of them moves first, the ledger refuses
   the edit: STALE, `revert.error === "E_READSET_STALE"`, handled as E_CAS is. A statement by an author after the base's
   doesn't stop it. `chainChecked` is false for an unguarded writer: then only the planning-time base check covers a
-  "lens" base. A Lens whose prefix and you come to more than 64 principals can't be guarded (LIMIT_EXCEEDED,
-  `retry: "never"`).
+  "lens" base. A full 64-author Lens deciding at its last author, with you outside it, needs 65 heads, one more
+  than a guard names: the save is guarded by you, the base's author and the Lens before it up to the limit (every
+  head still checked at planning), it is never refused for it, and `chainChecked` is false.
 - **Splitting:** chunks and spans go through `splitPublications` under the per-transaction gas cap. The finish
   (descriptor, revision and HEAD bind) stays in one publication, so the edit appears atomically when the last part
   commits. The model is `gasPlanFor(efs.deployment)` (`opts.gasModel` overrides; without either, planning is
