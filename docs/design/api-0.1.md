@@ -196,6 +196,13 @@ state from before the save, and the new tag would quietly not be there.
     It stays BEHIND: there is no time-based reset, because a stuck node would then serve old reads again.
     `efs.resetReadFloor()` is the escape: for a local chain only, behind a "The test chain was reset? Start over"
     action. A new client starts with no floor.
+- **Hearing that it caught up:** `efs.onCaughtUp(listener, { policy? })` calls `listener` once, `{ policy, at }`, when
+  this client is caught up with its floor under that policy (default "latest"). A pin that ends UNKNOWN BEHIND opens
+  an episode, and the next read, reconcile or save step that serves under the same policy closes it. With none open, it
+  fires on the next microtask, so a view that subscribes after the read already caught up still hears. One-shot;
+  returns an unsubscribe; per policy (a `latest` catch-up never closes a `finalized` episode); `resetReadFloor` calls
+  every waiting listener (`at: null`). Nothing is read for it and nothing polls: it fires only from reads that happen
+  anyway. `at` is informational: re-read, never compare it. A view showing BEHIND subscribes and re-reads once.
 - **A save's block:**
   - `SequencePart.committedAt` is the reconcile basis at which the part was first seen committed (at or after its
     inclusion), cleared when a reorg undoes it.
@@ -1651,6 +1658,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `ByteStore` | interface | Exact verified bytes, keyed by content id (record id or sha256). |
 | `CallOpts` | interface |  |
 | `Capabilities` | interface |  |
+| `CaughtUp` | interface | What onCaughtUp tells a listener: the policy whose BEHIND episode closed, and the block that was served then (informational: re-read, never compare it). |
 | `ChainFacts` | interface | Chain facts the deployment document records (efs-deployment.chain): a snapshot from when the instance was deployed. |
 | `DeploymentInfo` | interface |  |
 | `Efs` | interface |  |

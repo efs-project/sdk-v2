@@ -378,12 +378,15 @@ export async function pinDeployment(
         floor: heldTo,
         served: behind,
       };
+      // A BEHIND episode for this policy: onCaughtUp's listeners wait for the next pin under it that serves.
+      floor.markBehind(policy);
       return { kind: "efs.pin", status: "UNKNOWN", reason: why, evidence };
     }
     return { kind: "efs.pin", status: "UNKNOWN", reason: r.reason, evidence };
   }
   // Only a VERIFIED pin raises the floor: a call pinned to a block hash (a page, a body) never does.
   floor.raise(policy, r.value.basis);
+  floor.served(policy, r.value.basis);
   return {
     kind: "efs.pin",
     status: "VERIFIED",

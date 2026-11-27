@@ -4,7 +4,7 @@
 
 import type { ScheduleCache } from "./actions/schedule.js";
 import { type ByteStore, memoryByteStore } from "./cache/stores.js";
-import { ReadFloor, type ReadFloors } from "./chain/floor.js";
+import { type CaughtUp, ReadFloor, type ReadFloors } from "./chain/floor.js";
 import { type Basis, type BasisPolicy, createPool, type Pool } from "./chain/pool.js";
 import { type FetchLike, type RequestEvent, type RpcEndpoint, toPort } from "./chain/rpc.js";
 import { type CallOpts, EfsFault } from "./core/errors.js";
@@ -121,6 +121,14 @@ export interface Efs {
    * this client read and reads stay BEHIND. Never needed on a live chain; a new client starts with no floor.
    */
   resetReadFloor(): void;
+  /**
+   * Call `listener` once when this client is caught up with its read floor under `o.policy` (default "latest"):
+   * when a read was UNKNOWN BEHIND, at the next read, reconcile or save step in this client that serves at or above
+   * the floor; with no BEHIND open, on the next microtask. One-shot; returns an unsubscribe. Per policy (a `latest`
+   * catch-up never closes a `finalized` episode). resetReadFloor calls every waiting listener. Nothing is read for it
+   * and nothing polls: it fires only from reads that happen anyway. Not awaited; anything it throws is ignored.
+   */
+  onCaughtUp(listener: (e: CaughtUp) => void, o?: { policy?: BasisPolicy }): () => void;
   /** @internal for SDK modules (files, actions): the endpoint pool and fetch implementation. */
   readonly _internal: {
     pool: Pool;
@@ -230,6 +238,7 @@ export function createEfs(config: EfsConfig): Efs {
     at: (policy = "latest", o) => pinDeployment(pool, deployment, policy, o, pins),
     readFloor: () => floor.snapshot(),
     resetReadFloor: () => floor.reset(),
+    onCaughtUp: (listener, o) => floor.onCaughtUp(listener, o),
     _internal: { pool, fetch: config.fetch, onRequest: config.onRequest, cache, schedule: {} },
   };
   return Object.freeze(efs);

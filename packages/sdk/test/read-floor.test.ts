@@ -94,3 +94,70 @@ describe("ReadFloor", () => {
     expect(new ReadFloor(0).behindWaitMs).toBe(0);
   });
 });
+
+describe("onCaughtUp: a BEHIND episode per policy, closed once by the next pin that serves at the floor", () => {
+  const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+
+  it("opens on BEHIND and closes on that policy's next served block: each listener once, with that block", async () => {
+    const f = new ReadFloor();
+    f.raise("latest", b(10));
+    f.markBehind("latest");
+    const got: unknown[] = [];
+    f.onCaughtUp((e) => got.push(e));
+    f.onCaughtUp((e) => got.push(["second", e.at?.blockNumber]));
+    await tick();
+    expect(got).toEqual([]); // still behind: nothing yet
+    f.served("latest", b(12));
+    expect(got).toEqual([{ policy: "latest", at: b(12) }, ["second", 12n]]);
+    f.markBehind("latest");
+    f.served("latest", b(13));
+    expect(got).toHaveLength(2); // one-shot: a listener never fires twice
+  });
+
+  it("a served block under another policy does not close the episode", async () => {
+    const f = new ReadFloor();
+    f.markBehind("finalized");
+    const got: unknown[] = [];
+    f.onCaughtUp((e) => got.push(e.policy), { policy: "finalized" });
+    f.served("latest", b(20));
+    await tick();
+    expect(got).toEqual([]);
+    f.served("finalized", b(18));
+    expect(got).toEqual(["finalized"]);
+  });
+
+  it("subscribing with nothing open fires on the next microtask; unsubscribe stops it", async () => {
+    const f = new ReadFloor();
+    f.raise("latest", b(7));
+    const got: unknown[] = [];
+    f.onCaughtUp((e) => got.push(e));
+    const stop = f.onCaughtUp(() => got.push("stopped"));
+    stop();
+    expect(got).toEqual([]); // never synchronously
+    await tick();
+    expect(got).toEqual([{ policy: "latest", at: b(7) }]);
+    // Unsubscribed while an episode is open: never called.
+    f.markBehind("latest");
+    const off = f.onCaughtUp(() => got.push("off"));
+    off();
+    f.served("latest", b(9));
+    expect(got).toHaveLength(1);
+  });
+
+  it("reset closes every open episode and calls its listeners; a throwing listener stops nothing", () => {
+    const f = new ReadFloor();
+    f.markBehind("latest");
+    f.markBehind("safe");
+    const got: unknown[] = [];
+    f.onCaughtUp(() => {
+      throw new Error("a listener's own fault");
+    });
+    f.onCaughtUp((e) => got.push(e), { policy: "safe" });
+    f.onCaughtUp((e) => got.push(e));
+    f.reset();
+    expect(got).toEqual([
+      { policy: "latest", at: null },
+      { policy: "safe", at: null },
+    ]);
+  });
+});
