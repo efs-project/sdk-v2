@@ -131,6 +131,23 @@ export type ReasonCode =
    * none caught up within the short wait: UNKNOWN rather than an older read. Retry; see `floor` and `served`.
    */
   | "BEHIND"
+  /**
+   * The same publication is already on its way, or committed and not yet final (see `twin`), or a funds-refused plan
+   * is too close to its deadline to send again: settle it from the ledger first; nothing was sent.
+   */
+  | "ALREADY_ATTEMPTED"
+  /** A part of the save is in flight (sent and not decided): reconcile it before abandoning the save. */
+  | "IN_FLIGHT"
+  /** The wallet's or the node's answer to a send was lost: it may have gone out (AMBIGUOUS). Reconcile decides. */
+  | "RESPONSE_LOST"
+  /** The caller's own AbortSignal ended the read (an unverified fetch). */
+  | "ABORTED"
+  /** The reader cancelled the stream (an unverified fetch). */
+  | "CANCELLED"
+  /** The caller's input can never work as given (e.g. actions and bodies of different lengths). */
+  | "INVALID"
+  /** reconcile: this journal holds no attempt with that plan id. */
+  | "NOT_IN_JOURNAL"
   | (string & Record<never, never>);
 
 export function reason(code: ReasonCode, retry: Reason["retry"], detail?: string): Reason {
@@ -143,6 +160,13 @@ export type FaultCode =
   | "LIMIT"
   | "INVARIANT"
   | "JOURNAL_UNAVAILABLE"
+  /**
+   * A plan or a save in the journal (or a plan an app handed in) is not what it recorded: its calldata or digest
+   * doesn't match its own fields, its parts don't hash to the parts it recorded, or the plan stored for a part is not
+   * that part's publication. Thrown before any wallet request: nothing was sent. Say "This save's record is
+   * damaged. Nothing was sent." with Discard (abandon), never Send again.
+   */
+  | "RECORD_DAMAGED"
   | "STREAM_FAILED"
   | (string & Record<never, never>);
 

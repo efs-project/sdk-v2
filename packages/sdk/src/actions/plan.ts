@@ -59,7 +59,7 @@ export interface PlanInput {
  * @internal Re-derive a plan's calldata and digest from its own fields and this deployment, before any wallet is
  * asked: a plan read back from the journal (resume, a resend after a funds refusal) or handed in by an app is signed
  * only if its calldata is exactly the publication it names, for this deployment and account, with both expectations
- * bound. INVARIANT otherwise (altered, corrupted or another deployment's), and nothing is sent.
+ * bound. RECORD_DAMAGED otherwise (altered, corrupted or another deployment's), and nothing is sent.
  */
 export function checkPlan(efs: Efs, plan: Plan): void {
   const d = efs.deployment;
@@ -101,7 +101,7 @@ export function checkPlan(efs: Efs, plan: Plan): void {
   }
   if (wrong.length)
     throw new EfsFault(
-      "INVARIANT",
+      "RECORD_DAMAGED",
       `this plan is not the publication it names (${wrong.join(", ")}): it was altered, corrupted or made for another deployment; nothing was sent`,
       { details: { planId: plan.id, wrong } },
     );

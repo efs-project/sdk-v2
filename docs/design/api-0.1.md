@@ -302,6 +302,12 @@ export type ReasonCode =
   | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED" | "INSUFFICIENT_FUNDS"   // AMBIGUOUS
   | "BEHIND"                    // every endpoint behind the read floor or atLeast (floor, served)
   | "RESPLIT"                   // a cut needs more approvals than the review said: nothing more sent (prompts)
+  | "ALREADY_ATTEMPTED"         // the same publication is already on its way (twin), or too close to its deadline to resend
+  | "IN_FLIGHT"                 // abandon: a part is still in flight; reconcile first
+  | "RESPONSE_LOST"             // AMBIGUOUS: the answer to a send was lost; reconcile decides
+  | "ABORTED" | "CANCELLED"     // an unverified fetch: the caller aborted, or the reader cancelled the stream
+  | "INVALID"                   // the caller's input can never work as given
+  | "NOT_IN_JOURNAL"            // reconcile: no attempt with that plan id
   | (string & Record<never, never>);    // open union
 ```
 
@@ -1100,9 +1106,9 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   native-nonce gap cannot happen.
 - **The record:** the sequence record (`efs-sdk-sequence/1`, journal storage v2) holds every part, and `partsHash`,
   the hash of their content (actions, bodies, effects, units, gas figures, split depth, deadline window) as the SDK
-  last set them: resume refuses parts that don't hash to it (INVARIANT, nothing sent). A record written before the
+  last set them: resume refuses parts that don't hash to it (RECORD_DAMAGED, nothing sent). A record written before the
   field resumes as before. Before any wallet request, `send` and an atomic batch re-derive each plan's calldata and
-  digest from its own fields and this deployment (INVARIANT if they differ, nothing sent), and a part resent after a
+  digest from its own fields and this deployment (RECORD_DAMAGED if they differ, nothing sent), and a part resent after a
   funds refusal goes only as the plan it recorded. The result,
   `SequenceProgress`, gives `state`, `total`, `committed`, `current` (index, plan, attempt stage), `mode` and a
   `reason`.
@@ -1501,7 +1507,7 @@ is never a filter that matches nothing, which a scan from the start would report
 ```ts
 export interface EfsFault extends Error {
   name: "EfsFault";
-  code: "MISUSE" | "ABORTED" | "LIMIT" | "INVARIANT" | "JOURNAL_UNAVAILABLE" | "STREAM_FAILED"
+  code: "MISUSE" | "ABORTED" | "LIMIT" | "INVARIANT" | "JOURNAL_UNAVAILABLE" | "RECORD_DAMAGED" | "STREAM_FAILED"
     | (string & Record<never, never>);
   details?: Readonly<Record<string, unknown>>;
   // Set on every fault out of runSequence / resume (see "A throw is never 'nothing was saved'"), else undefined:

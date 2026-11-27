@@ -2,7 +2,8 @@
 // A plan or a save read back from the journal is signed only as it was recorded (the write-path audit, 2026-11-26).
 // sendPlan re-derives a plan's calldata and digest from its own fields before any wallet is asked; a sequence records
 // a hash of its parts, and resume refuses parts that don't hash to it; a part resent after a funds refusal goes only
-// as its own publication. Each alteration is INVARIANT, and the wallet is never asked.
+// as its own publication. Each alteration is RECORD_DAMAGED, and the wallet is never asked; a damaged save is never
+// stranded: it stays listed and can be discarded.
 // Account 48 of anvil's public development mnemonic (used by no other test file), impersonated.
 import { readFileSync } from "node:fs";
 import { keccak256 } from "viem";
@@ -93,7 +94,7 @@ beforeAll(async () => {
 });
 
 describe("a plan is signed only as the publication it names (sendPlan)", () => {
-  it("altered calldata, actions, id or an unbound expectation is INVARIANT, and no wallet is asked", async () => {
+  it("altered calldata, actions, id or an unbound expectation is RECORD_DAMAGED, and no wallet is asked", async () => {
     const w = wallet();
     const { writer } = await writerFor(w);
     const planned = await writer.planActions(chunkPart());
@@ -109,7 +110,7 @@ describe("a plan is signed only as the publication it names (sendPlan)", () => {
       nonce: { ...plan, nonce: plan.nonce + 1n },
     };
     for (const [what, p] of Object.entries(altered))
-      await expect(writer.send(p), what).rejects.toMatchObject({ code: "INVARIANT" });
+      await expect(writer.send(p), what).rejects.toMatchObject({ code: "RECORD_DAMAGED" });
     expect(w.prompts).toBe(0);
     // The plan as made goes.
     const sent = await writer.send(plan);
@@ -122,7 +123,7 @@ describe("a plan is signed only as the publication it names (sendPlan)", () => {
 });
 
 describe("a batch is signed only as the publications it names (sendPlansAsBatch)", () => {
-  it("one altered plan in a batch is INVARIANT before the wallet is asked", async () => {
+  it("one altered plan in a batch is RECORD_DAMAGED before the wallet is asked", async () => {
     const w = wallet();
     const { writer, journal } = await writerFor(w);
     const planned = await writer.planSequence([chunkPart(), chunkPart()]);
@@ -130,13 +131,13 @@ describe("a batch is signed only as the publications it names (sendPlansAsBatch)
     const [a, b] = planned.plans as [Plan, Plan];
     await expect(
       sendPlansAsBatch(efs, journal, w.provider, [a, { ...b, actions: chunkPart().actions }]),
-    ).rejects.toMatchObject({ code: "INVARIANT" });
+    ).rejects.toMatchObject({ code: "RECORD_DAMAGED" });
     expect(w.prompts).toBe(0);
   });
 });
 
 describe("a save sends only the parts it recorded (resume)", () => {
-  it("parts altered in the journal are INVARIANT on resume, and no wallet is asked", async () => {
+  it("parts altered in the journal are RECORD_DAMAGED on resume, and no wallet is asked", async () => {
     const w = wallet(2);
     const { writer, journal } = await writerFor(w);
     const stopped = await writer.runSequence([chunkPart(), chunkPart()], { batch: "never" });
@@ -151,14 +152,44 @@ describe("a save sends only the parts it recorded (resume)", () => {
       ),
     });
     const prompts = w.prompts;
-    await expect(writer.resume(stopped.sequenceId)).rejects.toMatchObject({ code: "INVARIANT" });
+    await expect(writer.resume(stopped.sequenceId)).rejects.toMatchObject({
+      code: "RECORD_DAMAGED",
+    });
     expect(w.prompts).toBe(prompts);
     // Put back as recorded, it resumes and completes.
     await journal.putSequence(rec);
     expect(await writer.resume(stopped.sequenceId)).toMatchObject({ state: "COMPLETE" });
   });
 
-  it("a part's gas figures altered in the journal are INVARIANT on resume (they set its gas limit and batching)", async () => {
+  it("a damaged save is never stranded: it stays listed, says nothing was sent, and Discard (abandon) removes it", async () => {
+    const w = wallet(2);
+    const { writer, journal } = await writerFor(w);
+    const stopped = await writer.runSequence([chunkPart(), chunkPart()], { batch: "never" });
+    expect(stopped).toMatchObject({ state: "PARTIAL", committed: 1 });
+    const rec = await journal.getSequence(stopped.sequenceId);
+    if (!rec) throw new Error("no record");
+    const swapped = chunkPart();
+    await journal.putSequence({
+      ...rec,
+      parts: rec.parts.map((p, i) =>
+        i === 1 ? { ...p, actions: swapped.actions, bodies: swapped.bodies } : p,
+      ),
+    });
+    const fault = await writer.resume(stopped.sequenceId).catch((e: unknown) => e);
+    expect(fault).toMatchObject({ code: "RECORD_DAMAGED", mayHaveSent: false });
+    expect((await writer.pendingSequences()).map((p) => p.sequenceId)).toContain(
+      stopped.sequenceId,
+    );
+    expect(await writer.abandon(stopped.sequenceId)).toMatchObject({
+      state: "ABANDONED",
+      committed: 1,
+    });
+    expect((await writer.pendingSequences()).map((p) => p.sequenceId)).not.toContain(
+      stopped.sequenceId,
+    );
+  });
+
+  it("a part's gas figures altered in the journal are RECORD_DAMAGED on resume (they set its gas limit and batching)", async () => {
     const w = wallet(2);
     const { writer, journal } = await writerFor(w);
     const stopped = await writer.runSequence([chunkPart(), chunkPart()], { batch: "never" });
@@ -169,7 +200,9 @@ describe("a save sends only the parts it recorded (resume)", () => {
       ...rec,
       parts: rec.parts.map((p, i) => (i === 1 ? { ...p, gas: 15_000_000, total: 15_000_000 } : p)),
     });
-    await expect(writer.resume(stopped.sequenceId)).rejects.toMatchObject({ code: "INVARIANT" });
+    await expect(writer.resume(stopped.sequenceId)).rejects.toMatchObject({
+      code: "RECORD_DAMAGED",
+    });
   });
 
   it("a save recorded before parts hashes existed resumes as before", async () => {
@@ -212,7 +245,7 @@ describe("a save sends only the parts it recorded (resume)", () => {
       for (const plan of [otherPlan.plan, replanned.plan]) {
         await journal.put({ ...attempt, plan });
         await expect(writer.resume(stopped.sequenceId, { settleMs: 500 })).rejects.toMatchObject({
-          code: "INVARIANT",
+          code: "RECORD_DAMAGED",
         });
       }
       expect(w.prompts).toBe(prompts);
