@@ -64,13 +64,12 @@ import {
 import {
   consistentSnapshot,
   decodeHeadSnapshots,
-  guardHead,
+  type GuardedHeadOf,
   guardingOf,
   headSnapshotsCall,
   partGuardOf,
   SNAPSHOT_CHUNK,
-  type Snapshot,
-  writtenTerm,
+  withGuard,
 } from "./guardheads.js";
 import {
   askedMediaType,
@@ -216,7 +215,7 @@ interface Seen {
   snapshots: Map<Hex, GuardedHead>;
 }
 /** One of your heads with its expected snapshot, as readSeen computed it. */
-type GuardedHead = Snapshot & { head: RawHead };
+type GuardedHead = GuardedHeadOf<RawHead>;
 
 const READ_CHUNK = 64; // limits.maxReadIds and the 64-principal cap
 const chunks = <T>(xs: readonly T[], n: number): T[][] => {
@@ -709,23 +708,6 @@ async function toParts<R extends FolderReviewBase>(
     }),
     basis,
   };
-}
-
-/** A bind-kind action of yours with its head's guard (from `guarded`), or the action itself for any other kind. */
-function withGuard(
-  a: PlannedAction,
-  me: PrincipalId,
-  guarded: ReadonlyMap<Hex, GuardedHead>,
-): PlannedAction {
-  const k = a.action.kind;
-  if (k !== ACTION.BIND && k !== ACTION.UNBIND && k !== ACTION.RELEASE) return a;
-  const position = lower(positionKey(a.action.purpose, a.action.subject, a.action.role));
-  const g = guarded.get(position);
-  if (!g)
-    throw new EfsFault("INVARIANT", "a head this plan writes was not read for its guard", {
-      details: { position },
-    });
-  return { ...a, guard: [guardHead(me, position, g, writtenTerm(k, g.head))] };
 }
 
 /** Pin, read and plan on one endpoint, at one basis. */

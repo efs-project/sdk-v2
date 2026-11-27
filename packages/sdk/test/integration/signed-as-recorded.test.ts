@@ -6,16 +6,20 @@
 // stranded: it stays listed and can be discarded.
 // Account 48 of anvil's public development mnemonic (used by no other test file), impersonated.
 import { readFileSync } from "node:fs";
-import { keccak256 } from "viem";
+import { encodeFunctionData, keccak256 } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { sendPlansAsBatch } from "../../src/actions/batch.ts";
+import { encodeGuard } from "../../src/actions/guard.ts";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { actionsHash } from "../../src/actions/plan.ts";
 import type { Plan } from "../../src/actions/types.ts";
 import { createEfs } from "../../src/client.ts";
 import { encode } from "../../src/content/codec.ts";
-import { type Hex, ZERO_WORD } from "../../src/core/hex.ts";
+import { type Hex, type PrincipalId, ZERO_WORD } from "../../src/core/hex.ts";
+import { ledgerAbi } from "../../src/generated/abis.ts";
 import { ACTION } from "../../src/generated/constants.ts";
+import { nativeIntentDigest } from "../../src/protocol/keys.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8"));
@@ -241,8 +245,19 @@ describe("a save sends only the parts it recorded (resume)", () => {
       });
       if (replanned.status !== "PLANNED") throw new Error(replanned.status);
       expect(replanned.plan.deadline).not.toBe(attempt.plan.deadline);
+      // The part's own plan (its actions, bodies, deadline and effects) carrying a guard the part never had: only the
+      // guard's tie to the part refuses it (calldata and digest re-derived, so the plan is consistent in itself).
+      const guard = encodeGuard([
+        {
+          principal: attempt.plan.principal as PrincipalId,
+          position: `0x${"4e".repeat(32)}` as Hex,
+          expected: `0x${"4f".repeat(32)}` as Hex,
+          term: "oneWord",
+        },
+      ]);
+      const guarded = withGuardBytes(attempt.plan, guard);
       const prompts = w.prompts;
-      for (const plan of [otherPlan.plan, replanned.plan]) {
+      for (const plan of [otherPlan.plan, replanned.plan, guarded]) {
         await journal.put({ ...attempt, plan });
         await expect(writer.resume(stopped.sequenceId, { settleMs: 500 })).rejects.toMatchObject({
           code: "RECORD_DAMAGED",
@@ -254,3 +269,38 @@ describe("a save sends only the parts it recorded (resume)", () => {
     }
   });
 });
+
+/** A plan with other guard bytes, its calldata, digest and id re-derived: consistent in itself. */
+function withGuardBytes(p: Plan, guard: Hex): Plan {
+  const digest = nativeIntentDigest({
+    realmId: p.realmId,
+    principal: p.principal,
+    nonce: p.nonce,
+    deadline: p.deadline,
+    expectedExecutionSet: p.executionSet,
+    expectedAcceptanceProfile: p.acceptanceProfile,
+    guardHash: keccak256(guard),
+    actionsHash: actionsHash(p.actions),
+  });
+  return {
+    ...p,
+    guard,
+    id: digest,
+    digest,
+    calldata: encodeFunctionData({
+      abi: ledgerAbi,
+      functionName: "execute",
+      args: [
+        p.actions as never,
+        p.bodies,
+        {
+          nonce: p.nonce,
+          deadline: p.deadline,
+          expectedExecutionSet: p.executionSet,
+          expectedAcceptanceProfile: p.acceptanceProfile,
+        },
+        guard,
+      ],
+    }),
+  };
+}

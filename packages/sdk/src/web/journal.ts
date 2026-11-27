@@ -85,7 +85,7 @@ export function indexedDbJournal(options: IndexedDbJournalOptions = {}): WebJour
   /** A transaction on the sequences store, or null when it does not exist yet (no write has created it). */
   const seqTx = async (mode: IDBTransactionMode): Promise<IDBTransaction | null> => {
     const c = await db.connect(mode === "readwrite");
-    if (!c || !c.objectStoreNames.contains(SEQUENCES)) return null; // a version-1 database, read only
+    if (!c?.objectStoreNames.contains(SEQUENCES)) return null; // a version-1 database, read only
     try {
       return c.transaction(SEQUENCES, mode, { durability: "strict" });
     } catch (e) {

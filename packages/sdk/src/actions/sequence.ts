@@ -1360,7 +1360,7 @@ export function openJournal(efs: Efs, config: { journal: Journal }): JournalView
     },
     async reconcileSequence(sequenceId, o = {}) {
       const r = await config.journal.getSequence(sequenceId);
-      if (!r || !r.lock.startsWith(prefix))
+      if (!r?.lock.startsWith(prefix))
         throw new EfsFault(
           "MISUSE",
           `no sequence ${sequenceId} for this deployment in this journal`,

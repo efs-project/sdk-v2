@@ -28,11 +28,12 @@ import type { CallRequest } from "../chain/basis.js";
 import type { Step } from "../chain/pool.js";
 import type { RpcOutcome } from "../chain/rpc.js";
 import type { Efs } from "../client.js";
-import { reason } from "../core/errors.js";
+import { EfsFault, reason } from "../core/errors.js";
 import { type Hex, lower, type PrincipalId, ZERO_WORD } from "../core/hex.js";
 import type { DeploymentInfo } from "../deployment/manifest.js";
 import { ledgerViewsAbi } from "../generated/abis.js";
 import { ACTION, PURPOSES } from "../generated/constants.js";
+import { positionKey } from "../protocol/keys.js";
 import { headState } from "../protocol/status.js";
 
 /** What a guard needs of a head as the planner read it. */
@@ -189,3 +190,27 @@ export const guardingOf = (
   efs: Efs,
   writer: { readonly guard?: GuardMode },
 ): ReturnType<typeof guardingOn> => guardingOn(writer.guard ?? "auto", efs.deployment.nativeGuard);
+
+/** One head a plan read for its guard, with its expected snapshot (readSeen's map, by position). */
+export type GuardedHeadOf<H extends HeadRead = HeadRead> = Snapshot & { head: H };
+
+/**
+ * A bind-kind action with the guard of the head it writes (from `guarded`, by position), or the action itself for any
+ * other kind. A guarded plan guards every head it writes: a written head that was not read for its guard is the
+ * planner's error (INVARIANT), never sent bare.
+ */
+export function withGuard(
+  a: PlannedAction,
+  me: PrincipalId,
+  guarded: ReadonlyMap<Hex, GuardedHeadOf>,
+): PlannedAction {
+  const k = a.action.kind;
+  if (k !== ACTION.BIND && k !== ACTION.UNBIND && k !== ACTION.RELEASE) return a;
+  const position = lower(positionKey(a.action.purpose, a.action.subject, a.action.role));
+  const g = guarded.get(position);
+  if (!g)
+    throw new EfsFault("INVARIANT", "a head this plan writes was not read for its guard", {
+      details: { position },
+    });
+  return { ...a, guard: [guardHead(me, position, g, writtenTerm(k, g.head))] };
+}

@@ -84,7 +84,7 @@ describe("splitPublications", () => {
 
   it("keeps order and never splits a group: a file's finish moves to the next publication whole", () => {
     const finish = [ACTION.PUBLISH, ACTION.PUBLISH, ACTION.CREATE, ACTION.BIND, ACTION.BIND].map(
-      (k, i) =>
+      (k) =>
         k === ACTION.PUBLISH ? publish(96, "files-root/1 form 1", { group: 7 }) : plain(k, 7),
     );
     expect(finish.length).toBe(5);

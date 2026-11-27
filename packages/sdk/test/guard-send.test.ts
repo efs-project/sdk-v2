@@ -20,8 +20,9 @@ import { ACTION, type ActionData } from "../src/actions/types.ts";
 import { type Hex, type PrincipalId, ZERO_WORD } from "../src/core/hex.ts";
 import { toJson } from "../src/core/json.ts";
 import { utf8Encode } from "../src/core/platform.ts";
-import { knownSnapshotTarget, readTerm, writtenTerm } from "../src/files/guardheads.ts";
+import { knownSnapshotTarget, readTerm, withGuard, writtenTerm } from "../src/files/guardheads.ts";
 import { PURPOSES } from "../src/generated/constants.ts";
+import { positionKey } from "../src/protocol/keys.ts";
 
 const word = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as Hex;
 const head = (p: number, pos: number, expected = word(0xe000 + p * 0x100 + pos)): GuardHead => ({
@@ -228,5 +229,49 @@ describe("the target a head's snapshot is over, and how a guarded head is priced
     expect(readTerm(h(1, 1))).toBe("twoWords");
     expect(readTerm(h(2, 1))).toBe("twoWords");
     expect(readTerm(h(0, 0))).toBe("oneWord");
+  });
+});
+
+describe("withGuard: a guarded plan guards every head it writes, or refuses to plan", () => {
+  const position = (role: Hex) => positionKey(PURPOSES.folder, word(0x1000), role);
+  const bind = (kind: number, role: Hex) => ({
+    action: {
+      kind,
+      typeId: ZERO_WORD,
+      bodyHashOrRecordId: ZERO_WORD,
+      purpose: PURPOSES.folder,
+      subject: word(0x1000),
+      role,
+      target: ZERO_WORD,
+      expectedRevision: 1n,
+      saltOrStrength: ZERO_WORD,
+    },
+    body: "0x" as Hex,
+  });
+  const me = word(0xa0) as PrincipalId;
+  const head = { state: 2, revision: 1n, admission: 4n, targetKind: 1, target: ZERO_WORD };
+  const read = new Map([
+    [position(word(0x31)).toLowerCase() as Hex, { expected: word(0xe1), target: word(0x77), head }],
+  ]);
+  it("attaches the written head's guard, priced by the action and the head", () => {
+    const g = withGuard(bind(ACTION.UNBIND, word(0x31)), me, read);
+    expect(g.guard).toEqual([
+      {
+        principal: me,
+        position: position(word(0x31)).toLowerCase(),
+        expected: word(0xe1),
+        term: "writtenUnread",
+      },
+    ]);
+    expect(withGuard(bind(ACTION.BIND, word(0x31)), me, read).guard?.[0]?.term).toBe("written");
+  });
+  it("leaves an action that writes no head as it is", () => {
+    const publish = bind(ACTION.PUBLISH, word(0x31));
+    expect(withGuard(publish, me, read)).toBe(publish);
+  });
+  it("a written head that was not read for its guard is INVARIANT, never sent bare", () => {
+    expect(() => withGuard(bind(ACTION.RELEASE, word(0x32)), me, read)).toThrow(
+      expect.objectContaining({ code: "INVARIANT" }),
+    );
   });
 });
