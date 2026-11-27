@@ -331,4 +331,48 @@ describe("a rewound dev chain (chain B, this file's own)", () => {
   });
 });
 
+describe("onCaughtUp (chain B): a BEHIND view hears once when a read catches up, and nothing is read for it", () => {
+  it("BEHIND, subscribe, the endpoint catches up: the next read fires the listener once; no request of its own", async () => {
+    const url = chainB.rpcUrl;
+    const e = endpoints(url);
+    let requests = 0;
+    const counted: FetchLike = (u, init) => {
+      requests++;
+      return e.fetch(u, init);
+    };
+    const efs = createEfs({
+      rpcs: [e.LAG],
+      deployment: chainB.deployment,
+      fetch: counted,
+      reads: { behindWaitMs: 300 },
+    });
+    await rpc(url, "anvil_mine", ["0x2"]);
+    const first = await efs.at();
+    if (first.status !== "VERIFIED") throw new Error(first.status);
+    // The only endpoint falls behind the floor: the read is UNKNOWN BEHIND.
+    e.lag.by = 3;
+    await rpc(url, "anvil_mine", ["0x1"]);
+    expect(await efs.at()).toMatchObject({ status: "UNKNOWN", reason: { code: "BEHIND" } });
+    const heard: unknown[] = [];
+    efs.onCaughtUp((x) => heard.push(x));
+    const before = requests;
+    await new Promise((r) => setTimeout(r, 400));
+    expect(heard).toEqual([]); // still behind, and the SDK read nothing for the listener
+    expect(requests).toBe(before);
+    // It catches up; the next read anywhere in this client serves at the floor and closes the episode.
+    e.lag.by = 0;
+    const caught = await efs.at();
+    if (caught.status !== "VERIFIED") throw new Error(caught.status);
+    expect(heard).toEqual([
+      {
+        policy: "latest",
+        at: { blockNumber: caught.basis.blockNumber, blockHash: caught.basis.blockHash },
+      },
+    ]);
+    // One-shot: a later read fires nothing more.
+    await efs.at();
+    expect(heard).toHaveLength(1);
+  });
+});
+
 const shared: { journal?: Journal; visible?: { blockNumber: bigint; blockHash: Hex } } = {};

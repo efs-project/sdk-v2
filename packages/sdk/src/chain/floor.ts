@@ -19,6 +19,15 @@ export interface ReadFloors {
   safe?: FloorBlock;
   finalized?: FloorBlock;
 }
+/**
+ * What onCaughtUp tells a listener: the policy whose BEHIND episode closed, and the block that was served then
+ * (informational: re-read, never compare it). Null when nothing was served: a reset, or no floor known yet.
+ */
+export interface CaughtUp {
+  policy: BasisPolicy;
+  at: FloorBlock | null;
+}
+
 /** A floor read back from the journal, with the identity of the chain it was recorded on. */
 export interface FloorSeed extends FloorBlock {
   /** Unique per record (the sequence id): a seed ignored once stays ignored on this instance. */
@@ -54,6 +63,10 @@ export class ReadFloor {
   private readonly ignored = new Set<string>();
   /** Block hashes at a height, by (endpoint, served head, height): the `atLeast.blockHash` check, once per head. */
   private readonly hashes = new Map<string, Hex>();
+  /** Policies with a BEHIND episode open: a pin under them ended UNKNOWN BEHIND and none has served since. */
+  private readonly behind = new Set<BasisPolicy>();
+  /** The listeners each open episode will call once, in the order they subscribed. */
+  private readonly waiting = new Map<BasisPolicy, Set<(e: CaughtUp) => void>>();
 
   constructor(behindWaitMs = 4000) {
     if (!Number.isFinite(behindWaitMs) || behindWaitMs < 0)
@@ -118,6 +131,61 @@ export class ReadFloor {
       this.hashes.delete(this.hashes.keys().next().value as string);
   }
 
+  /** A pin under `policy` ended UNKNOWN BEHIND: its episode is open until a pin under the same policy serves. */
+  markBehind(policy: BasisPolicy): void {
+    this.behind.add(policy);
+  }
+
+  /**
+   * A VERIFIED pin under `policy` served `at` (at or above the floor, as every served block is): the policy's BEHIND
+   * episode, if one is open, closes, and each of its listeners is called once.
+   */
+  served(policy: BasisPolicy, at: FloorBlock): void {
+    if (!this.behind.delete(policy)) return;
+    this.fire(policy, {
+      blockNumber: at.blockNumber,
+      blockHash: at.blockHash.toLowerCase() as Hex,
+    });
+  }
+
+  /**
+   * Call `listener` once when this client is caught up under `policy` (default "latest"): when the open BEHIND episode
+   * closes (the next pin under that policy that serves), or, with none open, on the next microtask. Never more than
+   * once; returns an unsubscribe. Not awaited; anything it throws is ignored. Nothing is read for it.
+   */
+  onCaughtUp(listener: (e: CaughtUp) => void, o: { policy?: BasisPolicy } = {}): () => void {
+    const policy = o.policy ?? "latest";
+    let live = true;
+    const once = (e: CaughtUp) => {
+      if (!live) return;
+      live = false;
+      try {
+        listener(e);
+      } catch {
+        // a listener's own fault changes nothing here
+      }
+    };
+    if (!this.behind.has(policy)) {
+      void Promise.resolve().then(() => once({ policy, at: this.need(policy) ?? null }));
+      return () => {
+        live = false;
+      };
+    }
+    const set = this.waiting.get(policy) ?? new Set<(e: CaughtUp) => void>();
+    this.waiting.set(policy, set);
+    set.add(once);
+    return () => {
+      live = false;
+      this.waiting.get(policy)?.delete(once);
+    };
+  }
+
+  private fire(policy: BasisPolicy, at: FloorBlock | null): void {
+    const set = this.waiting.get(policy);
+    this.waiting.delete(policy);
+    for (const l of set ?? []) l({ policy, at });
+  }
+
   snapshot(): ReadFloors {
     const out: ReadFloors = {};
     for (const p of ["latest", "safe", "finalized"] as const) {
@@ -129,6 +197,10 @@ export class ReadFloor {
 
   /** Forget every floor (a reset or rewound dev chain), and ignore the journal seeds known so far on this instance. */
   reset(): void {
+    // Nothing is BEHIND after a reset: every open episode closes and its listeners are called (with no block).
+    const open = [...this.waiting.keys()];
+    this.behind.clear();
+    for (const p of open) this.fire(p, null);
     this.floors = {};
     for (const k of this.seeds.keys()) this.ignored.add(k);
     this.seeds.clear();

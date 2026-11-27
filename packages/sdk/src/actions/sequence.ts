@@ -802,7 +802,7 @@ export function sequenceOps(d: Deps) {
     // The parts sent are the parts this save recorded (a journal altered or written by another version is refused).
     if (r0.partsHash !== undefined && partsHashOf(r0.parts) !== r0.partsHash)
       throw new EfsFault(
-        "INVARIANT",
+        "RECORD_DAMAGED",
         "this save's parts in the journal are not the parts it recorded (altered, or written by another version): nothing was sent",
         { details: { sequenceId: r0.sequenceId } },
       );
@@ -828,7 +828,7 @@ export function sequenceOps(d: Deps) {
           toJson(attempt.plan.effects) !== toJson(part.effects)
         )
           throw new EfsFault(
-            "INVARIANT",
+            "RECORD_DAMAGED",
             `the plan stored for part ${i + 1} is not that part's publication: nothing was sent`,
             { details: { sequenceId: r.sequenceId, planId: part.planId } },
           );

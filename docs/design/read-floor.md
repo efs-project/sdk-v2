@@ -60,6 +60,10 @@ is content-addressed (immutable records), so it can't serve state from before a 
     - a new `Efs` instance (a reload) starts with no floor.
   - **Rejected alternative:** reset the floor after N seconds below it. It turns a stuck endpoint back into silent
     old reads.
+  - **Hearing that it caught up** (`efs.onCaughtUp`, 2026-11-27): a BEHIND episode per basis policy, opened by a pin
+    that ends UNKNOWN BEHIND and closed by the next VERIFIED pin under the same policy. Each listener is called once,
+    when its episode closes (or on the next microtask with none open), and `resetReadFloor` closes every episode. No
+    request of its own and no polling: a BEHIND view subscribes and re-reads once when it fires.
 
 ## 2. Where a save was seen committed
 

@@ -33,6 +33,7 @@ import {
   type CallOpts,
   EfsFault,
   type Reason,
+  type ReasonCode,
   reason,
   throwIfAborted,
 } from "../core/errors.js";
@@ -594,7 +595,7 @@ export async function spanRange(
   const end = offset + length;
   // Each requested chunk costs one chunk read plus at most one span read per tree level.
   let budget = Math.ceil(Number(length) / 8160 + 2) * (MAX_SPAN_DEPTH + 1);
-  const fail = (code: string, detail: string): Step<never> => ({
+  const fail = (code: ReasonCode, detail: string): Step<never> => ({
     ok: false,
     retryElsewhere: false,
     reason: reason(code, "never", detail),

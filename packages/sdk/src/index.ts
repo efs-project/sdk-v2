@@ -9,7 +9,7 @@ import type { Address, Hex } from "./core/hex.js";
 
 export type { ByteStore } from "./cache/stores.js";
 export { memoryByteStore } from "./cache/stores.js";
-export type { FloorBlock, ReadFloors } from "./chain/floor.js";
+export type { CaughtUp, FloorBlock, ReadFloors } from "./chain/floor.js";
 export type { Attempt, Basis, BasisPolicy } from "./chain/pool.js";
 export type { Eip1193Like, FetchLike, RequestEvent, RpcEndpoint } from "./chain/rpc.js";
 export type { Capabilities, Efs, EfsConfig, GatewayConfig, Lens, LensTools } from "./client.js";

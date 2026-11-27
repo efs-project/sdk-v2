@@ -71,7 +71,7 @@ A part's `planId` is set only while it is planned or in flight, and each part's 
 authority. COMPLETE and ABANDONED are closed, so `openSequences` never returns them.
 
 `partsHash` covers each part's actions, bodies, effects, units, gas figures, split depth and deadline window (never the
-per-attempt fields), set at `runSequence` and at a re-split. Resume refuses parts that don't hash to it (INVARIANT,
+per-attempt fields), set at `runSequence` and at a re-split. Resume refuses parts that don't hash to it (RECORD_DAMAGED,
 nothing sent); a record without it (written before 0.1) resumes as before. It detects a corrupted or version-skewed
 record; it is no secret, so it can't stop a party who can write the journal.
 

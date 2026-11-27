@@ -196,6 +196,13 @@ state from before the save, and the new tag would quietly not be there.
     It stays BEHIND: there is no time-based reset, because a stuck node would then serve old reads again.
     `efs.resetReadFloor()` is the escape: for a local chain only, behind a "The test chain was reset? Start over"
     action. A new client starts with no floor.
+- **Hearing that it caught up:** `efs.onCaughtUp(listener, { policy? })` calls `listener` once, `{ policy, at }`, when
+  this client is caught up with its floor under that policy (default "latest"). A pin that ends UNKNOWN BEHIND opens
+  an episode, and the next read, reconcile or save step that serves under the same policy closes it. With none open, it
+  fires on the next microtask, so a view that subscribes after the read already caught up still hears. One-shot;
+  returns an unsubscribe; per policy (a `latest` catch-up never closes a `finalized` episode); `resetReadFloor` calls
+  every waiting listener (`at: null`). Nothing is read for it and nothing polls: it fires only from reads that happen
+  anyway. `at` is informational: re-read, never compare it. A view showing BEHIND subscribes and re-reads once.
 - **A save's block:**
   - `SequencePart.committedAt` is the reconcile basis at which the part was first seen committed (at or after its
     inclusion), cleared when a reorg undoes it.
@@ -295,6 +302,12 @@ export type ReasonCode =
   | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED" | "INSUFFICIENT_FUNDS"   // AMBIGUOUS
   | "BEHIND"                    // every endpoint behind the read floor or atLeast (floor, served)
   | "RESPLIT"                   // a cut needs more approvals than the review said: nothing more sent (prompts)
+  | "ALREADY_ATTEMPTED"         // the same publication is already on its way (twin), or too close to its deadline to resend
+  | "IN_FLIGHT"                 // abandon: a part is still in flight; reconcile first
+  | "RESPONSE_LOST"             // AMBIGUOUS: the answer to a send was lost; reconcile decides
+  | "ABORTED" | "CANCELLED"     // an unverified fetch: the caller aborted, or the reader cancelled the stream
+  | "INVALID"                   // the caller's input can never work as given
+  | "NOT_IN_JOURNAL"            // reconcile: no attempt with that plan id
   | (string & Record<never, never>);    // open union
 ```
 
@@ -1093,9 +1106,9 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
   native-nonce gap cannot happen.
 - **The record:** the sequence record (`efs-sdk-sequence/1`, journal storage v2) holds every part, and `partsHash`,
   the hash of their content (actions, bodies, effects, units, gas figures, split depth, deadline window) as the SDK
-  last set them: resume refuses parts that don't hash to it (INVARIANT, nothing sent). A record written before the
+  last set them: resume refuses parts that don't hash to it (RECORD_DAMAGED, nothing sent). A record written before the
   field resumes as before. Before any wallet request, `send` and an atomic batch re-derive each plan's calldata and
-  digest from its own fields and this deployment (INVARIANT if they differ, nothing sent), and a part resent after a
+  digest from its own fields and this deployment (RECORD_DAMAGED if they differ, nothing sent), and a part resent after a
   funds refusal goes only as the plan it recorded. The result,
   `SequenceProgress`, gives `state`, `total`, `committed`, `current` (index, plan, attempt stage), `mode` and a
   `reason`.
@@ -1494,7 +1507,7 @@ is never a filter that matches nothing, which a scan from the start would report
 ```ts
 export interface EfsFault extends Error {
   name: "EfsFault";
-  code: "MISUSE" | "ABORTED" | "LIMIT" | "INVARIANT" | "JOURNAL_UNAVAILABLE" | "STREAM_FAILED"
+  code: "MISUSE" | "ABORTED" | "LIMIT" | "INVARIANT" | "JOURNAL_UNAVAILABLE" | "RECORD_DAMAGED" | "STREAM_FAILED"
     | (string & Record<never, never>);
   details?: Readonly<Record<string, unknown>>;
   // Set on every fault out of runSequence / resume (see "A throw is never 'nothing was saved'"), else undefined:
@@ -1651,6 +1664,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `ByteStore` | interface | Exact verified bytes, keyed by content id (record id or sha256). |
 | `CallOpts` | interface |  |
 | `Capabilities` | interface |  |
+| `CaughtUp` | interface | What onCaughtUp tells a listener: the policy whose BEHIND episode closed, and the block that was served then (informational: re-read, never compare it). |
 | `ChainFacts` | interface | Chain facts the deployment document records (efs-deployment.chain): a snapshot from when the instance was deployed. |
 | `DeploymentInfo` | interface |  |
 | `Efs` | interface |  |
@@ -2069,6 +2083,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `createRecorder` | function | Record the RPC half (a fetch) and, optionally, the wallet half of a flow, numbering every answer and every mark in one sequence. |
 | `createReplay` | function | Replay transcripts with the head gated by their writes and marks (see the header). |
 | `createRpcReplay` | function | Replay recorded RPC transcripts as a fetch and an EIP-1193 provider, for chain-free tests: each request gets its recorded answer in order, and unmatched calls are misses (createReplay adds epochs, for heads that move). |
+| `planFolderEntry` | function | Test tooling: the writer's own entry `name` in `folder`, pointing at an existing folder `target` (the name record when missing, then the FOLDER bind). |
 | `planHeadNo` | function | Test-only (exported from ` |
 | `planHeadRelease` | function | Test-only (exported from ` |
 | `planLoneHide` | function | Test-only (exported from ` |
@@ -2077,6 +2092,8 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `recordingProvider` | function | Wrap an EIP-1193 provider so every request is recorded as a WalletCall, in the order the requests were made, with the result or error filled in when it settles. |
 | `replayFetch` | function | A fetch that answers JSON-RPC POSTs from transcripts (any URL) and 404s everything else. |
 | `replayProvider` | function | A fake wallet answering from the transcripts' wallet halves: each request is matched on `[method, params]`, answers are served in recorded order and the last repeats (`strict`: never repeats), and a recorded error is thrown (with its `code`). |
+| `FolderEntryInput` | interface |  |
+| `FolderEntryReview` | interface |  |
 | `HeadStatementInput` | interface |  |
 | `HeadStatementReview` | interface |  |
 | `LoneHideInput` | interface |  |
