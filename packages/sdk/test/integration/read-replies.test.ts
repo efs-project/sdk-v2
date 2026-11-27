@@ -449,6 +449,18 @@ describe("a position's cell is bound to the position asked about", () => {
     );
     const same = lying(ledgerReadsAbi, "bindingPosition", ([st]) => [st, first]);
     expect(await listRemoved(same, { folder: root, author })).toMatchObject({ status: "UNKNOWN" });
+    // page by page, the second page served the first page's entry again: never listed twice
+    const p1 = await listRemoved(efs, { folder: root, author }, { limit: 1 });
+    if (p1.status !== "PRESENT" || !p1.next) throw new Error("a first page with more");
+    expect(p1.next.after).toMatch(/^\d+$/);
+    const replay = lying(bitmapStoreAbi, "scopeSlice", () => [[BigInt(p1.next?.after as string)]]);
+    expect(
+      await listRemoved(replay, { folder: root, author }, { limit: 1, cursor: p1.next }),
+    ).toMatchObject({
+      status: "UNKNOWN",
+    });
+    const p2 = await listRemoved(efs, { folder: root, author }, { limit: 1, cursor: p1.next });
+    expect(p2.status === "PRESENT" && p2.rows.length).toBe(1);
   });
 });
 

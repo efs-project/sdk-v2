@@ -649,6 +649,9 @@ tier. The result has four parts:
     `includeRemoved` is set (removed versions can lie further back) or the list moved since the first page.
   - `changed`: the list's `count` or `live` differs from the first page's (the cursor carries them): the scan
     carries on, and the view can offer a refresh. A remove and a restore that cancel out are not seen.
+  - The cursor also carries the lowest entry the pages so far returned (`lowest`): a later page's entries must all
+    be lower, so an endpoint that serves an entry twice across pages is refused (it would count twice toward
+    `total`); every slice must strictly increase.
 - **Rows**: `{ author, state: "PRESENT", revision, creator }` for a standing version; with `includeRemoved`, also `{
   author, state: "MASKED" | "RELEASED", creator }` for a version hidden or taken back, with no revision (its head
   names none; no history is read per row). An author who only ever said "not this" (targetKind 0) is never a row.

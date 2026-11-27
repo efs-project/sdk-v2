@@ -27,7 +27,7 @@ import {
   uniquePrincipals,
   ZERO_WORD,
 } from "../core/hex.js";
-import { indexAbi, ledgerAbi, ledgerViewsAbi } from "../generated/abis.js";
+import { indexAbi, ledgerAbi, ledgerReadsAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { GAS_READS } from "../generated/gas.js";
 import { positionKey } from "../protocol/keys.js";
@@ -130,7 +130,7 @@ export interface FileVersionsCursor {
    * The lowest entry (an admission ordinal, in decimal) the pages so far returned: the next page's entries, further
    * back in the list, must all be lower, so no entry can be counted twice toward `total`. "" before any entry.
    */
-  lowest: string;
+  lowest?: string;
   lens: string;
   includeRemoved: boolean;
 }
@@ -241,7 +241,7 @@ export async function fileVersions(
       c.lens !== lensKey(principals) ||
       c.includeRemoved !== includeRemoved ||
       ![c.before, c.found, c.count, c.live].every((n) => Number.isInteger(n) && n >= 0) ||
-      !/^(\d+)?$/.test(c.lowest))
+      (c.lowest !== undefined && !/^(\d+)?$/.test(c.lowest)))
   )
     throw misuse("this cursor is for another file, Lens or includeRemoved setting");
 
@@ -420,7 +420,7 @@ export async function fileVersions(
       const n = Math.min(limit, start);
       const from = start - n;
       const rows: FileVersion[] = [];
-      let lowest = c ? c.lowest : "";
+      let lowest = c?.lowest ?? "";
       if (n > 0) {
         ctx.requests += 1;
         const [sl] = await callsAt(s, at, [
@@ -437,17 +437,31 @@ export async function fileVersions(
         if (!strictlyIncreasing(admissions))
           return badReply("postingSliceOf (entries out of order)");
         // Further back than every earlier page: an entry served twice across pages would count twice toward `total`.
-        if (c && c.lowest !== "" && admissions.some((x) => BigInt(x) >= BigInt(c.lowest)))
+        if (c?.lowest && admissions.some((x) => BigInt(x) >= BigInt(c.lowest as string)))
           return badReply("postingSliceOf (an entry an earlier page already returned)");
         lowest = String(admissions[0]);
-        ctx.requests += 1;
-        const [ah] = await callsAt(s, at, [
+        ctx.requests += 1 + n;
+        // Each entry's own admission row, in the same batch: the list holds an author's FIRST HEAD statement, so a row
+        // with a previous admission (a later statement of that author) is not a list entry; this keeps every author to
+        // one entry across all pages.
+        const [ah, ...rows0] = await callsAt(s, at, [
           callOf(d.readers.ledgerViews, ledgerViewsAbi, "authorHeads", [
             d.ledger,
             position,
             admissions,
           ]),
+          ...admissions.map((a) =>
+            callOf(d.readers.ledgerReads, ledgerReadsAbi, "admission", [d.ledger, a]),
+          ),
         ]);
+        for (const r of rows0) {
+          const row = decoded<[number, { prevAdmission: bigint }]>(ledgerReadsAbi, "admission", r);
+          if (!row.ok) return row;
+          if (chainStatus(row.value[0]) !== "PRESENT" || BigInt(row.value[1].prevAdmission) !== 0n)
+            return badReply(
+              "admission (a list entry that is not its author's first HEAD statement)",
+            );
+        }
         const got = decoded<[readonly number[], readonly Hex[], readonly RawHead[]]>(
           ledgerViewsAbi,
           "authorHeads",
@@ -457,6 +471,8 @@ export async function fileVersions(
         const [st, authors, hs] = got.value;
         if (st.length !== n || authors.length !== n || hs.length !== n)
           return badReply("authorHeads (one row per entry)");
+        if (new Set(authors.map((a) => lower(a))).size !== n)
+          return badReply("authorHeads (two entries name one author)");
         // newest first
         for (let k = n - 1; k >= 0; k--) {
           const cs = chainStatus(st[k] as number);

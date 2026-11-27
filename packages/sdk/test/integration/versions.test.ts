@@ -18,7 +18,12 @@ import { planEditFile } from "../../src/files/edit.ts";
 import { planCreateFile } from "../../src/files/entries.ts";
 import type { FolderRef } from "../../src/files/folders.ts";
 import { type FileVersionsCursor, fileVersions } from "../../src/files/versions.ts";
-import { indexAbi, ledgerViewsAbi, lensReaderAbi } from "../../src/generated/abis.ts";
+import {
+  indexAbi,
+  ledgerReadsAbi,
+  ledgerViewsAbi,
+  lensReaderAbi,
+} from "../../src/generated/abis.ts";
 import { planHeadNo, planHeadRelease } from "../../src/testing/index.ts";
 import { lyingEfs } from "./lying.ts";
 
@@ -379,7 +384,7 @@ describe("fileVersions (fixture)", () => {
     expect(next.lowest).toMatch(/^\d+$/);
     const again = rewriting(indexAbi, "postingSliceOf", ([st, , ...rest]) => [
       st,
-      [BigInt(next.lowest)],
+      [BigInt(next.lowest as string)],
       ...rest,
     ]);
     const v = await fileVersions(
@@ -388,6 +393,24 @@ describe("fileVersions (fixture)", () => {
       { lens: lensOf(C), limit: 1, cursor: next },
     );
     expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+  });
+
+  it("an entry that is not its author's first HEAD statement is not a list entry (one author can't count twice)", async () => {
+    // Every admission row forged to have a previous admission: a later statement of its author, never a list entry.
+    const later = rewriting(ledgerReadsAbi, "admission", ([st, r]) => [
+      st,
+      { ...(r as object), prevAdmission: 1n },
+    ]);
+    const v = await fileVersions(later, { kind: "file", subject: file }, { lens: lensOf(C) });
+    expect(v).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
+    // and two entries a page names as one author
+    const oneAuthor = rewriting(ledgerViewsAbi, "authorHeads", ([st, authors, ...rest]) => [
+      st,
+      (authors as Hex[]).map(() => (authors as Hex[])[0]),
+      ...rest,
+    ]);
+    const w = await fileVersions(oneAuthor, { kind: "file", subject: file }, { lens: lensOf(C) });
+    expect(w).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR" } });
   });
 
   it("a subject never created is ABSENT_PROVEN", async () => {

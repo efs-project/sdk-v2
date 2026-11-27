@@ -62,6 +62,11 @@ export interface RemovedCursor {
   v: 1;
   query: Hex;
   from: string;
+  /**
+   * The last entry (a binding ordinal, in decimal) the page before returned: the next page's entries must all be
+   * higher, so an entry served again on a later page is refused, never listed twice. Absent on a first page.
+   */
+  after?: string;
 }
 
 export interface ListRemovedOpts extends CallOpts {
@@ -165,7 +170,13 @@ export async function listRemoved(
     throw misuse(`limit is a whole number from 1 to ${MAX_LIMIT}`);
   const author = lower(input.author) as PrincipalId;
   const query = queryOf(subject, author);
-  if (o.cursor && (o.cursor.v !== 1 || o.cursor.query !== query || !/^[0-9]+$/.test(o.cursor.from)))
+  if (
+    o.cursor &&
+    (o.cursor.v !== 1 ||
+      o.cursor.query !== query ||
+      !/^[0-9]+$/.test(o.cursor.from) ||
+      (o.cursor.after !== undefined && !/^[0-9]+$/.test(o.cursor.after)))
+  )
     throw misuse("this cursor continues another listing (another folder or author)");
   const from = o.cursor ? BigInt(o.cursor.from) : 0n;
   const d = efs.deployment;
@@ -196,7 +207,7 @@ export async function listRemoved(
   const nameType = d.typeIds[NAME_PROFILE] as Hex;
   const scope = scopeKey(author, PURPOSES.folder, subject);
   type Out =
-    | { kind: "page"; rows: RemovedRow[]; coverage: FolderCoverage; next?: bigint }
+    | { kind: "page"; rows: RemovedRow[]; coverage: FolderCoverage; next?: bigint; last?: bigint }
     | { kind: "refused"; status: "ABSENT_PROVEN" | "UNKNOWN" | "INVALID"; reason: Reason };
   const r = await onEndpoint<Out>(
     efs._internal.pool,
@@ -277,6 +288,14 @@ export async function listRemoved(
       if (slice.value.length !== expected) return bad("scopeSlice (length)");
       const ordinals = [...slice.value];
       if (!strictlyIncreasing(ordinals)) return bad("scopeSlice (entries out of order)");
+      // Past the page before: an entry served again would be listed twice.
+      const after = o.cursor?.after;
+      if (
+        after !== undefined &&
+        ordinals.length > 0 &&
+        BigInt(ordinals[0] as bigint) <= BigInt(after)
+      )
+        return bad("scopeSlice (an entry an earlier page already returned)");
       // 3. Each ordinal's position, then the author's head there and the position's cell (its name role).
       const positions: Hex[] = [];
       if (ordinals.length > 0) {
@@ -432,7 +451,22 @@ export async function listRemoved(
             ),
           },
         };
-      return { ok: true, value: { kind: "page", rows, coverage, ...(more ? { next: end } : {}) } };
+      const last =
+        ordinals.length > 0 ? BigInt(ordinals[ordinals.length - 1] as bigint) : undefined;
+      return {
+        ok: true,
+        value: {
+          kind: "page",
+          rows,
+          coverage,
+          ...(more ? { next: end } : {}),
+          ...(last !== undefined
+            ? { last }
+            : o.cursor?.after
+              ? { last: BigInt(o.cursor.after) }
+              : {}),
+        },
+      };
     },
     o,
   );
@@ -448,7 +482,16 @@ export async function listRemoved(
     status: "PRESENT",
     rows: v.rows,
     coverage: v.coverage,
-    ...(v.next !== undefined ? { next: { v: 1, query, from: v.next.toString() } } : {}),
+    ...(v.next !== undefined
+      ? {
+          next: {
+            v: 1,
+            query,
+            from: v.next.toString(),
+            ...(v.last !== undefined ? { after: v.last.toString() } : {}),
+          },
+        }
+      : {}),
     basis,
     evidence,
   };

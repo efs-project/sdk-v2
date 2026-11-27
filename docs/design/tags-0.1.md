@@ -29,7 +29,8 @@
 >
 >   A kind the chain can't answer makes the page UNKNOWN, never a guessed kind;
 > - `tagsOf`, `topicChildren` (each child's word read back and checked against its parent; an optional fold skips a
->   word that is not its own fold), `wordPage`, `topicPath`, and `placeCount` / `authorCount` ("about" figures);
+>   word that is not its own fold), `wordPage`, `topicPath`, and `placeCount` / `authorCount` ("about" figures;
+>   a count is COMPLETE or UNKNOWN, never a partial figure: `coverage` is always "COMPLETE");
 >   a word nobody has used (`wordPage`) or a topic nobody registered (`topicChildren`) is ABSENT_PROVEN, never a
 >   refusal, and a registered topic with nothing below it is an empty, finished page;
 > - the hidden-child rule (section 5.4): in a roll-up through a Lens, a child topic the first Lens author with a

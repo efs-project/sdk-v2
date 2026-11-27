@@ -25,11 +25,10 @@ depend on anything in this repository yet.
   occurrences (what reads an author's own occurrence).
 - **Chunk reuse.** For the same reason, an edit re-publishes every chunk of its content, including chunks already on
   chain.
-- **Smaller Glamsterdam batches for later statements (Q52).** On the amsterdam schedule the reservation formula
-  charges a later statement (a mask, release, restore or number change) twelve rewrites, 2.0 to 4.3 times what it
-  spends. That shrinks those batches: tag masks and releases 44 per publication, restores and number changes 41,
-  folder re-binds 40, edits 23. prague is unchanged. The remedy is one change to the formula: a compute term,
-  decided with Q52's per-purpose term (James).
+- **Two failures that end a read without trying the next endpoint** (the read-validation audit, 2026-11-26; neither
+  gives a value): `reconcileAttempt` treats a reader's UNSUPPORTED from `publicationAt` as final for that call, and a
+  `web3://` location whose `resolveMode` or `request` reply doesn't decode, or isn't a 200, ends that location FAILED
+  (the bytes are still verified by the caller, and the next location is tried).
 - **Glamsterdam: measured on Sepolia, not yet run by the SDK there.**
   - Sepolia runs Glamsterdam. The contracts dev measured its rules on Geth and reth, and they match the SDK's gas limit
     (EIP-8037's reservoir: never clamped at 2^24, state gas held above it, at most the block gas limit). That includes
@@ -80,3 +79,25 @@ fails if a file carrying the `S0 placeholder` marker is missing from this list.
   reproduction.
 - Windows and macOS runners are not in CI yet. They arrive with the CLI/MCP packages that
   claim them.
+
+## Residual trust
+
+A read takes nothing as fact from one endpoint that it can check: bodies are hash-checked against their
+content-addressed ids, list slices must strictly increase and be the length asked for, every Lens decision names the
+Lens's own principal at its own index, positions are recomputed from what they claim, and a reply a sound reader
+can't give fails over to the next endpoint (or ends UNKNOWN), never a value, an absence or a "never".
+
+What stays on one endpoint's word, by design, because checking it at listing time would need every record's body:
+
+- **Record headers shown in listings** (a record's `typeId`, `length` and first word, from `LedgerViews.records`):
+  file sizes, media and record kinds in folder listings, topic rows' kinds, the kinds at a synonym's ends. Each is
+  **as reported by the serving endpoint until the record is opened**: opening reads and hash-checks the body.
+- **`fileVersions`' authors** (from `LedgerViews.authorHeads`): each row's author and head, as the endpoint reports
+  them; each is checked to be a HEAD statement at this file's position, and a version opened is checked like any open.
+- **A list's omissions**: an endpoint can leave an entry out of a list together with its count; the SDK sees one
+  consistent answer. Reading from more than one endpoint is the remedy (the SDK fails over, it doesn't vote).
+
+What never rests on an unverified field (checked 2026-11-26): opening bytes (sha256 and the content-addressed ids), a
+principal that builds a Lens (a folder's owner comes from its hash-checked record), a write planner's choice of row
+or target (a parent folder is checked from its record; every other planner decision rests on a record's presence, a
+head's state and revision, or a hash), and the media gate (it reads the opened revision's verified descriptor).
