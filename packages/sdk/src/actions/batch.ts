@@ -10,6 +10,7 @@ import type { Hex } from "../core/hex.js";
 import { setTimer } from "../core/platform.js";
 import { planGasLimit } from "./gaslimit.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
+import { checkPlan } from "./plan.js";
 import { scheduleCheck } from "./schedule.js";
 import {
   classifyWalletError,
@@ -74,6 +75,7 @@ export async function sendPlansAsBatch(
   if (!first) throw new EfsFault("MISUSE", "sendPlansAsBatch needs at least one plan");
   if (plans.some((p) => lockKey(p) !== lockKey(first)))
     throw new EfsFault("MISUSE", "a batch holds plans of one account on one deployment");
+  for (const p of plans) checkPlan(efs, p);
   let mayHaveBroadcast = false;
   try {
     const got = await journal.withLock(

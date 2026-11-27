@@ -6,7 +6,7 @@ import { decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak25
 import { callsAt } from "../chain/basis.js";
 import { onEndpoint } from "../chain/pool.js";
 import type { Efs } from "../client.js";
-import { type CallOpts, reason } from "../core/errors.js";
+import { type CallOpts, EfsFault, reason } from "../core/errors.js";
 import { type Address, type Hex, lower } from "../core/hex.js";
 import { ingressAbi, ledgerAbi } from "../generated/abis.js";
 import { keyPrincipal, nativeIntentDigest } from "../protocol/keys.js";
@@ -21,6 +21,14 @@ const executeAbi = ledgerAbi.find(
 };
 const ACTIONS_PARAM = [executeAbi.inputs[0]] as const;
 const EMPTY_GUARD: Hex = "0x";
+const ZERO = /^0x0{64}$/;
+
+/**
+ * How far a basis block's timestamp may run ahead of this device's clock (seconds) before planning fails over. A plan's
+ * deadline is the basis block's timestamp + its window, so an endpoint can never stretch a signed deadline more than
+ * this past the device's clock + the window. A basis behind the clock (an idle chain) is accepted as it is.
+ */
+export const CLOCK_SKEW_SECONDS = 900;
 
 /** The hash of a publication's actions as the ledger checks them (keccak256 of their ABI encoding), part of its digest. */
 export function actionsHash(actions: readonly ActionData[]): Hex {
@@ -45,6 +53,58 @@ export interface PlanInput {
    */
   gas?: number;
   total?: number;
+}
+
+/**
+ * @internal Re-derive a plan's calldata and digest from its own fields and this deployment, before any wallet is
+ * asked: a plan read back from the journal (resume, a resend after a funds refusal) or handed in by an app is signed
+ * only if its calldata is exactly the publication it names, for this deployment and account, with both expectations
+ * bound. INVARIANT otherwise (altered, corrupted or another deployment's), and nothing is sent.
+ */
+export function checkPlan(efs: Efs, plan: Plan): void {
+  const d = efs.deployment;
+  const wrong: string[] = [];
+  if (plan.chainId !== d.chainId) wrong.push("chain id");
+  if (lower(plan.ledger) !== lower(d.ledger)) wrong.push("ledger");
+  if (lower(plan.realmId) !== lower(d.realmId)) wrong.push("realm");
+  if (lower(plan.principal) !== lower(keyPrincipal(lower(plan.account)))) wrong.push("principal");
+  if (ZERO.test(plan.executionSet) || ZERO.test(plan.acceptanceProfile))
+    wrong.push("an unbound expectation (0)");
+  if (plan.actions.length !== plan.bodies.length) wrong.push("bodies");
+  try {
+    const ctx = {
+      nonce: plan.nonce,
+      deadline: plan.deadline,
+      expectedExecutionSet: plan.executionSet,
+      expectedAcceptanceProfile: plan.acceptanceProfile,
+    };
+    const calldata = encodeFunctionData({
+      abi: ledgerAbi,
+      functionName: "execute",
+      args: [plan.actions as never, plan.bodies, ctx, EMPTY_GUARD],
+    });
+    if (calldata !== lower(plan.calldata)) wrong.push("calldata");
+    const digest = nativeIntentDigest({
+      realmId: plan.realmId,
+      principal: plan.principal,
+      nonce: plan.nonce,
+      deadline: plan.deadline,
+      expectedExecutionSet: plan.executionSet,
+      expectedAcceptanceProfile: plan.acceptanceProfile,
+      guardHash: keccak256(EMPTY_GUARD),
+      actionsHash: actionsHash(plan.actions),
+    });
+    if (lower(digest) !== lower(plan.digest) || lower(plan.id) !== lower(plan.digest))
+      wrong.push("digest");
+  } catch {
+    wrong.push("fields that don't encode");
+  }
+  if (wrong.length)
+    throw new EfsFault(
+      "INVARIANT",
+      `this plan is not the publication it names (${wrong.join(", ")}): it was altered, corrupted or made for another deployment; nothing was sent`,
+      { details: { planId: plan.id, wrong } },
+    );
 }
 
 /**
@@ -108,6 +168,19 @@ export async function planPublication(
       reason: pin.status === "UNKNOWN" ? pin.reason : reason("NOT_VERIFIED_DEPLOYMENT", "never"),
     };
   const basis = pin.basis;
+  // The signed expectation is the deployment document's execution set, and only while the chain's is the same one:
+  // a zero expectation would waive the ledger's check, so it is never signed.
+  const executionSet = lower(d.executionSet);
+  if (ZERO.test(executionSet))
+    return {
+      kind: "efs.planResult",
+      status: "REFUSED",
+      reason: reason(
+        "NOT_VERIFIED_DEPLOYMENT",
+        "never",
+        "the deployment document names no execution set",
+      ),
+    };
   const account = lower(input.account);
   const principal = keyPrincipal(account);
   const ingress = d.ingress;
@@ -123,6 +196,10 @@ export async function planPublication(
           data: encodeFunctionData({ abi: ledgerAbi, functionName: "nonceOf", args: [principal] }),
         },
         {
+          to: d.ledger,
+          data: encodeFunctionData({ abi: ledgerAbi, functionName: "executionSet" }),
+        },
+        {
           to: ingress,
           data: encodeFunctionData({
             abi: ingressAbi,
@@ -136,41 +213,84 @@ export async function planPublication(
         return { ok: false, retryElsewhere: bad.kind === "transport", reason: bad.reason };
       let nonce: bigint;
       let profile: Hex;
+      let live: Hex;
       try {
         [nonce] = decodeFunctionResult({
           abi: ledgerAbi,
           functionName: "nonceOf",
           data: (outs[0] as { result: Hex }).result,
         }) as unknown as [bigint, bigint];
+        live = decodeFunctionResult({
+          abi: ledgerAbi,
+          functionName: "executionSet",
+          data: (outs[1] as { result: Hex }).result,
+        }) as unknown as Hex;
         profile = decodeFunctionResult({
           abi: ingressAbi,
           functionName: "acceptanceProfileOf",
-          data: (outs[1] as { result: Hex }).result,
+          data: (outs[2] as { result: Hex }).result,
         }) as unknown as Hex;
       } catch {
         // a reply that doesn't decode is this endpoint's fault, never a thrown error
         return {
           ok: false,
           retryElsewhere: true,
-          reason: reason("RPC_ERROR", "transient", "nonceOf / acceptanceProfileOf did not decode"),
+          reason: reason(
+            "RPC_ERROR",
+            "transient",
+            "nonceOf / executionSet / acceptanceProfileOf did not decode",
+          ),
         };
       }
+      // Each signed value this endpoint supplies is checked before it is signed: a reply that would waive a ledger
+      // check, or stretch the deadline, fails over (with one endpoint the plan is UNKNOWN).
+      if (lower(live) !== executionSet)
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason(
+            "NOT_VERIFIED_DEPLOYMENT",
+            "transient",
+            `the chain's execution set ${lower(live)} is not the deployment document's ${executionSet} (if every endpoint says so, the deployment moved on: update its document)`,
+          ),
+        };
+      if (ZERO.test(profile))
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason(
+            "RPC_ERROR",
+            "transient",
+            "acceptanceProfileOf answered 0, which would waive the ledger's check",
+          ),
+        };
+      const clock = BigInt(Math.floor(Date.now() / 1000));
+      if (timestamp > clock + BigInt(CLOCK_SKEW_SECONDS))
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason(
+            "RPC_ERROR",
+            "transient",
+            `the basis block's timestamp is ${timestamp - clock} s ahead of this device's clock (at most ${CLOCK_SKEW_SECONDS} s)`,
+          ),
+        };
       return {
         ok: true,
-        value: { nonce: input.nonce ?? nonce, profile: lower(profile), timestamp },
+        value: { nonce: input.nonce ?? nonce, profile: lower(profile), start: timestamp },
       };
     },
     o,
   );
   if (!r.ok) return { kind: "efs.planResult", status: "UNKNOWN", reason: r.reason };
-  const deadline = r.value.timestamp + BigInt(input.deadlineSeconds ?? 900);
+  const deadline = r.value.start + BigInt(input.deadlineSeconds ?? 900);
   const hash = actionsHash(input.actions);
   const digest = nativeIntentDigest({
     realmId: d.realmId,
     principal,
     nonce: r.value.nonce,
     deadline,
-    expectedExecutionSet: basis.executionSet,
+    expectedExecutionSet: executionSet,
     expectedAcceptanceProfile: r.value.profile,
     guardHash: keccak256(EMPTY_GUARD),
     actionsHash: hash,
@@ -178,7 +298,7 @@ export async function planPublication(
   const ctx = {
     nonce: r.value.nonce,
     deadline,
-    expectedExecutionSet: basis.executionSet,
+    expectedExecutionSet: executionSet,
     expectedAcceptanceProfile: r.value.profile,
   };
   const calldata = encodeFunctionData({
@@ -198,7 +318,7 @@ export async function planPublication(
     account,
     nonce: r.value.nonce,
     deadline,
-    executionSet: basis.executionSet,
+    executionSet,
     acceptanceProfile: r.value.profile,
     actions: input.actions,
     bodies: input.bodies,

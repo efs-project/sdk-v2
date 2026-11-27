@@ -41,7 +41,7 @@ import {
 import { ledgerReadsAbi } from "../generated/abis.js";
 import { ACTION, PURPOSES } from "../generated/constants.js";
 import { bindingKey, positionKey, recordId } from "../protocol/keys.js";
-import { chainStatus, neverBoundHead } from "../protocol/status.js";
+import { chainStatus, headConsistent, neverBoundHead } from "../protocol/status.js";
 import {
   type Ctx,
   type FileRef,
@@ -314,6 +314,16 @@ export async function planEditFile(
         };
       }
       const cs = chainStatus(status);
+      // The CAS binds the revision only: a head whose state, status and revision disagree is the endpoint's fault.
+      if (
+        !headConsistent(mine.state, revisionNow) ||
+        (cs === "ABSENT_PROVEN") !== (revisionNow === 0n)
+      )
+        return {
+          ok: false,
+          retryElsewhere: true,
+          reason: reason("RPC_ERROR", "transient", "head() names a state its revision contradicts"),
+        };
       // PRESENT (bound), ABSENT_PROVEN (never bound: revision 0), MASKED or RELEASED all name the binding's current
       // revision. UNKNOWN or a refusal does not: nothing is planned on a guessed revision.
       if (cs !== "PRESENT" && cs !== "ABSENT_PROVEN" && cs !== "MASKED" && cs !== "RELEASED")

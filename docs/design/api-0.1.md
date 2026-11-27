@@ -265,7 +265,7 @@ export interface RawRead { call: string; to: Address; data: Hex; result: Hex; ba
 /** Why something is unknown, unsupported or failed. Branch on code, retry and the structured fields, never on detail. */
 export interface Reason {
   code: ReasonCode;
-  retry: "never" | "transient" | "after-reconcile" | "after-replan";
+  retry: "never" | "transient" | "after-reconcile" | "after-replan" | "after-review"; // after-review: RESPLIT
   detail?: string;          // free text for logs and support: not a contract
   revert?: RevertInfo;      // the ledger refused the call (a simulated revert)
   wallet?: WalletMismatch;  // on WALLET_MISMATCH
@@ -273,6 +273,7 @@ export interface Reason {
   served?: readonly { endpoint: string; blockNumber: bigint }[]; // on BEHIND: each endpoint's head
   feeSchedule?: { document: string; chain: string | null; freshSlotGas: bigint }; // the document is not the chain's
   gas?: { estimate: bigint; cap: bigint; suggestedParts: number }; // on OVER_TX_GAS_CAP: how many publications
+  prompts?: { before: number; now: number }; // on RESPLIT: wallet approvals before the cut and now
   funds?: { gasLimit: bigint };   // on INSUFFICIENT_FUNDS for a single send: the limit the wallet must cover
 }
 export interface RevertInfo {
@@ -293,6 +294,7 @@ export type ReasonCode =
   | "WALLET_UNAUTHORIZED" | "WALLET_UNSUPPORTED" | "WALLET_INVALID_PARAMS"        // NOT_SENT
   | "WALLET_DISCONNECTED" | "WALLET_CHAIN_DISCONNECTED" | "INSUFFICIENT_FUNDS"   // AMBIGUOUS
   | "BEHIND"                    // every endpoint behind the read floor or atLeast (floor, served)
+  | "RESPLIT"                   // a cut needs more approvals than the review said: nothing more sent (prompts)
   | (string & Record<never, never>);    // open union
 ```
 
@@ -1058,19 +1060,34 @@ order and a failure is reconciled part by part. `writer.runSequence(parts)` carr
     - **Within the bound:** at most 6 levels of re-splitting (`MAX_SPLIT_DEPTH`).
   - **How it is cut:** only between units, never inside a folder entry's move or between a statement and its
     registration, into `reason.gas.suggestedParts` pieces (at least 2) of near-equal unit counts, in order.
-    - Each piece carries its units' effects, renumbered (`args.part` / `args.parts`), and no gas figures.
+    - Each piece carries its units' effects, renumbered (`args.part` / `args.parts`), and its share of the part's
+      measured gas (by actions), so a piece can be packed with a neighbour in an atomic batch. The pieces of one part
+      never fit one batch together: their sum is over the cap.
     - Each is planned just in time and prompts once. The refused part never reached the wallet.
     - The pieces' actions differ from each other and from the refused part, so the twin guard never holds one as
       another.
   - **What the person sees:** `SequenceProgress.total` grows mid-save ("approve part 4 of 6"). The record's history
     says why: "part 3 was too large for one transaction: split into 2".
+  - **More approvals than the review said: asked first** (`SequenceOpts.resplit`, default `"ask"`). The approvals are
+    counted as the review counts them (one per part, or the atomic batches the parts pack into with a wallet that
+    runs calls atomically). When the cut needs more, the save stops before asking for any of them: PARTIAL (or
+    NOT_STARTED), `reason: { code: "RESPLIT", retry: "after-review", prompts: { before, now } }`. Say "This save now
+    needs N approvals (it was M). Continue?"; Continue is `resume(sequenceId)`, and Cancel leaves the save as it is
+    (PARTIAL, "k of N saved", resumable later; `abandon` only to discard it). No stop when the count is unchanged
+    (an atomic wallet packs a piece with the next part). `resplit: "continue"` goes on in the same call, for an app
+    that told the person up front.
   - **When it can't be cut:** the save stops as before (NOT_STARTED or PARTIAL), with `reason.gas`
     `{ estimate, cap, suggestedParts }` so a page can say "this needs N publications". A part of one unit (a single
     statement or entry over the cap) stops with `retry: "never"`.
 - **Part by part otherwise:** each part is planned just before it is sent and sent only after the previous one
   committed. The EFS native nonce is inside the intent, and the wallet assigns only the transaction nonce, so a
   native-nonce gap cannot happen.
-- **The record:** the sequence record (`efs-sdk-sequence/1`, journal storage v2) holds every part. The result,
+- **The record:** the sequence record (`efs-sdk-sequence/1`, journal storage v2) holds every part, and `partsHash`,
+  the hash of their content (actions, bodies, effects, units, gas figures, split depth, deadline window) as the SDK
+  last set them: resume refuses parts that don't hash to it (INVARIANT, nothing sent). A record written before the
+  field resumes as before. Before any wallet request, `send` and an atomic batch re-derive each plan's calldata and
+  digest from its own fields and this deployment (INVARIANT if they differ, nothing sent), and a part resent after a
+  funds refusal goes only as the plan it recorded. The result,
   `SequenceProgress`, gives `state`, `total`, `committed`, `current` (index, plan, attempt stage), `mode` and a
   `reason`.
 - **The states:** COMPLETE is the only success. PARTIAL means some parts committed and the save stopped. For an

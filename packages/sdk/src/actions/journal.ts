@@ -164,6 +164,13 @@ export interface SequenceRecord {
    */
   genesisHash?: Hex;
   parts: readonly SequencePart[];
+  /**
+   * keccak256 of the parts' content (actions, bodies, effects, units, split depth, deadline window) as this SDK last
+   * set them (at runSequence, and at a re-split): resume refuses parts that don't hash to it (INVARIANT), so a save
+   * never sends parts other than the ones it recorded. Absent on records written before 0.1 had it; those resume as
+   * before.
+   */
+  partsHash?: Hex;
   state: SequenceState;
   /** COMPLETE and every part's admission at a finalized block ("Saved" rather than "Saved · confirming"). */
   final?: boolean;

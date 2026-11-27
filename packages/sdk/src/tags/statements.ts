@@ -29,7 +29,13 @@ import { checkedGasSetup } from "../files/plan.js";
 import { ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
 import { positionKey } from "../protocol/keys.js";
-import { chainStatus, headState, headsAtServed, neverBoundHead } from "../protocol/status.js";
+import {
+  chainStatus,
+  headConsistent,
+  headState,
+  headsAtServed,
+  neverBoundHead,
+} from "../protocol/status.js";
 import {
   badReply,
   callOf,
@@ -307,6 +313,8 @@ async function plan(
       if (!headsAtServed(h.value[0])) return badReply(`headsAt (status ${h.value[0]})`);
       const mine = h.value[3][0];
       if (!mine || h.value[3].length !== 1) return badReply("headsAt (one head per Lens author)");
+      if (!headConsistent(mine.state, mine.revision))
+        return badReply("headsAt (a state its revision contradicts)");
       return {
         ok: true,
         value: {

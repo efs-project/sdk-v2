@@ -7,11 +7,12 @@ import type { Address, Hex } from "./hex.js";
  *
  * `retry` says what can move it forward: "transient" (try the same thing again, e.g. Continue), "after-reconcile"
  * (settle from the ledger first, then try again), "after-replan" (this plan cannot proceed as it stands: plan
- * again from fresh state), "never".
+ * again from fresh state), "after-review" (the person must see what changed and choose to go on: RESPLIT's new
+ * number of approvals, then resume), "never".
  */
 export interface Reason {
   code: ReasonCode;
-  retry: "never" | "transient" | "after-reconcile" | "after-replan";
+  retry: "never" | "transient" | "after-reconcile" | "after-replan" | "after-review";
   detail?: string;
   /** Set when the ledger refused the call (a simulated revert): which error, as far as the vendored tables know it. */
   revert?: RevertInfo;
@@ -32,6 +33,11 @@ export interface Reason {
    * "split into N"). A save re-splits a part of tag or folder statements itself; this is what it stopped at otherwise.
    */
   gas?: { estimate: bigint; cap: bigint; suggestedParts: number };
+  /**
+   * Set on RESPLIT: the wallet approvals the save needed before the cut and needs now, counted as the review counts
+   * them (one per part, or the atomic EIP-5792 batches the parts pack into with a wallet that runs calls atomically).
+   */
+  prompts?: { before: number; now: number };
   /**
    * Set on INSUFFICIENT_FUNDS when the send asked for a gas limit: the limit the wallet must hold enough to cover. A
    * save is charged only the gas it uses, which is usually less. Absent for a batch (the wallet sets each call's gas).
@@ -90,6 +96,12 @@ export type ReasonCode =
   | "TOO_LARGE"
   | "JOURNAL_UNAVAILABLE"
   | "OVER_TX_GAS_CAP"
+  /**
+   * A part turned out too large for one transaction and the save cut it into smaller ones, which needs more wallet
+   * approvals than the review said (`prompts`). Nothing more was sent: say "This save now needs N approvals (it was
+   * M). Continue?" and resume on Continue. Earlier parts that committed stay saved (PARTIAL, "k of N saved").
+   */
+  | "RESPLIT"
   /** The ledger refuses the plan as it stands (see `revert`); plan again from fresh state. */
   | "STALE"
   /** The wallet is on another chain or account than the plan (see `wallet`). Nothing was sent. */
