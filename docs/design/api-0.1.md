@@ -855,6 +855,15 @@ export interface ReconcileResult {
 }
 ```
 
+**The signed values a plan takes from the chain** (`planPublication`). The execution set signed is the deployment
+document's (`activation.executionSet`), and only while the chain's `executionSet()` at the basis is the same one
+(otherwise the plan fails over, NOT_VERIFIED_DEPLOYMENT). An acceptance profile of 0 is never signed: a zero would
+waive the ledger's check. The deadline is the basis block's timestamp + `deadlineSeconds` (default 900), and a basis
+block more than `CLOCK_SKEW_SECONDS` (900) ahead of this device's clock fails over, so an endpoint can never stretch a
+signed deadline past the device's clock + 900 s + the window. A basis in the past only shortens the deadline, which is
+safe: the send fails E_EXPIRED and the part is planned again. The deadline is not taken from the device's clock, so a
+plan's calldata is deterministic (transcript replay and the same-plan resend depend on it).
+
 **Journal (`@efs/sdk/web/journal`, `@efs/sdk/node`):**
 - The lock key is `(chainId, realmId, deploymentId, account)`. The lock is taken *before* an attempt is created, and the journal is re-read once it is held.
 - Each record stores the plan, every stage transition (including the write-ahead `SUBMISSION_POSSIBLE`), the tx hash and the nonce.
