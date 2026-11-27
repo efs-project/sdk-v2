@@ -68,6 +68,12 @@ export interface SequenceOpts extends SendOpts {
    * Not awaited, and anything it throws is ignored; the returned SequenceProgress stays the outcome.
    */
   onProgress?: (p: SequenceProgress, e: SequenceEvent) => void;
+  /**
+   * A part found too large for one transaction is cut into smaller ones before anything is sent for it. When that
+   * needs more wallet approvals than the review said: "ask" (default) stops before any of them, returning RESPLIT with
+   * the counts (the person continues with resume); "continue" goes on, for an app that told the person up front.
+   */
+  resplit?: "ask" | "continue";
 }
 
 export type SequenceEvent =
@@ -186,8 +192,10 @@ const sleep = (ms: number) =>
   });
 
 /**
- * @internal The hash a sequence records of its parts' content: what decides what each part signs and what the person is
- * shown (never the per-attempt fields: plan id, deadline, commit and reconcile state).
+ * @internal The hash a sequence records of its parts' content: what decides what each part signs, its gas limit and
+ * batching, and what the person is shown (never the per-attempt fields: plan id, deadline, commit and reconcile
+ * state). It detects a journal corrupted or written by another version; it is no secret, so it can't stop a party
+ * who can write the journal (that party could recompute it).
  */
 export function partsHashOf(parts: readonly SequencePart[]): Hex {
   return keccak256(
@@ -200,6 +208,8 @@ export function partsHashOf(parts: readonly SequencePart[]): Hex {
           units: p.units ?? null,
           splitDepth: p.splitDepth ?? 0,
           deadlineSeconds: p.deadlineSeconds ?? null,
+          gas: p.gas ?? null,
+          total: p.total ?? null,
         })),
       ),
     ),
@@ -766,6 +776,19 @@ export function sequenceOps(d: Deps) {
     ).map((b) => b.map((k) => remaining[k] as number));
   };
 
+  /**
+   * The wallet approvals a save's parts take, counted as a review counts them (FolderReviewBase.prompts): one per part,
+   * or with a wallet that runs calls atomically the batches the parts pack into (packBatches, the planners' gas setup).
+   */
+  const approvalsOf = async (parts: readonly SequencePart[], o: SequenceOpts): Promise<number> => {
+    const a = d.authorizer;
+    if (a.kind !== "eip1193" || (o.batch ?? "auto") !== "auto") return parts.length;
+    const g = gasPlanFor(efs.deployment);
+    if (!g.ok || !(await atomicBatchSupport(a.provider, d.account, efs.deployment.chainId)))
+      return parts.length;
+    return packBatches(parts, g).length;
+  };
+
   /** Send what is left: gas-packed atomic EIP-5792 batches when the wallet runs calls atomically, else part by part. */
   const advance = async (
     r0: SequenceRecord,
@@ -796,10 +819,13 @@ export function sequenceOps(d: Deps) {
         if (part.committed || !part.planId) continue;
         const attempt = await journal.get(part.planId);
         if (!attempt || !fundsResendable(attempt)) continue;
-        // The stored plan goes again only if it is this part's publication (sendPlan re-derives its calldata).
+        // The stored plan goes again only if it is this part's publication, the plan this part recorded (its deadline)
+        // with this part's effects; sendPlan then re-derives its calldata.
         if (
           actionsHash(attempt.plan.actions) !== actionsHash(part.actions) ||
-          attempt.plan.bodies.map(lower).join(",") !== part.bodies.map(lower).join(",")
+          attempt.plan.bodies.map(lower).join(",") !== part.bodies.map(lower).join(",") ||
+          (part.deadline !== undefined && attempt.plan.deadline !== part.deadline) ||
+          toJson(attempt.plan.effects) !== toJson(part.effects)
         )
           throw new EfsFault(
             "INVARIANT",
@@ -948,11 +974,44 @@ export function sequenceOps(d: Deps) {
             : why,
         };
       }
-      const parts = renumber([...r.parts.slice(0, i), ...pieces, ...r.parts.slice(i + 1)]);
+      // Each piece's share of the part's measured gas (by actions), so a batch can still be packed with it: the pieces
+      // of one part never fit one batch together (their sum is over the cap), but a piece and a neighbour may.
+      const estimate = why.gas ? Number(why.gas.estimate) : undefined;
+      const share = (n: number, of: number | undefined) =>
+        of === undefined ? undefined : Math.ceil((of * n) / part.actions.length);
+      const scale = estimate !== undefined && part.gas ? estimate / part.gas : undefined;
+      const sized = pieces.map((p) => {
+        const gas = share(p.actions.length, estimate);
+        const total =
+          part.total !== undefined && scale !== undefined
+            ? share(p.actions.length, part.total * scale)
+            : undefined;
+        return {
+          ...p,
+          ...(gas !== undefined ? { gas } : {}),
+          ...(total !== undefined ? { total } : {}),
+        };
+      });
+      const parts = renumber([...r.parts.slice(0, i), ...sized, ...r.parts.slice(i + 1)]);
+      const before = await approvalsOf(r.parts, o);
       r = await save(
         { ...r, parts, partsHash: partsHashOf(parts) },
         `part ${i + 1} was too large for one transaction: split into ${pieces.length}`,
       );
+      const now = await approvalsOf(r.parts, o);
+      // More approvals than the review said: the person is told before any of them is asked.
+      if (now > before && (o.resplit ?? "ask") === "ask")
+        return {
+          done: false,
+          reason: {
+            ...reason(
+              "RESPLIT",
+              "after-review",
+              `part ${i + 1} was too large for one transaction and is now ${pieces.length}: the save needs ${now} approvals (it was ${before}); nothing more was sent`,
+            ),
+            prompts: { before, now },
+          },
+        };
       return { done: false, again: true, resplit: true };
     };
 

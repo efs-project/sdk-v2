@@ -158,6 +158,20 @@ describe("a save sends only the parts it recorded (resume)", () => {
     expect(await writer.resume(stopped.sequenceId)).toMatchObject({ state: "COMPLETE" });
   });
 
+  it("a part's gas figures altered in the journal are INVARIANT on resume (they set its gas limit and batching)", async () => {
+    const w = wallet(2);
+    const { writer, journal } = await writerFor(w);
+    const stopped = await writer.runSequence([chunkPart(), chunkPart()], { batch: "never" });
+    expect(stopped).toMatchObject({ state: "PARTIAL" });
+    const rec = await journal.getSequence(stopped.sequenceId);
+    if (!rec) throw new Error("no record");
+    await journal.putSequence({
+      ...rec,
+      parts: rec.parts.map((p, i) => (i === 1 ? { ...p, gas: 15_000_000, total: 15_000_000 } : p)),
+    });
+    await expect(writer.resume(stopped.sequenceId)).rejects.toMatchObject({ code: "INVARIANT" });
+  });
+
   it("a save recorded before parts hashes existed resumes as before", async () => {
     const w = wallet(2);
     const { writer, journal } = await writerFor(w);
@@ -180,15 +194,27 @@ describe("a save sends only the parts it recorded (resume)", () => {
       const planId = (await journal.getSequence(stopped.sequenceId))?.parts[0]?.planId as Hex;
       const attempt = await journal.get(planId);
       if (!attempt) throw new Error("no attempt");
-      // Another publication's plan, consistent in itself (its calldata and digest are its own), stored for the part.
+      // Plans consistent in themselves (each calldata and digest its own), stored for the part: another
+      // publication's, and this part's own actions planned again (another deadline, not the plan the part recorded).
       await topUp();
       const otherPlan = await writer.planActions(chunkPart());
       if (otherPlan.status !== "PLANNED") throw new Error(otherPlan.status);
-      await journal.put({ ...attempt, plan: otherPlan.plan });
-      const prompts = w.prompts;
-      await expect(writer.resume(stopped.sequenceId, { settleMs: 500 })).rejects.toMatchObject({
-        code: "INVARIANT",
+      await rpc("evm_increaseTime", [3]);
+      await rpc("evm_mine", []);
+      const replanned = await writer.planActions({
+        actions: attempt.plan.actions,
+        bodies: attempt.plan.bodies,
+        effects: attempt.plan.effects,
       });
+      if (replanned.status !== "PLANNED") throw new Error(replanned.status);
+      expect(replanned.plan.deadline).not.toBe(attempt.plan.deadline);
+      const prompts = w.prompts;
+      for (const plan of [otherPlan.plan, replanned.plan]) {
+        await journal.put({ ...attempt, plan });
+        await expect(writer.resume(stopped.sequenceId, { settleMs: 500 })).rejects.toMatchObject({
+          code: "INVARIANT",
+        });
+      }
       expect(w.prompts).toBe(prompts);
     } finally {
       await topUp();
