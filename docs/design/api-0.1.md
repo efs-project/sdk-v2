@@ -27,7 +27,7 @@
 |---|---|---|
 | `@efs/sdk` | `createEfs`, the result and evidence types, names and paths, `validateDeploymentManifest` | yes |
 | `@efs/sdk/links` | the route and link grammar alone (`link`, `parseLink`, `formatRealm`, `splitRealm`): no runtime dependencies, for startup routers | yes |
-| `@efs/sdk/files` | the Files reader (`resolve`, `list`, `lookup`, `open`, `read`, `stream`, `history`, …) | yes |
+| `@efs/sdk/files` | the Files reader (`resolve`, `list`, `lookup`, `open`, `read`, `stream`, `history`, `folderNames`, …) | yes |
 | `@efs/sdk/actions` | `createWriter`, plans, `review`, `send`, `reconcile`, `memoryJournal` | no |
 | `@efs/sdk/tags` | topics, tags and homes: ids and the chain's word grammar, `planTag` / `planDeny` / `planUntag`, `planLabel` / `planSame` / `planBroader`, `topicItems` (Mine, Everyone, Raw; each row's kind, a `kinds` filter), `topicItemsMerged` (a topic with its Lens's synonyms), `tagsOf`, `topicChildren`, `wordPage`, `topicPath`, `labelOf` / `topicName`, `fileNames`, `topicSynonyms`, `topicBroader`, `lensTagsOf`, the counts (docs/design/tags-0.1.md) | reads yes, planners no |
 | `@efs/sdk/web` | browser helpers (no journal) | yes |
@@ -1346,6 +1346,26 @@ dropped. The whole answer is UNKNOWN when no consistent endpoint read the kind, 
 `efs.lens.place({ reader, owner, base })` builds a place's
 Lens: the reader, then the owner (`FolderRef.owner`; `owner: null` leaves it out), then `base`, each once.
 
+**A folder's name for a breadcrumb:** `folderNames(efs, [{ folder, reader? }], { lens?, scan? })`, the folder twin of
+tags' `fileNames`, for a folder reached by its link ("Root > … > Guides" instead of an id). A name is a FOLDER entry
+pointing at the folder, read from its backlink list. The rule, in order (spec §3.7): the reader's own entry in their
+home or a folder they created (default reader: the Lens's first principal); the folder's creator's entry; the first
+Lens author, in Lens order, with an entry; else `null`. **Never a stranger outside the Lens**, so a spammed folder
+can't be renamed in someone's breadcrumb, and never the public tier. Newest entry first within one author; an entry
+counts only while its author still binds this folder there. Each row is `{ folder, name: { text, author, parent, why
+} | null, creator, complete }`. The checks are the read audit's: the slice must be the length asked and strictly
+increase; each position cell is bound back to (parent, name) by positionKey; the name is the hash-checked name
+record; the creator, and the reader's folder ownership, come from hash-checked folder records. A reply that fails a
+check is UNKNOWN, never a name. Bounds: at most 32 folders a call, the newest `scan` (1 to 16, default 16) entries of
+each list, one basis. **`complete` has two meanings:**
+- the list is vouched for (coverage COMPLETE) and was read to its end: a `null` is proven absent;
+- the reader's own name was found: nothing older can outrank the reader's newest entry.
+A creator's or a Lens author's name found in a partial scan is **not** proven (an older reader's or creator's entry
+beyond `scan` could outrank it), so it comes with `complete: false`: show it, but not as final. One call names one
+level. A breadcrumb walks up through `name.parent`, and placements can form cycles (two authors linking each other's
+folders, no lie needed), so the walk must keep a visited set of directory ids and a depth cap, and show a cycle as a
+state, never a hang.
+
 **Homes.** Wherever a folder parent is taken, a home is too: `{ kind: "home", address }` (`HomeRef`; the union is
 `ParentRef`). A home is an address as a folder parent: its entries are FOLDER bindings at the left-padded address,
 the word the gateway's `/0x<address>/…` serves (FilesFinalValidator admits an address-shaped parent), so anyone can
@@ -1756,6 +1776,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | --- | --- | --- |
 | `fileChunks` | function | Verified chunks of an opened file, pulled on demand. |
 | `fileVersions` | function | Everyone's versions of a file under a Lens: the Lens decision, the Lens tier, the creator's row and a page of the public tier, read at one block. "N versions" is `public.live`, never `count`. |
+| `folderNames` | function | Names for folders by the spec §3.7 order, at one block: for each folder, the reader's own entry in their home or a folder they created, else its creator's entry, else the first Lens author's (in Lens order), else null; newest entry first within one author. |
 | `listFolder` | function | One page of a folder's entries under a Lens, read at one block. |
 | `listRemoved` | function | List `author`'s removed entries in `folder` (released, or hidden), each with its last target, a page of their scope list at a time, at one block. |
 | `lookupEntry` | function | Look up one name in a folder under a Lens: the Lens's choice (`selected`), and every author in the Lens with an entry at that name, in Lens order with when each was first placed (`candidates`), so an app can show same-named entries as a list. |
@@ -1805,6 +1826,11 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `FileVersionsResult` | type |  |
 | `FolderCoverage` | type |  |
 | `FolderCursor` | interface | Continues a listing. |
+| `FolderName` | interface |  |
+| `FolderNameInput` | interface |  |
+| `FolderNameRow` | interface |  |
+| `FolderNamesOpts` | interface |  |
+| `FolderNamesResult` | type |  |
 | `FolderPage` | type |  |
 | `FolderPlanOpts` | interface |  |
 | `FolderPlanResult` | type |  |

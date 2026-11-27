@@ -69,6 +69,14 @@ export {
   planUnhideEntries,
 } from "./entries.js";
 export type {
+  FolderName,
+  FolderNameInput,
+  FolderNameRow,
+  FolderNamesOpts,
+  FolderNamesResult,
+} from "./foldernames.js";
+export { folderNames } from "./foldernames.js";
+export type {
   EntryCandidate,
   EntryKind,
   EntryLookup,
