@@ -146,6 +146,10 @@ the folder and tag planners a false state or target reverts instead of landing:
 - `planEditFile`: your HEAD, and the HEAD of every Lens author up to the one whose version is the base (a false
   report that the base still shows, or that no one before its author stated, reverts).
 
+test/integration/guard-lies.test.ts tells each of these lies consistently in every read of the head (so it passes
+every check one endpoint can be held to): unguarded, each lands the save that was not reviewed; guarded, the chain
+refuses it (E_READSET_STALE) and nothing changes.
+
 Still the endpoint's word **where a writer is unguarded** (`guard: "never"`, or a Realm without the guard): each of
 those lies lands as the reviewed save's opposite, as before the guard. An unguarded restore at least requires the
 binding's history (`historyAt`, checked for shape) and the stored target to name the same one. An unguarded
