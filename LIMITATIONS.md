@@ -80,6 +80,21 @@ fails if a file carrying the `S0 placeholder` marker is missing from this list.
 - Windows and macOS runners are not in CI yet. They arrive with the CLI/MCP packages that
   claim them.
 
+## Gas estimates
+
+- **Intrinsic gas and calldata are counted twice, on the safe side** (known, 2026-11-27). The gas model's rows were
+  measured as whole transactions (forge isolates each call), so `fixed`, every constant and `floor.kernel` already
+  hold the 21,000 intrinsic gas and the calldata of the shapes measured. The SDK's shown estimate and cap planning
+  (`publicationGas`, the planning rule) add the intrinsic gas and the encoded call's real calldata on top. The
+  addition stays until the contracts' generator release, which takes intrinsic and calldata out of the model: for a
+  large body (a 16 KiB chunk) the real-calldata addition is what covers bytes the measured shapes never had, and
+  dropping it could under-count. The cost is batches a few percent smaller than the cap allows.
+- **The model over-predicts mid-size lists.** For a statement landing in a list of 49 to about 1,024 entries (the
+  model's `midList` state), it predicts up to 17.25% more than the gas used on prague, and up to 20.57% more of the
+  execution gas on amsterdam; it never predicts less there. A wallet must hold enough for the gas limit, which can
+  then be that much (plus the limit's own margin) above what the save is charged. Quote these figures in funds copy,
+  not 15% (that is the planning headroom, not an error bound). The full figures come with the guard release.
+
 ## Residual trust
 
 A read takes nothing as fact from one endpoint that it can check: bodies are hash-checked against their

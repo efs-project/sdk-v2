@@ -968,7 +968,9 @@ the count, and plans the same batch).
     per-level `levels`), or the dearest row of its kind when unknown, its tiers included. The 15% headroom covers
     the 21,000 intrinsic gas, the calldata and the model's largest under-prediction of the gas the cap counts
     (`maxUnderErrorPercent` on prague, `maxUnderExecutionErrorPercent` on amsterdam; an over-prediction only plans
-    less than the cap allows).
+    less than the cap allows). Known double count, on the safe side (see LIMITATIONS "Gas estimates"): the model's
+    rows were measured as whole transactions, so they already hold the intrinsic gas and the measured shapes'
+    calldata, and the shown estimate and cap planning add both again.
   - **The list tiers** (gas/model.json `laterLists`, contracts 6d11858; the list release adds the after-no and label
     restore tiers): a later statement (a mask, release, restore
     or re-bind) costs more when the author's list at its place (purpose, subject) is long, or when it is the first
