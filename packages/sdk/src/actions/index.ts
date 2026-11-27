@@ -5,7 +5,8 @@ export type { BatchSendResult } from "./batch.js";
 export { atomicBatchSupport } from "./batch.js";
 export type { GasLimit, GasLimitInput } from "./gaslimit.js";
 export { gasLimitOf, reservoirProfile, TX_GAS_HARD_MAX } from "./gaslimit.js";
-export type { GuardHead, GuardTerm, GuardTerms } from "./guard.js";
+export type { GuardHead, GuardMode, GuardTerm, GuardTerms, PartGuardHead } from "./guard.js";
+export { headSnapshotHash } from "./guard.js";
 export type {
   AttemptRecord,
   AttemptStage,

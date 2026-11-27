@@ -61,6 +61,9 @@ const historyEdited = (f: (found: number, head: Record<string, unknown>) => [num
   });
 };
 
+/** The same writer without the guard (WriterConfig.guard "never"): its restores rest on the history walk too. */
+const unguarded = () => ({ principal: w.principal, guard: "never" as const });
+
 const run = async (planned: Promise<{ status: string } & Record<string, unknown>>) => {
   const p = (await planned) as {
     status: string;
@@ -182,9 +185,15 @@ describe("listRemoved (fixture)", () => {
       status: "UNKNOWN",
       reason: { code: "NOT_YET_DECIDABLE", retry: "transient" },
     });
+    // Unguarded, a restore's target is bound by nothing on chain: the history must name it too, so it is UNKNOWN.
     expect(
-      await planRestoreEntries(lost, w, { entries: [{ folder, name: "p1.txt" }] }),
+      await planRestoreEntries(lost, unguarded(), { entries: [{ folder, name: "p1.txt" }] }),
     ).toMatchObject({ status: "UNKNOWN", reason: { code: "NOT_YET_DECIDABLE" } });
+    // Guarded (the fixture's Realm has the guard), the target is the head's stored one, which the guard binds: the
+    // history isn't read, so a lie in it can't change the save.
+    const guarded = await planRestoreEntries(lost, w, { entries: [{ folder, name: "p1.txt" }] });
+    if (guarded.status !== "PLANNED") throw new Error(guarded.status);
+    expect(guarded.review.entries[0]?.target).toEqual(files["p1.txt"]);
     // The same entry on an honest endpoint restores to its real target.
     const honest = await planRestoreEntries(efs, w, { entries: [{ folder, name: "p1.txt" }] });
     if (honest.status !== "PLANNED") throw new Error(honest.status);
@@ -209,10 +218,16 @@ describe("listRemoved (fixture)", () => {
         status: "UNKNOWN",
         reason: { code: "RPC_ERROR", retry: "transient" },
       });
-      expect(await planRestoreEntries(lying, w, { entries: [{ folder, name }] })).toMatchObject({
+      expect(
+        await planRestoreEntries(lying, unguarded(), { entries: [{ folder, name }] }),
+      ).toMatchObject({
         status: "UNKNOWN",
         reason: { code: "RPC_ERROR" },
       });
+      // guarded: the history isn't read (the stored target is, and the guard binds it)
+      expect((await planRestoreEntries(lying, w, { entries: [{ folder, name }] })).status).toBe(
+        "PLANNED",
+      );
     },
   );
 
@@ -338,9 +353,14 @@ describe("removed entries under the tag release's rules (fixture)", () => {
       reason: { code: "LIMIT_EXCEEDED" },
     });
     expect(page.rows.find((x) => x.name === "p2.txt")).toMatchObject({ last: "KNOWN" });
+    // Unguarded, the restore needs the history to name the target: past the walk's bound it can't.
     expect(
-      await planRestoreEntries(efs, w, { entries: [{ folder, name: "deeper.txt" }] }),
+      await planRestoreEntries(efs, unguarded(), { entries: [{ folder, name: "deeper.txt" }] }),
     ).toMatchObject({ status: "REFUSED", refused: [{ index: 0, code: "HISTORY_UNKNOWN" }] });
+    // Guarded, the stored target has no depth limit: it restores to its file.
+    const deep = await planRestoreEntries(efs, w, { entries: [{ folder, name: "deeper.txt" }] });
+    if (deep.status !== "PLANNED") throw new Error(deep.status);
+    expect(deep.review.entries[0]?.target).toMatchObject({ kind: "file" });
   });
 });
 

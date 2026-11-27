@@ -179,7 +179,9 @@ describe("a save is planned and sent once (fixture)", () => {
     const after = await writer.runSequence(p.parts, fast);
     expect(w.sends.length).toBe(1);
     expect(after.state).toBe("NOT_STARTED");
-    expect(after.reason).toMatchObject({ code: "STALE", revert: { error: "E_CAS" } });
+    // The save is guarded (the fixture's Realm has the guard), and the ledger checks the guard before any action: the
+    // head it names moved, so the repeat is E_READSET_STALE before the CAS could say E_CAS.
+    expect(after.reason).toMatchObject({ code: "STALE", revert: { error: "E_READSET_STALE" } });
   });
 
   it("a PUBLISH-only part (the ledger repeats it without a revert) is held back while its first attempt is not final", async () => {

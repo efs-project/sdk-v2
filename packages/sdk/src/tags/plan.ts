@@ -12,6 +12,7 @@
 // A batch plans every statement or none, listing each refusal by index. Words are checked against the chain's own
 // grammar after the caller's fold (efs/fold/1 is not ruled yet): a refused word is MISUSE, never a revert.
 import { decodeFunctionResult, encodeFunctionData } from "viem";
+import type { GuardMode } from "../actions/guard.js";
 import type { PartUnit } from "../actions/journal.js";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
@@ -25,10 +26,21 @@ import type { EffectView } from "../actions/types.js";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs } from "../client.js";
-import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
+import { type CallOpts, EfsFault, misuse, type Reason, reason } from "../core/errors.js";
 import { type Address, type Hex, lower, type PrincipalId } from "../core/hex.js";
 import { type Ctx, EMPTY_BASIS, type FileRef, type RevisionRef } from "../files/bytes.js";
 import { decodeCreator, type FolderRef, subjectInfoCall } from "../files/folders.js";
+import {
+  consistentSnapshot,
+  decodeHeadSnapshots,
+  guardHead,
+  guardingOf,
+  headSnapshotsCall,
+  partGuardOf,
+  SNAPSHOT_CHUNK,
+  type Snapshot,
+  writtenTerm,
+} from "../files/guardheads.js";
 import { checkedGasSetup, type GasOpts } from "../files/plan.js";
 import { ledgerViewsAbi, topicLookupReaderAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
@@ -144,21 +156,21 @@ type Mode = "tag" | "deny" | "untag";
 /** Plan "each target is in this topic (or home), with number n ≥ 0" (default 0). */
 export const planTag = (
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: TagInput,
   o: TagPlanOpts = {},
 ): Promise<TagPlanResult> => plan(efs, writer, input, "tag", o);
 /** Plan "not this" for each target at this topic (or home), with number n < 0 (default −1). */
 export const planDeny = (
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: TagInput,
   o: TagPlanOpts = {},
 ): Promise<TagPlanResult> => plan(efs, writer, input, "deny", o);
 /** Plan taking your statements back (RELEASE): you say nothing about these targets there any more. */
 export const planUntag = (
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: Omit<TagInput, "number">,
   o: TagPlanOpts = {},
 ): Promise<TagPlanResult> => plan(efs, writer, input, "untag", o);
@@ -273,13 +285,20 @@ export function decoded<T>(
   }
 }
 
-type RawHead = { state: number; revision: bigint; strength: number; targetKind: number };
+type RawHead = {
+  state: number;
+  revision: bigint;
+  admission: bigint;
+  strength: number;
+  targetKind: number;
+  target: Hex;
+};
 /** The most ids one records() call takes (Limits.maxReadIds). */
 export const READ_IDS = 64;
 
 async function plan(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: TagInput,
   mode: Mode,
   o: TagPlanOpts,
@@ -309,6 +328,8 @@ async function plan(
     throw misuse("the same target is listed twice");
   const positions = things.map((x) => lower(positionKey(PURPOSES.tag, placeId, x.thing)));
 
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.tagPlan", status: "UNKNOWN", reason: guard.reason };
   const pin = await efs.at("latest", o);
   if (pin.status !== "VERIFIED")
     return {
@@ -322,6 +343,8 @@ async function plan(
     present: Set<string>;
     created: Map<number, boolean>;
     heads: RawHead[];
+    /** With a guard: each statement's expected snapshot of your head (guardheads.ts), by statement. */
+    snapshots: Snapshot[];
     statements: bigint[];
     mineBelow: bigint[];
     sharedBelow: bigint[];
@@ -386,6 +409,17 @@ async function plan(
             ]),
           ) - 1,
       );
+      // The guard's consistency check, in the same batch: the endpoint's own snapshots of your heads here.
+      const snapIdx: { at: number; from: number; count: number }[] = [];
+      if (guard.on)
+        for (let k = 0; k < positions.length; k += SNAPSHOT_CHUNK) {
+          const chunk = positions.slice(k, k + SNAPSHOT_CHUNK);
+          snapIdx.push({
+            at: calls.push(headSnapshotsCall(d, [me], chunk)) - 1,
+            from: k,
+            count: chunk.length,
+          });
+        }
       ctx.requests += calls.length;
       const outs = await callsAt(s, basis.blockHash, calls);
       const present = new Set<string>();
@@ -433,9 +467,30 @@ async function plan(
         heads.push({
           state: Number(mine.state),
           revision: BigInt(mine.revision),
+          admission: BigInt(mine.admission),
           strength: Number(mine.strength),
           targetKind: Number(mine.targetKind),
+          target: lower(mine.target),
         });
+      }
+      // Each expected snapshot computed from the head just read (a removed TAG head stores its role, the thing), and
+      // checked against the endpoint's own: never taken from it.
+      const snapshots: Snapshot[] = [];
+      for (const c of snapIdx) {
+        const sn = decodeHeadSnapshots(outs[c.at], c.count);
+        if (!sn.ok) return sn;
+        for (let j = 0; j < c.count; j++) {
+          const i = c.from + j;
+          const v = consistentSnapshot(
+            heads[i] as RawHead,
+            PURPOSES.tag,
+            things[i]?.thing as Hex,
+            sn.value.snapshots[j] as Hex,
+            sn.value.targets[j] as Hex,
+          );
+          if (!v.ok) return v;
+          snapshots.push(v.value);
+        }
       }
       // Counts only price the plan: an unreadable one is priced as the dearer (new) case, never refused.
       const counted = (k: number, fn: "authorCount" | "entryCount" | "placeCount"): bigint => {
@@ -453,6 +508,7 @@ async function plan(
           present,
           created,
           heads,
+          snapshots,
           statements: authorIdx.map((k) => counted(k, "authorCount")),
           mineBelow: mineIdx.map((k) => counted(k, "entryCount")),
           sharedBelow: sharedIdx.map((k) => counted(k, "placeCount")),
@@ -563,6 +619,16 @@ async function plan(
         ...(first && ancestors.length ? { levels: levels(freshPair) } : {}),
       };
     }
+    // A guarded plan guards the head this statement writes.
+    const snap = seen.snapshots[i];
+    if (guard.on) {
+      if (!snap)
+        throw new EfsFault("INVARIANT", "a head this plan writes was not read for its guard");
+      a = {
+        ...a,
+        guard: [guardHead(me, positions[i] as Hex, snap, writtenTerm(a.action.kind, head))],
+      };
+    }
     statements.push(a);
     reviews.push({
       target: x.target,
@@ -641,11 +707,13 @@ async function plan(
       });
     for (let j = 0; j < stmts.length; j++)
       units.push({ actions: 1, effect: effects[j] as EffectView });
+    const heads = partGuardOf(part.actions);
     return {
       actions: part.actions.map((a) => a.action),
       bodies: part.actions.map((a) => a.body),
       effects,
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
+      ...(heads.length ? { guard: heads } : {}),
       // The planner's own pricing (rows and per-level terms) is what an atomic batch is packed by.
       ...batchGasOf(part),
       // Registration first, then the statements: the order the actions already have.

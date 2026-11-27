@@ -9,6 +9,7 @@
 //   - the text record when it is new, then the one statement, or with `remove: true` a RELEASE of your own;
 //   - parts by the planning rule, each statement priced by its measured gas row (contracts 0fb4804: bindPropertyFresh,
 //     bindSameFreshWord, restoreSame, releaseBroader, …); eth_estimateGas decides before each send.
+import type { GuardMode } from "../actions/guard.js";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
   type BindRow,
@@ -22,9 +23,19 @@ import type { CallRequest } from "../chain/basis.js";
 import { callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session } from "../chain/pool.js";
 import type { Efs } from "../client.js";
-import { misuse, type Reason, reason } from "../core/errors.js";
+import { EfsFault, misuse, type Reason, reason } from "../core/errors.js";
 import { type Hex, lower, type PrincipalId } from "../core/hex.js";
 import type { Ctx } from "../files/bytes.js";
+import {
+  consistentSnapshot,
+  decodeHeadSnapshots,
+  guardHead,
+  guardingOf,
+  headSnapshotsCall,
+  partGuardOf,
+  type Snapshot,
+  writtenTerm,
+} from "../files/guardheads.js";
 import { checkedGasSetup } from "../files/plan.js";
 import { ledgerViewsAbi } from "../generated/abis.js";
 import { PURPOSES } from "../generated/constants.js";
@@ -136,7 +147,7 @@ export type TopicStatementPlanResult =
 /** Plan a label of a topic or home in one language (or, with `remove`, take yours back). */
 export async function planLabel(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: LabelInput,
   o: TagPlanOpts = {},
 ): Promise<TopicStatementPlanResult> {
@@ -158,7 +169,7 @@ export async function planLabel(
 /** Plan "this topic is the same as that one" (or, with `remove`, take yours back). */
 export function planSame(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: SameInput,
   o: TagPlanOpts = {},
 ): Promise<TopicStatementPlanResult> {
@@ -173,7 +184,7 @@ export function planSame(
 /** Plan "this topic is narrower than that one" (or, with `remove`, take yours back). */
 export function planBroader(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: BroaderInput,
   o: TagPlanOpts = {},
 ): Promise<TopicStatementPlanResult> {
@@ -189,7 +200,13 @@ export function planBroader(
 type Spec =
   | { purpose: "label"; topic: TagPlace; lang: string; text: string | undefined }
   | { purpose: "same" | "broader"; topic: readonly string[]; other: readonly string[] };
-type RawHead = { state: number; revision: bigint; target: Hex; targetKind: number };
+type RawHead = {
+  state: number;
+  revision: bigint;
+  admission: bigint;
+  target: Hex;
+  targetKind: number;
+};
 const PURPOSE = {
   label: PURPOSES.property,
   same: PURPOSES.same,
@@ -198,7 +215,7 @@ const PURPOSE = {
 
 async function plan(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   spec: Spec,
   remove: boolean,
   o: TagPlanOpts,
@@ -252,6 +269,8 @@ async function plan(
     ...new Set([...pageIds, ...seenIds, ...(textId ? [lower(textId)] : [])]),
   ] as Hex[];
 
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.topicStatementPlan", status: "UNKNOWN", reason: guard.reason };
   const pin = await efs.at("latest", o);
   if (pin.status !== "VERIFIED")
     return {
@@ -261,7 +280,7 @@ async function plan(
     };
   const basis = pin.basis;
   const ctx: Ctx = { efs, requests: 0 };
-  const r = await onEndpoint<{ present: Set<string>; head: RawHead }>(
+  const r = await onEndpoint<{ present: Set<string>; head: RawHead; snapshot?: Snapshot }>(
     efs._internal.pool,
     async (s: Session) => {
       const calls: CallRequest[] = [];
@@ -280,6 +299,8 @@ async function plan(
         calls.push(
           callOf(d.readers.ledgerViews, ledgerViewsAbi, "headsAt", [d.ledger, [me], position]),
         ) - 1;
+      // The guard's read, in the same batch: the endpoint's snapshot and stored target of your head here.
+      const si = guard.on ? calls.push(headSnapshotsCall(d, [me], [position])) - 1 : -1;
       ctx.requests += calls.length;
       const outs = await callsAt(s, basis.blockHash, calls);
       const present = new Set<string>();
@@ -315,23 +336,35 @@ async function plan(
       if (!mine || h.value[3].length !== 1) return badReply("headsAt (one head per Lens author)");
       if (!headConsistent(mine.state, mine.revision))
         return badReply("headsAt (a state its revision contradicts)");
-      return {
-        ok: true,
-        value: {
-          present,
-          head: {
-            state: Number(mine.state),
-            revision: BigInt(mine.revision),
-            target: lower(mine.target),
-            targetKind: Number(mine.targetKind),
-          },
-        },
+      const head: RawHead = {
+        state: Number(mine.state),
+        revision: BigInt(mine.revision),
+        admission: BigInt(mine.admission),
+        target: lower(mine.target),
+        targetKind: Number(mine.targetKind),
       };
+      // The expected snapshot, computed from the head just read (a removed label's stored text is read; a removed
+      // "same as" or "broader" stores its role, the other topic), and checked against the endpoint's own.
+      let snapshot: Snapshot | undefined;
+      if (si >= 0) {
+        const sn = decodeHeadSnapshots(outs[si], 1);
+        if (!sn.ok) return sn;
+        const v = consistentSnapshot(
+          head,
+          purpose,
+          role,
+          sn.value.snapshots[0] as Hex,
+          sn.value.targets[0] as Hex,
+        );
+        if (!v.ok) return v;
+        snapshot = v.value;
+      }
+      return { ok: true, value: { present, head, ...(snapshot ? { snapshot } : {}) } };
     },
     o,
   );
   if (!r.ok) return { kind: "efs.topicStatementPlan", status: "UNKNOWN", reason: r.reason, basis };
-  const { present, head } = r.value;
+  const { present, head, snapshot } = r.value;
   const state = headState(head.state);
   const before = state === "BOUND" || state === "MASKED" ? { state, target: head.target } : null;
   const refused = (code: "UNCHANGED" | "NOT_STATED"): TopicStatementPlanResult => ({
@@ -397,7 +430,18 @@ async function plan(
         : neverBoundHead(head)
           ? `bind${P}AfterNo`
           : `restore${P}`;
-  actions.push({ action: statement, body: "0x", firstStatement: first, bindRow: row });
+  if (guard.on && !snapshot)
+    throw new EfsFault("INVARIANT", "a head this plan writes was not read for its guard");
+  actions.push({
+    action: statement,
+    body: "0x",
+    firstStatement: first,
+    bindRow: row,
+    // a guarded plan guards the head this statement writes
+    ...(snapshot
+      ? { guard: [guardHead(me, position, snapshot, writtenTerm(statement.kind, head))] }
+      : {}),
+  });
 
   // ---- parts
   const g = await checkedGasSetup(efs, o);
@@ -463,11 +507,13 @@ async function plan(
             text: `Register ${subjectText}${otherText ? ` and ${otherText}` : ""}`,
           },
     ];
+    const heads = partGuardOf(part.actions);
     return {
       actions: part.actions.map((a) => a.action),
       bodies: part.actions.map((a) => a.body),
       effects,
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
+      ...(heads.length ? { guard: heads } : {}),
       ...batchGasOf(part),
     };
   });

@@ -129,19 +129,26 @@ principal that builds a Lens (a folder's owner comes from its hash-checked recor
 ### Writes: what the endpoint you plan on still decides
 
 The write-path audit (2026-11-26) checked what the person reviews against what they sign
-(test/integration/signed-equals-reviewed.test.ts). On an honest endpoint they are always the same. One endpoint that
-lies can still steer some writes, because the ledger's compare-and-swap binds a head's **revision only**, never its
-state or target. Until the native ReadSet guard lands (a contracts release; the SDK will guard every written head),
-**a head's state and target are that endpoint's word** in these planners:
+(test/integration/signed-equals-reviewed.test.ts). On an honest endpoint they are always the same. The ledger's
+compare-and-swap binds a head's **revision only**, never its state or target, so one lying endpoint could steer a
+write that rests on a head it reported. **The read-set guard closes that** (contracts 19891fe; a writer's `guard`,
+default "auto": on whenever the deployment's live execution set has it, as the fixture's does). A guarded publication
+names every head it writes, each with the snapshot (state, revision, admission, stored target) the plan was decided
+on, computed from the head the planner read and never copied from a read of the hashes; the ledger compares each one
+before any action applies and refuses the whole publication (E_READSET_STALE, a STALE send) on any difference. So in
+the folder and tag planners a false state or target reverts instead of landing:
 
-- `planCreateFile`, `planCreateFolder`: your own entry at the name reported RELEASED (or MASKED) while it is bound, at
-  its true revision: the create rebinds over your entry instead of refusing NAME_TAKEN_MINE.
-- `planMoveEntries` (and renames): the destination is bound to your entry's target as the endpoint reports it, and
-  its kind decides whether the move needs a `via` path.
-- `planHideEntries`, `planUnhideEntries`: your own head reported not bound (or MASKED) while it is bound: the hide
-  masks, or the unhide releases, your own entry.
-- `planRestoreEntries`: the restored target is the endpoint's history (`historyAt`), checked for shape only.
-- the testing planners (`planHeadNo`, `planHeadRelease`, `planLoneHide`, `planOtherEntry`) in the same way.
+- `planCreateFile`, `planCreateFolder`: your own entry reported RELEASED (or MASKED) while it is bound;
+- `planMoveEntries` (and renames): the destination's target as the endpoint reports it;
+- `planHideEntries`, `planUnhideEntries`: your own head reported not bound (or MASKED) while it is bound;
+- `planRestoreEntries`: the restored target, which is the head's stored last bound target (the one the guard binds);
+- `planTag`, `planDeny`, `planUntag`, `planLabel`, `planSame`, `planBroader`, and the testing planners.
+
+Still the endpoint's word **where a writer is unguarded** (`guard: "never"`, or a Realm without the guard): each of
+those lies lands as the reviewed save's opposite, as before the guard. An unguarded restore at least requires the
+binding's history (`historyAt`, checked for shape) and the stored target to name the same one. Not guarded yet:
+`planEditFile` (its HEAD and the Lens heads that decided its base come in the next step); until then an edit's base
+rests on the planning-time base check, as before.
 
 Also the endpoint's word, by design: the review's description of other people's entries (`visibleInLens`,
 `shownInstead`, `hiddenBy`, `shownAfter`, a hide's `shownNow` author), and the `via` path a folder move or restore
@@ -152,6 +159,8 @@ Record presence (whether a name, registration or text record is published) and t
 read through more than one endpoint, and treat a write planned on one you don't trust as that endpoint's word.
 
 What a write does check, whatever the endpoint says:
+- a guarded plan's heads, against the endpoint's own snapshots of them (a consistency check: a difference fails over
+  before any review is shown; never the source of an expected value);
 - a head is UNSET exactly at revision 0 (a head that says otherwise fails over): this closes the "UNSET" lies;
 - the execution set signed is the deployment document's, and only while the chain's is the same; an acceptance
   profile of 0 is never signed (a zero would waive the ledger's check);

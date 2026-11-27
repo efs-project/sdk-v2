@@ -10,6 +10,8 @@
 // reference is the contracts' tools/gas-plan.mjs `guardCost` and `guardBytes`). A guard is a GRID: every principal at
 // every position, so each of the n·m heads needs its own expected value. A planner ties each guarded head to the action
 // that writes it (or that it decided), so a split carries a head with its action.
+import { decodeAbiParameters, encodeAbiParameters, keccak256 } from "viem";
+import { EfsFault, type Reason, reason } from "../core/errors.js";
 import type { Hex, PrincipalId } from "../core/hex.js";
 
 /**
@@ -33,6 +35,14 @@ export interface GuardHead {
    */
   expected: Hex;
   term: GuardTerm;
+}
+
+/**
+ * A guarded head in a sequence part: a GuardHead and the index, in the part's actions, of the action it belongs to (the
+ * action that writes it, or the one it decided). A re-split piece takes exactly its own actions' heads.
+ */
+export interface PartGuardHead extends GuardHead {
+  action: number;
 }
 
 /** One schedule's guard terms (gas/model.json profiles.<schedule>.guard: constants, split.executionGas or kernel). */
@@ -148,3 +158,113 @@ export function guardCost(t: GuardTerms, s: GuardShape): number {
 /** The guard's encoded length (gas-plan.mjs `guardBytes`): abi.encode(ReadSet) of n principals and m positions. */
 export const guardBytes = (s: GuardShape): number =>
   224 + 32 * (s.principals + s.positions + s.principals * s.positions);
+
+/**
+ * ILedgerCommitments.headSnapshotHash (head-snapshot profile 2): keccak256(abi.encode(uint8 state, uint64 revision,
+ * uint64 admission, bytes32 target)), `target` the head's STORED target word. A planner computes it from the head it
+ * decided on: the target of a BOUND head; 0 for a head never bound (UNSET, or targetKind 0); for a MASKED or RELEASED
+ * head that once bound, its last bound target (the position's role for TAG, SAME and BROADER; read for any other
+ * purpose).
+ */
+export function headSnapshotHash(
+  state: number,
+  revision: bigint,
+  admission: bigint,
+  target: Hex,
+): Hex {
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: "uint8" }, { type: "uint64" }, { type: "uint64" }, { type: "bytes32" }],
+      [state, revision, admission, target],
+    ),
+  );
+}
+
+const READ_SET = [
+  {
+    type: "tuple",
+    components: [
+      { name: "principals", type: "bytes32[]" },
+      { name: "positions", type: "bytes32[]" },
+      { name: "expectedHeads", type: "bytes32[]" },
+    ],
+  },
+] as const;
+
+/** No guard: ILedger.execute's empty `guard`. */
+export const EMPTY_GUARD: Hex = "0x";
+
+/**
+ * ILedger.execute's `guard` for these heads: abi.encode(ReadSet{principals, positions, expectedHeads}) over their grid
+ * (guardGrid's first-appearance order), expectedHeads[j·n + i] the head of principals[i] at positions[j]; "0x" for no
+ * heads. A function of the heads alone, so the same part always encodes the same bytes (a resend must carry them
+ * byte for byte: the native intent digest includes keccak256(guard)). Heads that form no grid are a planner's error.
+ */
+export function encodeGuard(heads: readonly GuardHead[]): Hex {
+  if (heads.length === 0) return EMPTY_GUARD;
+  const g = guardGrid(heads);
+  if (!g.ok)
+    throw new EfsFault(
+      "INVARIANT",
+      `the guarded heads form no read set (${g.why === "duplicate" ? "a head is named twice" : "a principal and a position with no head between them"})`,
+    );
+  const { principals, positions } = g.grid;
+  const at = new Map(heads.map((h) => [keyOf(h), h.expected]));
+  const expectedHeads: Hex[] = [];
+  for (const pos of positions)
+    for (const pr of principals)
+      expectedHeads.push(at.get(`${pr.toLowerCase()}:${pos.toLowerCase()}`) as Hex);
+  return encodeAbiParameters(READ_SET, [
+    { principals: [...principals], positions: [...positions], expectedHeads },
+  ]);
+}
+
+/**
+ * The heads a plan's guard bytes name, every one priced at the dearest term (`twoWords`): an upper bound for pricing a
+ * plan from its fields alone (the review's floor), where the terms the planner chose are not stored. Null for no guard
+ * or bytes that don't decode.
+ */
+export function headsOfGuardBytes(guard: Hex | undefined): GuardHead[] | null {
+  if (guard === undefined || guard === EMPTY_GUARD) return null;
+  try {
+    const [rs] = decodeAbiParameters(READ_SET, guard);
+    const out: GuardHead[] = [];
+    for (const position of rs.positions)
+      for (const principal of rs.principals)
+        out.push({
+          principal: principal as PrincipalId,
+          position,
+          expected: EMPTY_WORD,
+          term: "twoWords",
+        });
+    return out;
+  } catch {
+    return null;
+  }
+}
+const EMPTY_WORD = `0x${"00".repeat(32)}` as Hex;
+
+/**
+ * Whether a writer guards its publications (WriterConfig.guard): "never" does not; "auto" (the default) does whenever
+ * the deployment's live execution set has the guard (DeploymentInfo.nativeGuard, b0); "always" does, and a Realm
+ * without it refuses the plan (NOT_VERIFIED_DEPLOYMENT, permanent).
+ */
+export type GuardMode = "auto" | "always" | "never";
+
+/** @internal Whether a writer in `mode` guards on this deployment, or why it can't plan. */
+export function guardingOn(
+  mode: GuardMode,
+  nativeGuard: boolean,
+): { ok: true; on: boolean } | { ok: false; reason: Reason } {
+  if (mode === "never") return { ok: true, on: false };
+  if (nativeGuard) return { ok: true, on: true };
+  if (mode === "auto") return { ok: true, on: false };
+  return {
+    ok: false,
+    reason: reason(
+      "NOT_VERIFIED_DEPLOYMENT",
+      "never",
+      'this writer guards every publication (guard: "always"), and this Realm\'s live execution set has no read-set guard (capability b0)',
+    ),
+  };
+}

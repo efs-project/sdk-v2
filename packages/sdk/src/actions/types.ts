@@ -46,6 +46,11 @@ export interface Plan {
   actions: readonly ActionData[];
   bodies: readonly Hex[];
   calldata: Hex;
+  /**
+   * The read-set guard signed with it (ILedger.execute's `guard`, in the calldata and, as keccak256, in the digest).
+   * Absent: none ("0x"), as for every plan made before the guard.
+   */
+  guard?: Hex;
   effects: readonly EffectView[];
   basis: Basis;
   /**

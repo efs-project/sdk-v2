@@ -16,6 +16,7 @@ import {
   classifyWalletError,
   estimate,
   fundsRefusal,
+  guardBuiltWrong,
   inFlightTwin,
   notify,
   type SendOpts,
@@ -106,6 +107,7 @@ export async function sendPlansAsBatch(
         // Only the first part can be simulated now: later parts need the earlier nonces used first. The split
         // planned every part under the gas budget.
         const est = await estimate(efs, first, o);
+        if ("revert" in est) guardBuiltWrong(first, est.revert);
         if ("revert" in est)
           return {
             kind: "efs.sendBatch",

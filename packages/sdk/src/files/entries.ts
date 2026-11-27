@@ -16,6 +16,7 @@
 //                  mask: nothing shows there for a reader who ranks you above the entry's author
 //   restore        BIND(FOLDER, at → the target it had before it was removed), read from the binding's history
 import { decodeFunctionResult, encodeFunctionData, keccak256 } from "viem";
+import type { GuardMode } from "../actions/guard.js";
 import type { PartUnit } from "../actions/journal.js";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
@@ -58,7 +59,19 @@ import {
   type ParentRef,
   parentSubject,
   subjectInfoCall,
+  targetRef,
 } from "./folders.js";
+import {
+  consistentSnapshot,
+  decodeHeadSnapshots,
+  guardHead,
+  guardingOf,
+  headSnapshotsCall,
+  partGuardOf,
+  SNAPSHOT_CHUNK,
+  type Snapshot,
+  writtenTerm,
+} from "./guardheads.js";
 import {
   askedMediaType,
   buildContent,
@@ -196,7 +209,14 @@ interface Seen {
   folders: Map<Hex, boolean>;
   /** For each subject asked about: whether it was already created. */
   created: Map<Hex, boolean>;
+  /**
+   * With `snapshots`: each of your heads read, by position (the places', and HEAD of each subject not yet created),
+   * with the expected snapshot computed from it and passed through the consistency check (guardheads.ts).
+   */
+  snapshots: Map<Hex, GuardedHead>;
 }
+/** One of your heads with its expected snapshot, as readSeen computed it. */
+type GuardedHead = Snapshot & { head: RawHead };
 
 const READ_CHUNK = 64; // limits.maxReadIds and the 64-principal cap
 const chunks = <T>(xs: readonly T[], n: number): T[][] => {
@@ -225,6 +245,7 @@ async function readSeen(
   places: readonly Place[],
   recordIds: readonly Hex[],
   subjects: readonly Hex[] = [],
+  o: { snapshots?: boolean } = {},
 ): Promise<Step<Seen>> {
   const d = ctx.efs.deployment;
   const uniquePlaces = [...new Map(places.map((p) => [p.position, p])).values()];
@@ -264,10 +285,23 @@ async function readSeen(
     ...subjects.map((x) => subjectInfoCall(ctx.efs, x)),
     ...folderIds.map((id) => recordCall(d, id)),
   ];
+  // The guard's reads, in the same batch: your heads' snapshots and stored targets at every place, and at HEAD of
+  // each subject asked about (a file this plan creates: never stated before).
+  const headPositions = subjects.map((x) => lower(positionKey(PURPOSES.head, x, ZERO_WORD)));
+  const snapChunks = o.snapshots
+    ? chunks([...uniquePlaces.map((p) => lower(p.position)), ...headPositions], SNAPSHOT_CHUNK)
+    : [];
+  calls.push(...snapChunks.map((c) => headSnapshotsCall(d, [me], c)));
   if (calls.length === 0)
     return {
       ok: true,
-      value: { places: new Map(), records: new Map(), created: new Map(), folders: new Map() },
+      value: {
+        places: new Map(),
+        records: new Map(),
+        created: new Map(),
+        folders: new Map(),
+        snapshots: new Map(),
+      },
     };
   ctx.requests += calls.length;
   const outs = await callsAt(s, basis.blockHash, calls);
@@ -367,8 +401,58 @@ async function readSeen(
     if (!f.ok) return f;
     folders.set(id, f.value.status === "PRESENT" && f.value.directory);
   }
-  return { ok: true, value: { places: placesOut, records, created, folders } };
+  // Each snapshot computed from the head read above, then checked against the endpoint's own (never taken from it).
+  const snapshots = new Map<Hex, GuardedHead>();
+  const heads: { position: Hex; head: RawHead; purpose: Hex; role: Hex }[] = [
+    ...uniquePlaces.map((p) => ({
+      position: lower(p.position),
+      head: (placesOut.get(p.position) as PlaceState).mine,
+      purpose: PURPOSES.folder as Hex,
+      role: p.role,
+    })),
+    ...subjects.map((_, i) => ({
+      position: headPositions[i] as Hex,
+      head: UNSET_HEAD,
+      purpose: PURPOSES.head as Hex,
+      role: ZERO_WORD,
+    })),
+  ];
+  let at = 0;
+  for (const c of snapChunks) {
+    const r = decodeHeadSnapshots(outs[k++], c.length);
+    if (!r.ok) return r;
+    for (let j = 0; j < c.length; j++, at++) {
+      const h = heads[at] as (typeof heads)[number];
+      // a subject already created has a HEAD this read didn't take: the planner refuses it, and nothing is guarded
+      if (
+        h.purpose === PURPOSES.head &&
+        created.get(lower(subjects[at - uniquePlaces.length] as Hex))
+      )
+        continue;
+      const v = consistentSnapshot(
+        h.head,
+        h.purpose,
+        h.role,
+        r.value.snapshots[j] as Hex,
+        r.value.targets[j] as Hex,
+      );
+      if (!v.ok) return v;
+      snapshots.set(h.position, { ...v.value, head: h.head });
+    }
+  }
+  return { ok: true, value: { places: placesOut, records, created, folders, snapshots } };
 }
+
+/** The head of a subject never stated about: UNSET at revision 0, no target (a file this plan creates). */
+const UNSET_HEAD: RawHead = {
+  state: 0,
+  revision: 0n,
+  admission: 0n,
+  targetKind: 0,
+  prevAdmission: 0n,
+  bindingOrdinal: 0n,
+  target: ZERO_WORD,
+};
 
 /** What this Lens shows at a place if your head there were `mine` (BOUND, MASKED or RELEASED), or as it is now. */
 function lensAt(
@@ -540,11 +624,16 @@ async function toParts<R extends FolderReviewBase>(
   me: PrincipalId,
   basis: Basis,
   recordsCount: number,
+  guarded: ReadonlyMap<Hex, GuardedHead> | null = null,
 ): Promise<FolderPlanResult<R>> {
   const d = efs.deployment;
   const g = await checkedGasSetup(efs, o);
   if (!g.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: g.reason, basis };
   const gas = g.gas;
+  // A guarded plan guards every head it writes: each BIND, UNBIND and RELEASE carries its head's expected snapshot,
+  // as readSeen computed it. A written head that was not read for its guard is the planner's error, never sent bare.
+  if (guarded)
+    units = units.map((u) => ({ ...u, actions: u.actions.map((a) => withGuard(a, me, guarded)) }));
   // Tag each action with its unit so the parts' effects can say what each part carries.
   const owner = new Map<PlannedAction, number>();
   const all: PlannedAction[] = [];
@@ -596,12 +685,14 @@ async function toParts<R extends FolderReviewBase>(
       else runs.push({ actions: 1, effect: effectOf(u) });
       at = u;
     }
+    const heads = partGuardOf(part.actions);
     return {
       actions: part.actions.map((a) => a.action),
       bodies: part.actions.map((a) => a.body),
       effects: [...touched].map(([u]) => effectOf(u)),
       units: runs,
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
+      ...(heads.length ? { guard: heads } : {}),
       ...batchGasOf(part),
     };
   });
@@ -618,6 +709,23 @@ async function toParts<R extends FolderReviewBase>(
     }),
     basis,
   };
+}
+
+/** A bind-kind action of yours with its head's guard (from `guarded`), or the action itself for any other kind. */
+function withGuard(
+  a: PlannedAction,
+  me: PrincipalId,
+  guarded: ReadonlyMap<Hex, GuardedHead>,
+): PlannedAction {
+  const k = a.action.kind;
+  if (k !== ACTION.BIND && k !== ACTION.UNBIND && k !== ACTION.RELEASE) return a;
+  const position = lower(positionKey(a.action.purpose, a.action.subject, a.action.role));
+  const g = guarded.get(position);
+  if (!g)
+    throw new EfsFault("INVARIANT", "a head this plan writes was not read for its guard", {
+      details: { position },
+    });
+  return { ...a, guard: [guardHead(me, position, g, writtenTerm(k, g.head))] };
 }
 
 /** Pin, read and plan on one endpoint, at one basis. */
@@ -696,7 +804,7 @@ const checkSalt = (salt: Hex | undefined): Hex => {
  */
 export async function planCreateFile(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: CreateFileInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<CreateFileReview>> {
@@ -724,6 +832,8 @@ export async function planCreateFile(
     : encode.rootInline(file, built.inline as Uint8Array);
   const revision = lower(recordId(types.root, rootBody)) as RecordId;
   const nameId = nameRecord(types, place);
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
     const r = await readSeen(
       ctx,
@@ -734,6 +844,7 @@ export async function planCreateFile(
       [place],
       [...parentIds([place]), nameId],
       [file],
+      { snapshots: guard.on },
     );
     if (!r.ok) return r;
     const seen = r.value;
@@ -832,6 +943,7 @@ export async function planCreateFile(
           me,
           basis,
           published,
+          guard.on ? seen.snapshots : null,
         ),
     };
   });
@@ -859,7 +971,7 @@ export interface CreateFolderReview extends FolderReviewBase, LensView {
 /** Plan a new, empty folder `name` in `folder`. One publication; the name rules are planCreateFile's. */
 export async function planCreateFolder(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: CreateFolderInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<CreateFolderReview>> {
@@ -872,6 +984,8 @@ export async function planCreateFolder(
   const dirBody = encode.directory(me, salt);
   const directory = lower(recordId(types.directory, dirBody)) as RecordId;
   const nameId = nameRecord(types, place);
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
     const r = await readSeen(
       ctx,
@@ -881,6 +995,8 @@ export async function planCreateFolder(
       principals,
       [place],
       [...parentIds([place]), nameId, directory],
+      [],
+      { snapshots: guard.on },
     );
     if (!r.ok) return r;
     const seen = r.value;
@@ -944,6 +1060,7 @@ export async function planCreateFolder(
           me,
           basis,
           nameExists ? 1 : 2,
+          guard.on ? seen.snapshots : null,
         ),
     };
   });
@@ -1079,7 +1196,7 @@ export interface MoveReview extends FolderReviewBase {
  */
 export async function planMoveEntries(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: MoveEntriesInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<MoveReview>> {
@@ -1104,8 +1221,12 @@ export async function planMoveEntries(
   }
   const places = moves.flatMap((m) => [m.from, m.to]);
   const ids = [...new Set(moves.flatMap((m) => [...parentIds([m.to]), nameRecord(types, m.to)]))];
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
-    const r = await readSeen(ctx, s, basis, me, principals, places, ids);
+    const r = await readSeen(ctx, s, basis, me, principals, places, ids, [], {
+      snapshots: guard.on,
+    });
     if (!r.ok) return r;
     const seen = r.value;
     const refused: EntryRefusal[] = [];
@@ -1223,6 +1344,7 @@ export async function planMoveEntries(
           me,
           basis,
           records,
+          guard.on ? seen.snapshots : null,
         ),
     };
   });
@@ -1324,7 +1446,7 @@ export interface RemoveReview extends FolderReviewBase {
  */
 export async function planRemoveEntries(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: RemoveEntriesInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<RemoveReview>> {
@@ -1335,8 +1457,12 @@ export async function planRemoveEntries(
   const places = input.entries.map((e, i) => placeOf(e.folder, e.name, i));
   if (new Set(places.map((p) => p.position)).size !== places.length)
     throw misuse("the same entry is listed twice");
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
-    const r = await readSeen(ctx, s, basis, me, principals, places, []);
+    const r = await readSeen(ctx, s, basis, me, principals, places, [], [], {
+      snapshots: guard.on,
+    });
     if (!r.ok) return r;
     const seen = r.value;
     const refused: EntryRefusal[] = [];
@@ -1389,6 +1515,7 @@ export async function planRemoveEntries(
           me,
           basis,
           0,
+          guard.on ? seen.snapshots : null,
         ),
     };
   });
@@ -1415,7 +1542,7 @@ export interface UnhideReview extends FolderReviewBase {
  */
 export async function planUnhideEntries(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: UnhideEntriesInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<UnhideReview>> {
@@ -1425,8 +1552,12 @@ export async function planUnhideEntries(
   const places = input.entries.map((e, i) => placeOf(e.folder, e.name, i));
   if (new Set(places.map((p) => p.position)).size !== places.length)
     throw misuse("the same entry is listed twice");
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
-    const r = await readSeen(ctx, s, basis, me, principals, places, []);
+    const r = await readSeen(ctx, s, basis, me, principals, places, [], [], {
+      snapshots: guard.on,
+    });
     if (!r.ok) return r;
     const seen = r.value;
     const refused: EntryRefusal[] = [];
@@ -1478,6 +1609,7 @@ export async function planUnhideEntries(
           me,
           basis,
           0,
+          guard.on ? seen.snapshots : null,
         ),
     };
   });
@@ -1553,7 +1685,7 @@ export interface HideReview extends FolderReviewBase {
  */
 export async function planHideEntries(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: HideEntriesInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<HideReview>> {
@@ -1565,8 +1697,12 @@ export async function planHideEntries(
   if (new Set(places.map((p) => p.position)).size !== places.length)
     throw misuse("the same entry is listed twice");
   const nameIds = [...new Set(places.map((p) => nameRecord(types, p)))];
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
-    const r = await readSeen(ctx, s, basis, me, principals, places, nameIds);
+    const r = await readSeen(ctx, s, basis, me, principals, places, nameIds, [], {
+      snapshots: guard.on,
+    });
     if (!r.ok) return r;
     const seen = r.value;
     const refused: EntryRefusal[] = [];
@@ -1611,6 +1747,7 @@ export async function planHideEntries(
           me,
           basis,
           published,
+          guard.on ? seen.snapshots : null,
         ),
     };
   });
@@ -1641,7 +1778,7 @@ export interface OtherEntryReview extends FolderReviewBase {
  */
 export async function planOtherEntry(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: OtherEntryInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<OtherEntryReview>> {
@@ -1652,6 +1789,8 @@ export async function planOtherEntry(
   const salt = checkSalt(input.salt);
   const subject = lower(subjectId(me, salt)) as SubjectId;
   const nameId = nameRecord(types, p);
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
     const r = await readSeen(
       ctx,
@@ -1662,6 +1801,7 @@ export async function planOtherEntry(
       [p],
       [...parentIds([p]), nameId],
       [subject],
+      { snapshots: guard.on },
     );
     if (!r.ok) return r;
     const seen = r.value;
@@ -1718,6 +1858,7 @@ export async function planOtherEntry(
           me,
           basis,
           needName ? 1 : 0,
+          guard.on ? seen.snapshots : null,
         ),
     };
   });
@@ -1749,7 +1890,7 @@ export interface FolderEntryReview extends FolderReviewBase, LensView {
  */
 export async function planFolderEntry(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: FolderEntryInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<FolderEntryReview>> {
@@ -1761,8 +1902,12 @@ export async function planFolderEntry(
   if (!/^0x[0-9a-f]{64}$/.test(target))
     throw misuse("target is a folder: { kind: 'folder', directory }");
   const nameId = nameRecord(types, p);
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
-    const r = await readSeen(ctx, s, basis, me, principals, [p], [...parentIds([p]), nameId]);
+    const r = await readSeen(ctx, s, basis, me, principals, [p], [...parentIds([p]), nameId], [], {
+      snapshots: guard.on,
+    });
     if (!r.ok) return r;
     const seen = r.value;
     // The target's own record, hash-checked: it must be a files-directory/1 record at the basis.
@@ -1826,6 +1971,7 @@ export async function planFolderEntry(
           me,
           basis,
           needName ? 1 : 0,
+          guard.on ? seen.snapshots : null,
         ),
     };
   });
@@ -1854,7 +2000,7 @@ export interface LoneHideReview extends FolderReviewBase {
  */
 export async function planLoneHide(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: LoneHideInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<LoneHideReview>> {
@@ -1863,8 +2009,12 @@ export async function planLoneHide(
   const types = typesOf(efs);
   const p = placeOf(input.folder, input.name, 0);
   const nameId = nameRecord(types, p);
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
-    const r = await readSeen(ctx, s, basis, me, principals, [p], [nameId]);
+    const r = await readSeen(ctx, s, basis, me, principals, [p], [nameId], [], {
+      snapshots: guard.on,
+    });
     if (!r.ok) return r;
     const st = r.value.places.get(p.position) as PlaceState;
     const state = headState(st.mine.state);
@@ -1895,6 +2045,7 @@ export async function planLoneHide(
           me,
           basis,
           needName ? 1 : 0,
+          guard.on ? r.value.snapshots : null,
         ),
     };
   });
@@ -1927,7 +2078,7 @@ export interface HeadStatementReview extends FolderReviewBase {
  */
 export async function planHeadNo(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: HeadStatementInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<HeadStatementReview>> {
@@ -1937,7 +2088,7 @@ export async function planHeadNo(
 /** Test-only (exported from `@efs/sdk/testing`): plan taking your HEAD on a file back (a RELEASE); see planHeadNo. */
 export async function planHeadRelease(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: HeadStatementInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<HeadStatementReview>> {
@@ -1946,7 +2097,7 @@ export async function planHeadRelease(
 
 async function planHeadStatement(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: HeadStatementInput,
   kind: number,
   o: FolderPlanOpts,
@@ -1954,10 +2105,12 @@ async function planHeadStatement(
   const me = lower(writer.principal) as PrincipalId;
   const file = lower(input.file.subject) as SubjectId;
   const position = positionKey(PURPOSES.head, file, ZERO_WORD);
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
     const d = ctx.efs.deployment;
-    ctx.requests += 2;
-    const [sub, hd] = await callsAt(s, basis.blockHash, [
+    ctx.requests += guard.on ? 3 : 2;
+    const [sub, hd, snap] = await callsAt(s, basis.blockHash, [
       subjectInfoCall(ctx.efs, file),
       {
         to: d.readers.ledgerViews,
@@ -1967,6 +2120,7 @@ async function planHeadStatement(
           args: [d.ledger, [me], position],
         }),
       },
+      ...(guard.on ? [headSnapshotsCall(d, [me], [position])] : []),
     ]);
     const creator = decodeCreator(sub);
     if (!creator.ok) return creator;
@@ -1993,6 +2147,21 @@ async function planHeadStatement(
     if (!mine || all.length !== 1) return bad("headsAt (your head)");
     if (!headConsistent(mine.state, mine.revision))
       return bad("headsAt (a state its revision contradicts)");
+    // The guard's snapshot of your HEAD here, computed from the head just read and checked against the endpoint's own.
+    let guarded: Map<Hex, GuardedHead> | null = null;
+    if (guard.on) {
+      const r = decodeHeadSnapshots(snap, 1);
+      if (!r.ok) return r;
+      const v = consistentSnapshot(
+        mine,
+        PURPOSES.head,
+        ZERO_WORD,
+        r.value.snapshots[0] as Hex,
+        r.value.targets[0] as Hex,
+      );
+      if (!v.ok) return v;
+      guarded = new Map([[lower(position), { ...v.value, head: mine }]]);
+    }
     const before = headState(mine.state);
     if (before === "UNRECOGNIZED") return bad(`headsAt (head state ${mine.state})`);
     const refuse = (why: string): Step<() => Promise<FolderPlanResult<HeadStatementReview>>> => ({
@@ -2054,6 +2223,7 @@ async function planHeadStatement(
           me,
           basis,
           0,
+          guarded,
         ),
     };
   });
@@ -2089,7 +2259,7 @@ export interface RestoreReview extends FolderReviewBase {
  */
 export async function planRestoreEntries(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: RestoreEntriesInput,
   o: FolderPlanOpts = {},
 ): Promise<FolderPlanResult<RestoreReview>> {
@@ -2100,8 +2270,10 @@ export async function planRestoreEntries(
   if (new Set(places.map((p) => p.position)).size !== places.length)
     throw misuse("the same entry is listed twice");
   const vias = input.entries.map((e, i) => viaOf(e.via, i));
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.folderPlan", status: "UNKNOWN", reason: guard.reason };
   return atOneBasis(efs, o, async (ctx, s, basis) => {
-    const r = await readSeen(ctx, s, basis, me, principals, places, []);
+    const r = await readSeen(ctx, s, basis, me, principals, places, [], [], { snapshots: true });
     if (!r.ok) return r;
     const seen = r.value;
     const refused: EntryRefusal[] = [];
@@ -2119,23 +2291,46 @@ export async function planRestoreEntries(
         refused.push({ index: i, code: "ENTRY_ABSENT", entry: entryOf(p) });
         continue;
       }
-      // The target to restore: the binding's last bound version, from its history (the same walk listRemoved shows).
-      const last = await lastBoundTarget(ctx, s, basis, bindingKey(me, p.position), st.mine);
-      if (!last.ok) return last;
-      if (last.value.last === "NEVER_BOUND") {
+      // The target to restore: the head's stored last bound target (LedgerViews.headSnapshots `targets`, read with the
+      // heads: no depth limit), its kind the head's own targetKind. Guarded, it is the target the guard's snapshot is
+      // over, so a restore binds exactly what it hashed and the kernel compares it: a lie makes the publication revert.
+      // Unguarded, nothing on chain binds it, so the binding's history must name the same target too (the walk
+      // listRemoved shows, with its shape checks); a disagreement is the endpoint contradicting itself (fail over).
+      if (neverBoundHead(st.mine)) {
         refused.push({ index: i, code: "NEVER_BOUND", entry: entryOf(p) });
         continue;
       }
-      if (last.value.last === "UNKNOWN") {
-        refused.push({
-          index: i,
-          code: "HISTORY_UNKNOWN",
-          entry: entryOf(p),
-          reason: last.value.reason,
-        });
-        continue;
+      const stored = seen.snapshots.get(lower(p.position));
+      const target = stored ? targetRef(Number(st.mine.targetKind), stored.target) : null;
+      const contradicts = (what: string) =>
+        ({
+          ok: false,
+          retryElsewhere: true,
+          reason: reason("RPC_ERROR", "transient", what),
+        }) as const;
+      if (!target)
+        return contradicts("a removed entry's stored target is not one a FOLDER bind can carry");
+      if (!guard.on) {
+        const last = await lastBoundTarget(ctx, s, basis, bindingKey(me, p.position), st.mine);
+        if (!last.ok) return last;
+        if (last.value.last === "NEVER_BOUND")
+          return contradicts(
+            "a removed entry's history has no bound version, but its head has a target",
+          );
+        if (last.value.last === "UNKNOWN") {
+          refused.push({
+            index: i,
+            code: "HISTORY_UNKNOWN",
+            entry: entryOf(p),
+            reason: last.value.reason,
+          });
+          continue;
+        }
+        const walked = last.value.target;
+        const word = (t: EntryTarget) => lower(t.kind === "folder" ? t.directory : t.subject);
+        if (walked.kind !== target.kind || word(walked) !== word(target))
+          return contradicts("a removed entry's history and its stored target disagree");
       }
-      const target = last.value.target;
       if (target.kind === "folder") {
         const via = vias[i];
         if (!via)
@@ -2214,6 +2409,7 @@ export async function planRestoreEntries(
           me,
           basis,
           0,
+          guard.on ? seen.snapshots : null,
         ),
     };
   });

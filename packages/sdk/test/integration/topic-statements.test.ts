@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { decodeFunctionResult, encodeFunctionResult, keccak256 } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
+import type { PartGuardHead } from "../../src/actions/guard.ts";
 import { ACTION, type ActionData, createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { type BindRow, type PlannedAction, publicationGas } from "../../src/actions/split.ts";
 import { createEfs } from "../../src/client.ts";
@@ -338,17 +339,26 @@ describe("same as and broader (fixture)", () => {
     ) => {
       const p = (await planned) as {
         status: string;
-        parts?: { actions: ActionData[]; bodies: Hex[] }[];
+        parts?: { actions: ActionData[]; bodies: Hex[]; guard?: PartGuardHead[] }[];
         review?: unknown;
       };
       if (p.status !== "PLANNED" || !p.parts) throw new Error(p.status);
       expect(p.parts.length).toBe(1);
-      const part = p.parts[0] as { actions: ActionData[]; bodies: Hex[] };
+      const part = p.parts[0] as { actions: ActionData[]; bodies: Hex[]; guard?: PartGuardHead[] };
       expect(part.actions.length).toBe(rows.length);
+      // the statement's head is guarded (the fixture's Realm has the guard): priced with it, as the planner priced it
+      const guardOf = (i: number) => (part.guard ?? []).filter((h) => h.action === i);
+      expect(part.guard?.length).toBe(1);
       const acts: PlannedAction[] = part.actions.map((a, i) =>
         rows[i] === "text/1"
           ? { action: a, body: part.bodies[i] as Hex, shape: "text/1" }
-          : { action: a, body: "0x", bindRow: rows[i] as BindRow, firstStatement: first },
+          : {
+              action: a,
+              body: "0x",
+              bindRow: rows[i] as BindRow,
+              firstStatement: first,
+              ...(guardOf(i).length ? { guard: guardOf(i) } : {}),
+            },
       );
       expect((p.review as { gas: { perPart: number[] } }).gas.perPart[0]).toBe(
         publicationGas(acts, m, true),
