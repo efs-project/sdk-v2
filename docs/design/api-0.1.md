@@ -856,7 +856,7 @@ export interface ReconcileResult {
 ```
 
 **The signed values a plan takes from the chain** (`planPublication`). The execution set signed is the deployment
-document's (`activation.executionSet`), and only while the chain's `executionSet()` at the basis is the same one
+document's (`activation.executionSet`), and only while the chain's (the ledger's own execution set, read at the basis) is the same one
 (otherwise the plan fails over, NOT_VERIFIED_DEPLOYMENT). An acceptance profile of 0 is never signed: a zero would
 waive the ledger's check. The deadline is the basis block's timestamp + `deadlineSeconds` (default 900), and a basis
 block more than `CLOCK_SKEW_SECONDS` (900) ahead of this device's clock fails over, so an endpoint can never stretch a
