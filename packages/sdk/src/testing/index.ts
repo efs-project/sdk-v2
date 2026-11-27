@@ -31,12 +31,16 @@
  * folder or a home (a listing shows kind "other": the junk row an owner blocks). `planHeadNo(efs, writer, { file })` and
  * `planHeadRelease(efs, writer, { file })` plan a "not this" (UNBIND) and a take-back (RELEASE) on a file's HEAD, which
  * no SDK planner makes: a lone no there is an author in the file's versions list with no version (fileVersions).
+ * `planFolderEntry(efs, writer, { folder, name, target })` places your entry pointing at an existing folder: a folder
+ * reachable two ways, or a cycle, which it deliberately allows (the chain does).
  * All are for tests on a real chain; an app does not need them.
  */
 import type { Eip1193Like, FetchLike } from "../chain/rpc.js";
 import { utf8Encode } from "../core/platform.js";
 
 export type {
+  FolderEntryInput,
+  FolderEntryReview,
   HeadStatementInput,
   HeadStatementReview,
   LoneHideInput,
@@ -44,7 +48,13 @@ export type {
   OtherEntryInput,
   OtherEntryReview,
 } from "../files/entries.js";
-export { planHeadNo, planHeadRelease, planLoneHide, planOtherEntry } from "../files/entries.js";
+export {
+  planFolderEntry,
+  planHeadNo,
+  planHeadRelease,
+  planLoneHide,
+  planOtherEntry,
+} from "../files/entries.js";
 
 export interface RpcCall {
   /** The request body as sent: one JSON-RPC object or a batch array. */

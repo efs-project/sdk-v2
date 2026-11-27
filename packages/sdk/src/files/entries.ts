@@ -1723,6 +1723,114 @@ export async function planOtherEntry(
   });
 }
 
+// ---- an entry for an existing folder (test-only: exported from @efs/sdk/testing)
+
+export interface FolderEntryInput {
+  /** Where the entry goes: a folder or a home. */
+  folder: ParentRef;
+  name: string;
+  /** The existing folder the entry points at (its directory record). */
+  target: FolderRef;
+  lens?: Lens;
+}
+export interface FolderEntryReview extends FolderReviewBase, LensView {
+  kind: "efs.folderEntryReview";
+  entry: EntryRef;
+  target: FolderRef;
+}
+
+/**
+ * Test tooling: the writer's own entry `name` in `folder`, pointing at an existing folder `target` (the name record
+ * when missing, then the FOLDER bind). The SDK's planners only ever point a new entry at a folder they create or one
+ * of your entries they move; this places a link to any folder, for tests that need one (a folder reachable two ways,
+ * or a cycle). It deliberately does NOT refuse a cycle: making one is what it is for, and the chain allows it (it
+ * refuses only a folder holding itself). Refusals: FOLDER_ABSENT (the parent) and NAME_TAKEN_MINE; MISUSE when
+ * `target` is not a folder at the basis (its hash-checked record).
+ */
+export async function planFolderEntry(
+  efs: Efs,
+  writer: { readonly principal: PrincipalId },
+  input: FolderEntryInput,
+  o: FolderPlanOpts = {},
+): Promise<FolderPlanResult<FolderEntryReview>> {
+  const me = lower(writer.principal) as PrincipalId;
+  const principals = lensPrincipals(efs, input.lens);
+  const types = typesOf(efs);
+  const p = placeOf(input.folder, input.name, 0);
+  const target = lower(input.target?.directory ?? "") as RecordId;
+  if (!/^0x[0-9a-f]{64}$/.test(target))
+    throw misuse("target is a folder: { kind: 'folder', directory }");
+  const nameId = nameRecord(types, p);
+  return atOneBasis(efs, o, async (ctx, s, basis) => {
+    const r = await readSeen(ctx, s, basis, me, principals, [p], [...parentIds([p]), nameId]);
+    if (!r.ok) return r;
+    const seen = r.value;
+    // The target's own record, hash-checked: it must be a files-directory/1 record at the basis.
+    ctx.requests += 1;
+    const [out] = await callsAt(s, basis.blockHash, [recordCall(efs.deployment, target)]);
+    const t = decodeFolderRecord(efs, target, out);
+    if (!t.ok) return t;
+    if (t.value.status !== "PRESENT" || !t.value.directory)
+      throw misuse("target is not a folder at the basis (no files-directory/1 record there)", {
+        target,
+      });
+    const st = seen.places.get(p.position) as PlaceState;
+    const refused: EntryRefusal[] = [];
+    if (!parentExists(p, seen.folders))
+      refused.push({ index: 0, code: "FOLDER_ABSENT", entry: entryOf(p) });
+    if (headState(st.mine.state) === "BOUND")
+      refused.push({ index: 0, code: "NAME_TAKEN_MINE", entry: entryOf(p) });
+    if (refused.length) return { ok: true, value: async () => refusedResult(refused, basis) };
+    const needName = !(seen.records.get(nameId) as RecordInfo).present;
+    const row = folderBindRow(st.mine, true);
+    const actions: PlannedAction[] = [
+      ...(needName ? [publish(types.name, p.nameBytes, NAME_PROFILE, 1)] : []),
+      plain(
+        {
+          kind: ACTION.BIND,
+          purpose: PURPOSES.folder,
+          subject: p.folder,
+          role: p.role,
+          target,
+          expectedRevision: BigInt(st.mine.revision),
+        },
+        { group: 1, firstStatement: isUnset(st.mine), ...(row ? { bindRow: row } : {}) },
+      ),
+    ];
+    const args = effectArgs(p, { target });
+    const units: Unit[] = [
+      {
+        effect: (stage, part, parts) => ({
+          code: "testing.folderEntry",
+          args: { ...args, part: String(part), parts: String(parts), stage },
+          text: `Place a link to a folder at ${p.name}`,
+        }),
+        actions,
+        finishes: true,
+      },
+    ];
+    return {
+      ok: true,
+      value: () =>
+        toParts(
+          efs,
+          o,
+          units,
+          (base) => ({
+            kind: "efs.folderEntryReview",
+            ...base,
+            entry: entryOf(p),
+            target: { kind: "folder", directory: target },
+            ...viewAfterBind(principals, st, me),
+          }),
+          me,
+          basis,
+          needName ? 1 : 0,
+        ),
+    };
+  });
+}
+
 // ---- a lone hide (test-only: exported from @efs/sdk/testing)
 
 export interface LoneHideInput {

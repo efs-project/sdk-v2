@@ -5,16 +5,14 @@
 // points back at A. Walks follow the names they are given (one read each), never the graph on their own.
 // Accounts 49 and 50 of anvil's public development mnemonic (used by no other test file).
 import { readFileSync } from "node:fs";
-import { keccak256 } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
-import { ACTION, createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { createWriter, memoryJournal } from "../../src/actions/index.ts";
 import { createEfs } from "../../src/client.ts";
-import { type Address, bytesToHex, type Hex, ZERO_WORD } from "../../src/core/hex.ts";
-import { utf8Encode } from "../../src/core/platform.ts";
+import type { Address } from "../../src/core/hex.ts";
 import { planCreateFolder, planMoveEntries } from "../../src/files/entries.ts";
 import { type FolderRef, listFolder, resolvePath } from "../../src/files/folders.ts";
-import { PURPOSES } from "../../src/generated/constants.ts";
+import { planFolderEntry } from "../../src/testing/index.ts";
 
 const fixture = inject("fixture") as { rpcUrl: string; deployment: string };
 const deployment = JSON.parse(readFileSync(fixture.deployment, "utf8"));
@@ -64,36 +62,13 @@ beforeAll(async () => {
     planCreateFolder(efs, w, { folder: { kind: "folder", directory: A.directory }, name: "b" }),
   );
   // O's own entry "a" in W's folder B, pointing back at A (the chain refuses only a folder holding itself).
-  const name = utf8Encode("a");
-  const typeId = (efs.deployment.typeIds as Record<string, Hex>)["files-name/3"] as Hex;
-  const blank = { purpose: ZERO_WORD, subject: ZERO_WORD, role: ZERO_WORD, target: ZERO_WORD };
-  const planned = await o.planActions({
-    actions: [
-      {
-        ...blank,
-        kind: ACTION.PUBLISH,
-        typeId,
-        bodyHashOrRecordId: keccak256(name),
-        expectedRevision: 0n,
-        saltOrStrength: ZERO_WORD,
-      },
-      {
-        kind: ACTION.BIND,
-        typeId: ZERO_WORD,
-        bodyHashOrRecordId: ZERO_WORD,
-        purpose: PURPOSES.folder,
-        subject: B.directory,
-        role: keccak256(name),
-        target: A.directory,
-        expectedRevision: 0n,
-        saltOrStrength: ZERO_WORD,
-      },
-    ],
-    bodies: [bytesToHex(name), "0x"],
-    effects: [{ code: "test.cycle", args: {} }],
+  const back = await planFolderEntry(efs, o, { folder: B, name: "a", target: A });
+  if (back.status !== "PLANNED") throw new Error(back.status);
+  expect(back.review).toMatchObject({
+    kind: "efs.folderEntryReview",
+    target: { directory: A.directory },
   });
-  if (planned.status !== "PLANNED") throw new Error(planned.status);
-  expect((await o.run(planned.plan)).reconcile?.outcome).toBe("COMMITTED");
+  expect((await o.runSequence(back.parts)).state).toBe("COMPLETE");
 }, 240_000);
 
 const lens = () => efs.lens.from([wAccount.address, oAccount.address]);
@@ -139,5 +114,21 @@ describe("a cycle of folders is walked only as far as the names given", () => {
         }),
       ).rejects.toMatchObject({ code: "MISUSE", details: { code: "INTO_ITSELF" } });
     }
+  });
+});
+
+describe("planFolderEntry (test tooling)", () => {
+  it("refuses your own name taken, and a target that is not a folder", async () => {
+    expect(await planFolderEntry(efs, o, { folder: B, name: "a", target: A })).toMatchObject({
+      status: "REFUSED",
+      refused: [{ code: "NAME_TAKEN_MINE" }],
+    });
+    await expect(
+      planFolderEntry(efs, o, {
+        folder: B,
+        name: "c",
+        target: { kind: "folder", directory: `0x${"ab".repeat(32)}` as never },
+      }),
+    ).rejects.toMatchObject({ code: "MISUSE" });
   });
 });
