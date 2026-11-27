@@ -6,7 +6,7 @@ import { decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak25
 import { callsAt } from "../chain/basis.js";
 import { onEndpoint } from "../chain/pool.js";
 import type { Efs } from "../client.js";
-import { type CallOpts, reason } from "../core/errors.js";
+import { type CallOpts, EfsFault, reason } from "../core/errors.js";
 import { type Address, type Hex, lower } from "../core/hex.js";
 import { ingressAbi, ledgerAbi } from "../generated/abis.js";
 import { keyPrincipal, nativeIntentDigest } from "../protocol/keys.js";
@@ -53,6 +53,58 @@ export interface PlanInput {
    */
   gas?: number;
   total?: number;
+}
+
+/**
+ * @internal Re-derive a plan's calldata and digest from its own fields and this deployment, before any wallet is
+ * asked: a plan read back from the journal (resume, a resend after a funds refusal) or handed in by an app is signed
+ * only if its calldata is exactly the publication it names, for this deployment and account, with both expectations
+ * bound. INVARIANT otherwise (altered, corrupted or another deployment's), and nothing is sent.
+ */
+export function checkPlan(efs: Efs, plan: Plan): void {
+  const d = efs.deployment;
+  const wrong: string[] = [];
+  if (plan.chainId !== d.chainId) wrong.push("chain id");
+  if (lower(plan.ledger) !== lower(d.ledger)) wrong.push("ledger");
+  if (lower(plan.realmId) !== lower(d.realmId)) wrong.push("realm");
+  if (lower(plan.principal) !== lower(keyPrincipal(lower(plan.account)))) wrong.push("principal");
+  if (ZERO.test(plan.executionSet) || ZERO.test(plan.acceptanceProfile))
+    wrong.push("an unbound expectation (0)");
+  if (plan.actions.length !== plan.bodies.length) wrong.push("bodies");
+  try {
+    const ctx = {
+      nonce: plan.nonce,
+      deadline: plan.deadline,
+      expectedExecutionSet: plan.executionSet,
+      expectedAcceptanceProfile: plan.acceptanceProfile,
+    };
+    const calldata = encodeFunctionData({
+      abi: ledgerAbi,
+      functionName: "execute",
+      args: [plan.actions as never, plan.bodies, ctx, EMPTY_GUARD],
+    });
+    if (calldata !== lower(plan.calldata)) wrong.push("calldata");
+    const digest = nativeIntentDigest({
+      realmId: plan.realmId,
+      principal: plan.principal,
+      nonce: plan.nonce,
+      deadline: plan.deadline,
+      expectedExecutionSet: plan.executionSet,
+      expectedAcceptanceProfile: plan.acceptanceProfile,
+      guardHash: keccak256(EMPTY_GUARD),
+      actionsHash: actionsHash(plan.actions),
+    });
+    if (lower(digest) !== lower(plan.digest) || lower(plan.id) !== lower(plan.digest))
+      wrong.push("digest");
+  } catch {
+    wrong.push("fields that don't encode");
+  }
+  if (wrong.length)
+    throw new EfsFault(
+      "INVARIANT",
+      `this plan is not the publication it names (${wrong.join(", ")}): it was altered, corrupted or made for another deployment; nothing was sent`,
+      { details: { planId: plan.id, wrong } },
+    );
 }
 
 /**

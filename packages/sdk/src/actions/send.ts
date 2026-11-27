@@ -12,7 +12,7 @@ import { errorAbi } from "../generated/abis.js";
 import { ERROR_CATALOG } from "../generated/errors.js";
 import { planGasLimit } from "./gaslimit.js";
 import { type AttemptRecord, type AttemptStage, type Journal, lockKey } from "./journal.js";
-import { actionsHash } from "./plan.js";
+import { actionsHash, checkPlan } from "./plan.js";
 import { scheduleCheck } from "./schedule.js";
 import { txGasCapOf } from "./split.js";
 import type { Plan, SendResult } from "./types.js";
@@ -401,6 +401,8 @@ export async function sendPlan(
   plan: Plan,
   o: SendOpts = {},
 ): Promise<SendResult> {
+  // The calldata a wallet is asked to sign is re-derived from the plan's own fields first (a stored plan included).
+  checkPlan(efs, plan);
   const lock = lockKey(plan);
   // Set just before the first call that might broadcast. A journal fault before it means nothing was sent; after it
   // the outcome is AMBIGUOUS (the durable SUBMISSION_POSSIBLE record makes a re-send safe and reconcile decides).
