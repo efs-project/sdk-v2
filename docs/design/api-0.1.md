@@ -69,6 +69,9 @@ export type RpcEndpoint =
   | string                                         // http(s) JSON-RPC URL; labelled by its origin
   | { url: string; label?: string; maxBatch?: number }   // calls per JSON-RPC batch (default 40); larger reads split
   | { provider: Eip1193Like; label?: string };     // a wallet, or the user's own node via an extension
+// A read larger than maxBatch is sent as consecutive batches, each call pinned to the read's block hash, within the
+// read's one timeout (a batch gets what the earlier ones left). After a batch the endpoint didn't answer (transport,
+// or a 429) the rest aren't sent: the read fails over.
 // Every endpoint is checked against deployment.chainId before it serves a read. A mismatched endpoint becomes a
 // FAILED attempt (reason CHAIN_MISMATCH), never data. An Efs instance is immutable: build a new one when the RPC
 // list changes. The byte and result stores can be shared safely across instances, because every key includes the

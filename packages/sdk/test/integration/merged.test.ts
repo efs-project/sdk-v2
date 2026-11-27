@@ -20,6 +20,7 @@ import {
 } from "../../src/generated/abis.ts";
 import {
   homeId,
+  type MergedCursor,
   type MergedPage,
   pathId,
   planDeny,
@@ -426,6 +427,41 @@ describe("topicItemsMerged (fixture)", () => {
         lens: lens(E),
       }),
     ).toMatchObject({ status: "UNKNOWN", reason: { code: "RPC_ERROR", retry: "transient" } });
+
+    // A cursor carries a missing list on (never retried in the listing). One from an earlier pack could name it
+    // INVALID (the endpoint-fault refusals of then); resumed, it is UNKNOWN, as every missing list now is.
+    const first = present(
+      await topicItemsMerged(refuse(pathId(T, ["ma2"])), ["ma1"], {
+        view: "mine",
+        lens: lens(E),
+        rows: 1,
+      }),
+    );
+    const cursor = first.next as MergedCursor;
+    expect(cursor.lists.map((l) => l.missing?.status ?? null)).toEqual([null, "UNKNOWN"]);
+    const earlier = {
+      ...cursor,
+      lists: cursor.lists.map((l) =>
+        l.missing
+          ? {
+              ...l,
+              missing: {
+                status: "INVALID",
+                reason: { code: "LIMIT_EXCEEDED", retry: "never" },
+              },
+            }
+          : l,
+      ),
+    } as unknown as MergedCursor;
+    const resumed = present(
+      await topicItemsMerged(efs, ["ma1"], { view: "mine", lens: lens(E), cursor: earlier }),
+    );
+    expect(resumed.missing).toMatchObject([
+      { place: pathId(T, ["ma2"]), status: "UNKNOWN", reason: { retry: "transient" } },
+    ]);
+    expect(resumed.next?.lists.map((l) => l.missing?.status ?? null) ?? []).not.toContain(
+      "INVALID",
+    );
   });
 
   it("a list whose entries do not strictly fall is the endpoint's fault: UNKNOWN, never a row", async () => {

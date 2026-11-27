@@ -16,7 +16,7 @@ import { decodeFunctionResult, encodeFunctionData, hexToBytes, keccak256 } from 
 import { gasPlanFor } from "../actions/split.js";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
-import type { RpcOutcome } from "../chain/rpc.js";
+import { type RpcOutcome, throttled } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import {
@@ -541,9 +541,12 @@ export async function topicItems(
           out &&
           !out.ok &&
           out.kind === "rpc" &&
+          !throttled(out) &&
           backoffs < MAX_BACKOFFS &&
           (limit > 1 || maxRows > 1)
         ) {
+          // The node refused the call (out of gas, most likely): the same call with half the bounds. A throttle
+          // (429, -32005) is the endpoint's "not now": it fails over below.
           backoffs++;
           entryCap = Math.max(1, Math.floor(limit / 2));
           rowCap = Math.max(1, Math.floor(maxRows / 2));

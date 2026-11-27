@@ -31,17 +31,21 @@ import {
   lensReaderAbi,
   topicEveryoneReaderAbi,
   topicLookupReaderAbi,
+  topicMineReaderAbi,
 } from "../../src/generated/abis.ts";
 import { PURPOSES } from "../../src/generated/constants.ts";
 import { positionKey } from "../../src/protocol/keys.ts";
 import {
   fileNames,
+  homeId,
   labelOf,
+  lensTagsOf,
   placeCount,
   planLabel,
   planSame,
   planTag,
   topicItems,
+  topicItemsMerged,
   topicSynonyms,
 } from "../../src/tags/index.ts";
 import { topicPath } from "../../src/tags/read.ts";
@@ -461,6 +465,84 @@ describe("a position's cell is bound to the position asked about", () => {
     });
     const p2 = await listRemoved(efs, { folder: root, author }, { limit: 1, cursor: p1.next });
     expect(p2.status === "PRESENT" && p2.rows.length).toBe(1);
+  });
+});
+
+describe("a topic reader an endpoint throttles fails over, never asked smaller there", () => {
+  // A 429, or -32005 (a rate or quota limit on eth_call), is the endpoint saying "not now", not "too big": the read
+  // goes to the next endpoint. The halve-and-retry backoff is for the node's own refusal of the call's size.
+  const B = "http://endpoint-b.invalid/";
+  /** Endpoint A answers every call to `name` with `code`; endpoint B is honest (both the fixture chain). */
+  const throttledThenHonest = (abi: readonly unknown[], name: string, code: number) => {
+    const asked: Hex[] = [];
+    const fetch: FetchLike = (url, init) =>
+      url === B
+        ? tampered({})(fixture.rpcUrl, init)
+        : tampered({
+            [sel(abi, name)]: (result) => {
+              asked.push(result);
+              return { error: { code, message: "rate limited" } };
+            },
+          })(fixture.rpcUrl, init);
+    return { e: createEfs({ rpcs: [fixture.rpcUrl, B], deployment, fetch }), asked };
+  };
+  const servedByB = (r: {
+    evidence: { attempts: readonly { endpoint: string; outcome: string }[] };
+  }) =>
+    expect(r.evidence.attempts.at(-1)).toMatchObject({
+      endpoint: "http://endpoint-b.invalid",
+      outcome: "OK",
+    });
+
+  for (const code of [429, -32005]) {
+    it(`topicItems: a ${code} on everyone() fails over after one call`, async () => {
+      const { e, asked } = throttledThenHonest(topicEveryoneReaderAbi, "everyone", code);
+      const r = await topicItems(e, ["rr-tags"], { lens: mine() });
+      expect(r.status).toBe("PRESENT");
+      servedByB(r as never);
+      expect(asked).toHaveLength(1);
+    });
+
+    it(`lensTagsOf: a ${code} on about() fails over after one call`, async () => {
+      const { e, asked } = throttledThenHonest(topicLookupReaderAbi, "about", code);
+      const r = await lensTagsOf(e, homeId(target), { lens: mine() });
+      expect(r.status).toBe("PRESENT");
+      servedByB(r as never);
+      expect(asked).toHaveLength(1);
+    });
+
+    it(`topicItemsMerged: a ${code} on mine() fails over after one call`, async () => {
+      const { e, asked } = throttledThenHonest(topicMineReaderAbi, "mine", code);
+      const r = await topicItemsMerged(e, ["rr-a"], { view: "mine", lens: mine() });
+      expect(r.status).toBe("PRESENT");
+      servedByB(r as never);
+      // The first round asks the topic's list and its synonym's together: one call each, never a smaller one.
+      expect(asked).toHaveLength(2);
+    });
+  }
+
+  // The counterpart: the node refusing a call's size (out of gas) is still retried smaller on the same endpoint. One
+  // endpoint and one refusal: a fail-over would end UNKNOWN, so PRESENT means the reader asked again, smaller.
+  const outOfGasOnce = (abi: readonly unknown[], name: string) => {
+    let refused = 0;
+    const fetch = tampered({
+      [sel(abi, name)]: (result) =>
+        refused++ === 0 ? { error: { code: -32000, message: "out of gas" } } : result,
+    });
+    return { e: createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch }), refused: () => refused };
+  };
+  it("an out-of-gas refusal is still retried smaller there (topicItems, lensTagsOf, topicItemsMerged)", async () => {
+    const t = outOfGasOnce(topicEveryoneReaderAbi, "everyone");
+    expect((await topicItems(t.e, ["rr-tags"], { lens: mine() })).status).toBe("PRESENT");
+    expect(t.refused()).toBeGreaterThan(1);
+    const l = outOfGasOnce(topicLookupReaderAbi, "about");
+    expect((await lensTagsOf(l.e, homeId(target), { lens: mine() })).status).toBe("PRESENT");
+    expect(l.refused()).toBeGreaterThan(1);
+    const m = outOfGasOnce(topicMineReaderAbi, "mine");
+    expect((await topicItemsMerged(m.e, ["rr-a"], { view: "mine", lens: mine() })).status).toBe(
+      "PRESENT",
+    );
+    expect(m.refused()).toBeGreaterThan(1);
   });
 });
 

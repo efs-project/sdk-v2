@@ -21,6 +21,7 @@
 import { decodeFunctionResult, keccak256 } from "viem";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
+import { throttled } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import { type Hex, lower, type PrincipalId, uniquePrincipals } from "../core/hex.js";
@@ -74,10 +75,33 @@ export interface MergedList {
   how: MergedHow;
   hops: number;
 }
-/** A list the chain refused: named, so the client can say "N synonyms couldn't be read". */
+/**
+ * A list the chain refused: named, so the client can say "N synonyms couldn't be read". Always UNKNOWN: a sound reader
+ * refuses a list only when its index can't vouch for it yet; any other refusal is the endpoint's fault and the whole
+ * read fails over.
+ */
 export interface MissingList extends MergedList {
-  status: "UNKNOWN" | "INVALID";
+  status: "UNKNOWN";
   reason: Reason;
+}
+/**
+ * A missing list from a cursor. A cursor from an earlier pack may name it INVALID (the endpoint-fault refusals of then,
+ * now a fail-over): it stays missing in the listing, as UNKNOWN.
+ */
+function resumedMissing(m: { status: string; reason: Reason }): {
+  status: "UNKNOWN";
+  reason: Reason;
+} {
+  return m.status === "UNKNOWN"
+    ? { status: "UNKNOWN", reason: m.reason }
+    : {
+        status: "UNKNOWN",
+        reason: reason(
+          "RPC_ERROR",
+          "transient",
+          "an endpoint refused this list earlier in the listing",
+        ),
+      };
 }
 export interface MergedRow extends TopicRow {
   /** The list the row came from (the newest filing that shows, when a thing is in several). */
@@ -92,7 +116,7 @@ export interface MergedCursor {
   lists: readonly (MergedList & {
     /** The chain continuation to read from ("0x": the list's origin), or null when the list is finished. */
     next: Hex | null;
-    missing?: { status: "UNKNOWN" | "INVALID"; reason: Reason };
+    missing?: { status: "UNKNOWN"; reason: Reason };
   })[];
   /** The entry of the last row decided (decimal): on resume, rows at or above it are left out (already decided). */
   shownTo: string | null;
@@ -314,7 +338,7 @@ export async function topicItemsMerged(
       type State = {
         next: Hex;
         done: boolean;
-        missing: { status: "UNKNOWN" | "INVALID"; reason: Reason } | null;
+        missing: { status: "UNKNOWN"; reason: Reason } | null;
         /** Every row of this list newer than `floor` has been read (null: nothing read yet). */
         floor: bigint | null;
         buffer: Pending[];
@@ -333,7 +357,7 @@ export async function topicItemsMerged(
         return {
           next: c?.next ?? "0x",
           done: c !== undefined && c.next === null && !c.missing,
-          missing: c?.missing ?? null,
+          missing: c?.missing ? resumedMissing(c.missing) : null,
           floor: null,
           buffer: [],
           resumeFrom: null,
@@ -494,10 +518,12 @@ export async function topicItemsMerged(
             out &&
             !out.ok &&
             out.kind === "rpc" &&
+            !throttled(out) &&
             backoffs < MAX_BACKOFFS &&
             (p.limit > 1 || p.maxRows > 1)
           ) {
-            // The node refused the call (out of gas, most likely): this list is tried again with half the bounds.
+            // The node refused the call (out of gas, most likely): this list is tried again with half the bounds. A
+            // throttle (429, -32005) is the endpoint's "not now": the whole read fails over below.
             backoffs++;
             x.entryCap = Math.max(1, Math.floor(p.limit / 2));
             x.rowCap = Math.max(1, Math.floor(p.maxRows / 2));
@@ -515,7 +541,8 @@ export async function topicItemsMerged(
             // The topic's own list, or a basis gone stale anywhere, is the page's status; a synonym's is `missing`.
             if (i === 0 || refused.reason.code === "BASIS_STALE")
               return { ok: true, value: { kind: "refused", ...refused } };
-            x.missing = refused;
+            // endpointFault() above took every refusal but BASIS_STALE (returned above) and UNKNOWN.
+            x.missing = { status: "UNKNOWN", reason: refused.reason };
             x.buffer = [];
             continue;
           }
