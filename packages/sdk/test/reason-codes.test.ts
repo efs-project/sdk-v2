@@ -18,7 +18,10 @@ const files = (dir: string): string[] =>
 function members(text: string, name: string): Set<string> {
   const start = text.indexOf(`export type ${name} =`);
   if (start < 0) throw new Error(`no ${name} in the text`);
-  const body = text.slice(start, text.indexOf(";", text.indexOf("(string & Record<never, never>)", start)));
+  const body = text.slice(
+    start,
+    text.indexOf(";", text.indexOf("(string & Record<never, never>)", start)),
+  );
   const code = body.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   return new Set([...code.matchAll(/\|\s*"([A-Z_]+)"/g)].map((m) => m[1] as string));
 }
@@ -31,7 +34,8 @@ function returned(): Map<string, string> {
     const text = readFileSync(f, "utf8");
     const calls = [...text.matchAll(/\breason\(\s*"([A-Z_]+)"/g)];
     if (f.endsWith("/files/bytes.ts")) calls.push(...text.matchAll(/\bfail\(\s*"([A-Z_]+)"/g));
-    for (const m of calls) if (!out.has(m[1] as string)) out.set(m[1] as string, f.slice(root.length));
+    for (const m of calls)
+      if (!out.has(m[1] as string)) out.set(m[1] as string, f.slice(root.length));
   }
   return out;
 }
