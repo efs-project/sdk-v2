@@ -20,6 +20,10 @@ export interface ProtocolLimits {
   maxBindsPerPublication: number;
   spanChunkBytes: number;
   maxLensPrincipals: number;
+  /** The read-set guard's limits (Limits): principals and positions per guard, and n·m ≤ maxReadCount. */
+  maxReadSetPrincipals: number;
+  maxReadSetPositions: number;
+  maxReadCount: number;
 }
 
 /**
@@ -360,6 +364,9 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
       ),
       spanChunkBytes: SPAN_CHUNK_BYTES,
       maxLensPrincipals: 64,
+      maxReadSetPrincipals: num("limits.maxReadSetPrincipals", limits["maxReadSetPrincipals"]),
+      maxReadSetPositions: num("limits.maxReadSetPositions", limits["maxReadSetPositions"]),
+      maxReadCount: num("limits.maxReadCount", limits["maxReadCount"]),
     },
     kernelFloor: kernelFloorOf(indexDoc, limits, problems),
     executionSet: word("activation.executionSet", activation["executionSet"]),

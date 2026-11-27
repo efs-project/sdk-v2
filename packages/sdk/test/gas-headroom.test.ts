@@ -14,8 +14,20 @@
 //   max(intrinsic, 21000 + 10 × tokens) ≤ cap                          the floor, tokens = 4 × bytes
 // on every schedule of the vendored model. When the re-fit raises an error figure, this fails at once and names
 // the headroom that schedule needs.
-import { encodeFunctionData } from "viem";
+//
+// The worst part is the widest UNGUARDED one: a guard's calldata is counted once, inside E (PM ruling (a), 2026-11-27).
+// The guard's terms were fitted from guarded-minus-plain measurements of whole transactions, so they hold the guard's
+// calldata (contracts 19891fe item 64), and a measured guard has a real guard's structure (id, position and keccak hash
+// words), unlike the actions' short test bodies, whose calldata the cap proof and the shown estimate add again. The last
+// describe below checks that claim: a real guard's calldata gas is no more than the measured one's, within a stated
+// tolerance, at every shape the contracts fitted the guard at. Counted twice, the worst guard (2 × 128, 12,576 bytes)
+// would put prague at 0.9829 and amsterdam at 0.9901 of the cap, past the tripwires (amsterdam is 0.0019 × cap from its
+// tripwire with any guard over about 2,000 bytes counted twice). The shown estimate and the gas-limit floor still add
+// the guard's bytes on top.
+import { encodeAbiParameters, encodeFunctionData, keccak256, toHex } from "viem";
 import { describe, expect, it } from "vitest";
+import { guardBytes, guardCost } from "../src/actions/guard.ts";
+import type { Hex } from "../src/core/hex.ts";
 import { ledgerAbi } from "../src/generated/abis.ts";
 import { GAS_PLANNING, GAS_SCHEDULES } from "../src/generated/gas.ts";
 
@@ -164,4 +176,104 @@ describe("the planning headroom covers intrinsic gas, calldata and the model's e
   it("the worst calldata is every action and body at its widest (39,236 bytes at contracts 19891fe, unguarded)", () => {
     expect(worstCalldataBytes()).toBe(39_236);
   });
+});
+
+describe("a guard's calldata is inside its terms (so the cap proof counts it once)", () => {
+  // The encoding the contracts fitted the guard's terms from (test/integration/GasModel.t.sol at 19891fe: `_guardOf`
+  // over `_ids("principal", n)` × `_ids("position", m)` in test_model_guard_unset, every head UNSET): principals and
+  // positions keccak256(abi.encode("gas-model guard", seed, i)), every expected head the UNSET snapshot. A real guard
+  // (ILedger.execute's `guard`) is abi.encode(ReadSet{principals, positions, expectedHeads}) of the same widths.
+  const READ_SET = [
+    {
+      type: "tuple",
+      components: [
+        { name: "principals", type: "bytes32[]" },
+        { name: "positions", type: "bytes32[]" },
+        { name: "expectedHeads", type: "bytes32[]" },
+      ],
+    },
+  ] as const;
+  const encode = (principals: Hex[], positions: Hex[], expectedHeads: Hex[]) =>
+    encodeAbiParameters(READ_SET, [{ principals, positions, expectedHeads }]);
+  /** Calldata gas at 16 / 4 per non-zero / zero byte (EIP-2028). */
+  const calldataGas = (hex: Hex) => {
+    let g = 0;
+    for (let i = 2; i < hex.length; i += 2) g += hex.slice(i, i + 2) === "00" ? 4 : 16;
+    return g;
+  };
+  const measuredId = (seed: string, i: number) =>
+    keccak256(
+      encodeAbiParameters(
+        [{ type: "string" }, { type: "string" }, { type: "uint256" }],
+        ["gas-model guard", seed, BigInt(i)],
+      ),
+    );
+  const UNSET_SNAPSHOT = keccak256(
+    encodeAbiParameters(
+      [{ type: "uint8" }, { type: "uint64" }, { type: "uint64" }, { type: "bytes32" }],
+      [0, 0n, 0n, `0x${"00".repeat(32)}`],
+    ),
+  );
+  const FULL = `0x${"ff".repeat(32)}` as Hex;
+  /**
+   * The tolerance: a real guard may carry up to 0.1% of the guard's own cost more calldata gas than the measured one
+   * (the measured keccak words hold a few zero bytes by chance; a real guard's may hold none: at most 12 gas each).
+   */
+  const TOLERANCE = 0.001;
+  // The fitted shapes the PM named, and the exact excess of a guard whose every id, position and hash byte is
+  // non-zero (the dearest bytes any real guard can have) over the measured one.
+  const SHAPES: [number, number, number][] = [
+    [1, 1, 24],
+    [1, 64, 168],
+    [1, 128, 312],
+    [2, 128, 312],
+  ];
+
+  it("the measured terms are the 19891fe ones (when they move, re-read the contracts' measured encoding and update this)", () => {
+    expect((GAS_SCHEDULES.prague.constants as { guard?: unknown }).guard).toEqual({
+      guardFixed: 35555,
+      guardPrincipal: 988,
+      guardPosition: 1054,
+      guardHeadWritten: 2948,
+      guardHeadWrittenUnread: 4946,
+      guardHeadTwoWords: 6943,
+      guardHeadOneWord: 4682,
+      guardMemoryQuadratic: 0.0634,
+    });
+  });
+
+  for (const [n, m, excess] of SHAPES) {
+    it(`${n} × ${m}: a real guard's calldata gas is within the measured one's`, () => {
+      const shape = {
+        principals: n,
+        positions: m,
+        written: 0,
+        writtenUnread: 0,
+        twoWords: 0,
+        oneWord: n * m,
+      };
+      const measured = encode(
+        Array.from({ length: n }, (_, i) => measuredId("principal", i)),
+        Array.from({ length: m }, (_, i) => measuredId("position", i)),
+        Array(n * m).fill(UNSET_SNAPSHOT),
+      );
+      expect((measured.length - 2) / 2).toBe(guardBytes(shape));
+      // a real guard: EOA principals (the address, left-padded), keccak positions and snapshot hashes
+      const real = encode(
+        Array.from(
+          { length: n },
+          (_, i) => `0x${"00".repeat(12)}${keccak256(toHex(`account ${i}`)).slice(2, 42)}` as Hex,
+        ),
+        Array.from({ length: m }, (_, i) => keccak256(toHex(`position ${i}`))),
+        Array.from({ length: n * m }, (_, i) => keccak256(toHex(`snapshot ${i}`))),
+      );
+      const dearest = encode(Array(n).fill(FULL), Array(m).fill(FULL), Array(n * m).fill(FULL));
+      const terms = (GAS_SCHEDULES.prague.constants as { guard: Parameters<typeof guardCost>[0] })
+        .guard;
+      const room = TOLERANCE * guardCost(terms, shape);
+      expect(calldataGas(real)).toBeLessThanOrEqual(calldataGas(measured));
+      expect(calldataGas(dearest) - calldataGas(measured)).toBe(excess);
+      expect(excess).toBeLessThanOrEqual(room);
+    });
+  }
 });

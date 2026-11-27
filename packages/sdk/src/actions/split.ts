@@ -17,11 +17,27 @@
 // count read at the pin goes stale as soon as an earlier part of the same save, or another tab, lands at that place.
 // The headroom covers the 21,000 intrinsic gas, the calldata and the model's error. eth_estimateGas on the exact call
 // stays the authority before anything is sent, and the gas limit comes from the estimate, never from V.
-import { type Reason, reason } from "../core/errors.js";
+//
+// A guarded publication (the read-set guard, contracts 19891fe: each guarded head rides on the action it belongs to,
+// PlannedAction.guard) adds the guard's terms once to E and once to K (gas/model.json profiles.<schedule>.guard;
+// gas-plan.mjs guardCost), and must stay within the Realm's read-set grid: n principals × m positions, n ≤
+// maxReadSetPrincipals, m ≤ maxReadSetPositions, n·m ≤ maxReadCount. A publication is cut by whichever binds first,
+// the grid or gas, and never so that its guarded heads stop forming one grid (every principal at every position).
+import { EfsFault, misuse, type Reason, reason } from "../core/errors.js";
 import type { Hex } from "../core/hex.js";
 import type { DeploymentInfo } from "../deployment/manifest.js";
 import { ACTION, PURPOSES } from "../generated/constants.js";
 import { GAS_LATER_ROWS, GAS_PLANNING, GAS_SCHEDULES, GAS_TAG_LISTS } from "../generated/gas.js";
+import {
+  type GuardHead,
+  type GuardLimits,
+  type GuardShape,
+  type GuardTerms,
+  guardBytes,
+  guardCost,
+  guardGrid,
+  guardOver,
+} from "./guard.js";
 import type { ActionData } from "./types.js";
 
 /** The per-level terms a first TAG statement pays at each proper ancestor of its topic (tagLists). */
@@ -132,6 +148,12 @@ export interface GasConstants extends Readonly<Record<TierConstant, number>> {
    */
   historyWordOpen: number;
   tagLevel: Readonly<Record<TagLevel, number>>;
+  /**
+   * The read-set guard's terms on this table (gas/model.json profiles.<schedule>.guard: `constants` for all gas,
+   * `split.executionGas` for amsterdam's E, `kernel` for K): added once per guarded publication. A table without them
+   * can't price a guarded publication (MISUSE).
+   */
+  guard?: GuardTerms;
 }
 
 /**
@@ -378,6 +400,12 @@ export interface PlannedAction {
    * later statement's row; an UNBIND is not (a lone negative says so). A RELEASE never is.
    */
   firstStatement?: boolean;
+  /**
+   * The read-set guard's heads this action carries: the head it writes and any head it was decided from, each with the
+   * expected snapshot computed from the head the planner read. A split keeps them with the action, so each publication
+   * guards exactly its own actions' heads.
+   */
+  guard?: readonly GuardHead[];
 }
 
 export interface BatchLimits {
@@ -386,6 +414,10 @@ export interface BatchLimits {
   maxBindsPerPublication: number;
   /** One record body (Limits.maxBody). */
   maxBodyBytes: number;
+  /** The read-set limits a guarded publication is held to. Absent: the vendored release's (GAS_PLANNING.limits). */
+  maxReadSetPrincipals?: number;
+  maxReadSetPositions?: number;
+  maxReadCount?: number;
 }
 
 export interface SplitOptions {
@@ -559,7 +591,38 @@ function actionGases(actions: readonly PlannedAction[], m: GasConstants): number
   });
 }
 
-/** The model's execution estimate of one publication (gas-plan.mjs `estimate`), without intrinsic or calldata gas. */
+/** The guarded heads a list of actions carries, in order. */
+const guardHeadsOf = (actions: readonly PlannedAction[]): GuardHead[] =>
+  actions.flatMap((a) => a.guard ?? []);
+
+/**
+ * The shape of the read set `actions` carry, or null when they carry none. Heads that form no grid are a planner's
+ * error (each planner ties a whole grid to each unit), never priced as if they did.
+ */
+function guardShapeOf(actions: readonly PlannedAction[]): GuardShape | null {
+  const heads = guardHeadsOf(actions);
+  if (heads.length === 0) return null;
+  const g = guardGrid(heads);
+  if (!g.ok)
+    throw new EfsFault(
+      "INVARIANT",
+      `the guarded heads of a publication form no read set (${g.why === "duplicate" ? "a head is named twice" : "a principal and a position with no head between them"})`,
+    );
+  return g.grid.shape;
+}
+
+/** The guard's gas under table `m` (unrounded), 0 without one. */
+function guardGasOf(shape: GuardShape | null, m: GasConstants): number {
+  if (shape === null) return 0;
+  if (!m.guard)
+    throw misuse("this gas model has no guard terms: it can't price a guarded publication");
+  return guardCost(m.guard, shape);
+}
+
+/**
+ * The model's execution estimate of one publication (gas-plan.mjs `estimate`, plus `guardCost` for a guarded one, added
+ * before rounding as the reference adds it), without intrinsic or calldata gas.
+ */
 export function modelGas(
   actions: readonly PlannedAction[],
   m: GasConstants,
@@ -567,6 +630,7 @@ export function modelGas(
 ): number {
   let gas = m.fixed + (firstWrite ? m.firstWriteSurcharge : 0);
   for (const g of actionGases(actions, m)) gas += g;
+  gas += guardGasOf(guardShapeOf(actions), m);
   return Math.round(gas);
 }
 
@@ -586,6 +650,10 @@ export function publicationGas(
     const n = bodyLen(a.body);
     gas += (each[i] as number) + (ACTION_BYTES + Math.ceil(n / 32) * 32) * NONZERO_BYTE;
   });
+  // the guard's terms, and its encoded bytes on top (the terms carry the measured guards' calldata; this is the real
+  // one's, every byte priced as non-zero, as for the actions)
+  const shape = guardShapeOf(actions);
+  if (shape !== null) gas += guardGasOf(shape, m) + guardBytes(shape) * NONZERO_BYTE;
   return Math.ceil(gas);
 }
 
@@ -774,6 +842,20 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
     m.total && o.blockGasLimit !== undefined
       ? Math.floor(Number(o.blockGasLimit) * keep)
       : undefined;
+  const gl: GuardLimits = {
+    maxReadSetPrincipals: L.maxReadSetPrincipals ?? GAS_PLANNING.limits.maxReadSetPrincipals,
+    maxReadSetPositions: L.maxReadSetPositions ?? GAS_PLANNING.limits.maxReadSetPositions,
+    maxReadCount: L.maxReadCount ?? GAS_PLANNING.limits.maxReadCount,
+  };
+  // Every unit carries whole grids (guardShapeOf throws INVARIANT otherwise), and no head is guarded twice in one
+  // save: a planner's error, never split around.
+  for (const u of units(actions)) guardShapeOf(u.list);
+  const guarded = new Set<string>();
+  for (const h of guardHeadsOf(actions)) {
+    const k = `${h.principal.toLowerCase()}:${h.position.toLowerCase()}`;
+    if (guarded.has(k)) throw new EfsFault("INVARIANT", "a head is guarded twice in one save");
+    guarded.add(k);
+  }
   for (let i = 0; i < actions.length; i++) {
     const n = bodyLen((actions[i] as PlannedAction).body);
     if (n > L.maxBodyBytes)
@@ -807,6 +889,25 @@ export function splitPublications(actions: readonly PlannedAction[], o: SplitOpt
         "after-replan",
         `${t.bodyBytes} body bytes; the limit is ${L.maxBodyBytesPerPublication}`,
       );
+    // The read set's grid, before gas (the reference's order). Units that would leave a principal and a position with
+    // no head between them don't share a publication.
+    const heads = guardHeadsOf(list);
+    if (heads.length) {
+      const g = guardGrid(heads);
+      if (!g.ok)
+        return reason(
+          "LIMIT_EXCEEDED",
+          "after-replan",
+          "these guarded heads form no one read set (every principal at every position)",
+        );
+      const over = guardOver(g.grid.shape, gl);
+      if (over !== null)
+        return reason(
+          "LIMIT_EXCEEDED",
+          "after-replan",
+          `a read set of ${g.grid.shape.principals} principals × ${g.grid.shape.positions} positions; ${over} is ${gl[over]}`,
+        );
+    }
     const r = ruleGas(list, m, first && o.firstWrite === true, o.typeNames);
     if (Math.max(r.E, r.V) > budget)
       return reason(
