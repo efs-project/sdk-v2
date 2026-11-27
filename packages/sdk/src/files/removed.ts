@@ -64,7 +64,8 @@ export interface RemovedCursor {
   from: string;
   /**
    * The last entry (a binding ordinal, in decimal) the page before returned: the next page's entries must all be
-   * higher, so an entry served again on a later page is refused, never listed twice. Absent on a first page.
+   * higher, so an entry served again on a later page is refused, never listed twice. Set on every cursor this SDK
+   * returns after a page with entries; optional only so a cursor from an earlier pack still parses.
    */
   after?: string;
 }

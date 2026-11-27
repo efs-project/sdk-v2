@@ -129,6 +129,7 @@ export interface FileVersionsCursor {
   /**
    * The lowest entry (an admission ordinal, in decimal) the pages so far returned: the next page's entries, further
    * back in the list, must all be lower, so no entry can be counted twice toward `total`. "" before any entry.
+   * Always set on a cursor this SDK returns; optional only so a cursor from an earlier pack still parses.
    */
   lowest?: string;
   lens: string;

@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MIT
 // JSON-RPC ports: plain HTTP (with batching) or any EIP-1193 provider. A port never throws for an expected failure;
 // it returns an RpcOutcome so callers can record the attempt and fail over.
-import { type AbortSignalLike, type Reason, reason, throwIfAborted } from "../core/errors.js";
+import {
+  type AbortSignalLike,
+  EfsFault,
+  type Reason,
+  reason,
+  throwIfAborted,
+} from "../core/errors.js";
 import { clearTimer, setTimer } from "../core/platform.js";
 
 export interface Eip1193Like {
@@ -34,8 +40,20 @@ export type FetchLike = (
 
 export type RpcEndpoint =
   | string
-  | { url: string; label?: string }
+  | {
+      url: string;
+      label?: string;
+      /**
+       * The most calls sent in one JSON-RPC batch to this endpoint (default 40): a larger read is split into batches
+       * sent one after another. Public providers refuse large batches (measured: Tenderly answers 429 from 50 calls).
+       * Every call of a logical read names its block hash, so a split read still reads one block.
+       */
+      maxBatch?: number;
+    }
   | { provider: Eip1193Like; label?: string };
+
+/** The default most calls in one JSON-RPC batch (under the smallest public limit measured, 50). */
+export const DEFAULT_MAX_BATCH = 40;
 
 export interface RpcRequest {
   method: string;
@@ -119,67 +137,87 @@ async function bounded<T>(
 
 export function httpPort(
   url: string,
-  o: { label?: string; fetch?: FetchLike; onRequest?: (e: RequestEvent) => void },
+  o: {
+    label?: string;
+    fetch?: FetchLike;
+    onRequest?: (e: RequestEvent) => void;
+    maxBatch?: number;
+  },
 ): RpcPort {
   const label = o.label ?? endpointOrigin(url);
+  const maxBatch = o.maxBatch ?? DEFAULT_MAX_BATCH;
+  if (!Number.isInteger(maxBatch) || maxBatch < 1)
+    throw new EfsFault("MISUSE", `maxBatch must be a positive integer (got ${maxBatch})`);
+  const sendOne = async (
+    requests: readonly RpcRequest[],
+    call: { signal?: AbortSignalLike; timeoutMs: number },
+  ): Promise<RpcOutcome[]> => {
+    const fetchImpl = o.fetch ?? (globalThis as { fetch?: FetchLike }).fetch;
+    if (!fetchImpl) return requests.map(() => transport("no fetch implementation available"));
+    o.onRequest?.({
+      endpoint: label,
+      methods: requests.map((r) => r.method),
+      batched: requests.length > 1,
+    });
+    const ids = requests.map(() => nextId++);
+    const body = requests.map((r, i) => ({
+      jsonrpc: "2.0",
+      id: ids[i],
+      method: r.method,
+      params: r.params,
+    }));
+    return bounded(
+      async (signal) => {
+        let text: string;
+        try {
+          const res = await fetchImpl(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(requests.length === 1 ? body[0] : body),
+            signal,
+          });
+          if (res.status === 429)
+            return requests.map(() => rpcError(429, "rate limited", undefined));
+          if (!res.ok) return requests.map(() => transport(`HTTP ${res.status}`));
+          text = await res.text();
+        } catch (e) {
+          if (call.signal?.aborted) throw e;
+          return requests.map(() => transport(e instanceof Error ? e.message : "fetch failed"));
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          return requests.map(() => transport("malformed JSON-RPC response"));
+        }
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        const byId = new Map<
+          number,
+          { result?: unknown; error?: { code: number; message: string; data?: unknown } }
+        >();
+        for (const item of list)
+          if (item && typeof item === "object" && "id" in item) byId.set(item.id as number, item);
+        return ids.map((id) => {
+          const item = byId.get(id);
+          if (!item) return transport("missing JSON-RPC response item");
+          if (item.error) return rpcError(item.error.code, item.error.message, item.error.data);
+          return { ok: true, result: item.result };
+        });
+      },
+      call,
+      () => requests.map(() => transport(`timeout after ${call.timeoutMs} ms`)),
+    );
+  };
   return {
     label,
+    // A read larger than the endpoint's batch is sent as consecutive batches, results in the order asked: every call
+    // names its own block hash (callsAt), so the pieces read one block.
     async send(requests, call) {
-      const fetchImpl = o.fetch ?? (globalThis as { fetch?: FetchLike }).fetch;
-      if (!fetchImpl) return requests.map(() => transport("no fetch implementation available"));
-      o.onRequest?.({
-        endpoint: label,
-        methods: requests.map((r) => r.method),
-        batched: requests.length > 1,
-      });
-      const ids = requests.map(() => nextId++);
-      const body = requests.map((r, i) => ({
-        jsonrpc: "2.0",
-        id: ids[i],
-        method: r.method,
-        params: r.params,
-      }));
-      return bounded(
-        async (signal) => {
-          let text: string;
-          try {
-            const res = await fetchImpl(url, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(requests.length === 1 ? body[0] : body),
-              signal,
-            });
-            if (res.status === 429)
-              return requests.map(() => rpcError(429, "rate limited", undefined));
-            if (!res.ok) return requests.map(() => transport(`HTTP ${res.status}`));
-            text = await res.text();
-          } catch (e) {
-            if (call.signal?.aborted) throw e;
-            return requests.map(() => transport(e instanceof Error ? e.message : "fetch failed"));
-          }
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(text);
-          } catch {
-            return requests.map(() => transport("malformed JSON-RPC response"));
-          }
-          const list = Array.isArray(parsed) ? parsed : [parsed];
-          const byId = new Map<
-            number,
-            { result?: unknown; error?: { code: number; message: string; data?: unknown } }
-          >();
-          for (const item of list)
-            if (item && typeof item === "object" && "id" in item) byId.set(item.id as number, item);
-          return ids.map((id) => {
-            const item = byId.get(id);
-            if (!item) return transport("missing JSON-RPC response item");
-            if (item.error) return rpcError(item.error.code, item.error.message, item.error.data);
-            return { ok: true, result: item.result };
-          });
-        },
-        call,
-        () => requests.map(() => transport(`timeout after ${call.timeoutMs} ms`)),
-      );
+      if (requests.length <= maxBatch) return sendOne(requests, call);
+      const out: RpcOutcome[] = [];
+      for (let i = 0; i < requests.length; i += maxBatch)
+        out.push(...(await sendOne(requests.slice(i, i + maxBatch), call)));
+      return out;
     },
   };
 }
@@ -225,7 +263,11 @@ export function toPort(
 ): RpcPort {
   if (typeof endpoint === "string") return httpPort(endpoint, o);
   if ("url" in endpoint)
-    return httpPort(endpoint.url, { ...o, ...(endpoint.label ? { label: endpoint.label } : {}) });
+    return httpPort(endpoint.url, {
+      ...o,
+      ...(endpoint.label ? { label: endpoint.label } : {}),
+      ...(endpoint.maxBatch !== undefined ? { maxBatch: endpoint.maxBatch } : {}),
+    });
   return eip1193Port(endpoint.provider, {
     ...o,
     ...(endpoint.label ? { label: endpoint.label } : {}),

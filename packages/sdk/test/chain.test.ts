@@ -109,6 +109,38 @@ describe("http port", () => {
     expect(events).toEqual([["m1", "bad"]]);
     expect(port.label).toBe("https://node.example");
   });
+  it("splits a read larger than the endpoint's batch into consecutive batches, results in the order asked", async () => {
+    const sizes: number[] = [];
+    const fetch: FetchLike = async (_url, init) => {
+      const sent = JSON.parse(init.body ?? "[]");
+      const list = Array.isArray(sent) ? sent : [sent];
+      sizes.push(list.length);
+      const out = list.map((r: { id: number; method: string }) => ({
+        jsonrpc: "2.0",
+        id: r.id,
+        result: r.method,
+      }));
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        text: async () => JSON.stringify(Array.isArray(sent) ? out : out[0]),
+        arrayBuffer: async () => new ArrayBuffer(0),
+      };
+    };
+    const requests = Array.from({ length: 95 }, (_, i) => ({ method: `m${i}`, params: [] }));
+    const byDefault = await httpPort("https://node.example", { fetch }).send(requests, {
+      timeoutMs: 1000,
+    });
+    expect(sizes).toEqual([40, 40, 15]); // DEFAULT_MAX_BATCH
+    expect(byDefault.map((r) => r.ok && r.result)).toEqual(requests.map((r) => r.method));
+    sizes.length = 0;
+    await httpPort("https://node.example", { fetch, maxBatch: 50 }).send(requests, {
+      timeoutMs: 1000,
+    });
+    expect(sizes).toEqual([50, 45]);
+    expect(() => httpPort("https://node.example", { fetch, maxBatch: 0 })).toThrow(/maxBatch/);
+  });
   it("turns a timeout into a transport failure", async () => {
     const fetch: FetchLike = () => new Promise(() => {});
     const port = httpPort("https://slow.example", { fetch });
