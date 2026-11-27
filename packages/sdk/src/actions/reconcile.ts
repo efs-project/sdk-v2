@@ -31,6 +31,13 @@ type Admitted = { present: true; publication: bigint; digest: Hex } | { present:
  * Anything else (UNSUPPORTED: not this layout, or not a ledger) is refused, never guessed at. The reader is pinned by
  * its code hash, so it is this layout: an endpoint that answers otherwise is that endpoint's fault, and the next one is
  * tried. When every endpoint answers so, the result is as before (UNSUPPORTED_PROFILE, "never").
+ *
+ * Trying the next endpoint trusts it no more than reconcile already does for every other unusable reply (a transport
+ * failure, a reply that doesn't decode, no ledger at the pinned block): endpoints are trusted for chain state. And a
+ * later endpoint that falsely says "not committed" can't make this plan land twice: a resend of the same plan carries
+ * the same nonce and digest, so the ledger answers AlreadyAdmitted (or E_NONCE, for other bytes at that nonce). A save
+ * planned anew after NOT_COMMITTED_PROVEN takes a fresh nonce and rests on fresh reads, its binds on their CAS
+ * revisions and, guarded, on its read set, like any new save.
  */
 async function admittedAt(
   s: Session,
