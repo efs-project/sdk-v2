@@ -403,7 +403,9 @@ wordPage(efs, word, { lens? })             // every place the word is used, grou
   - A hidden row is never marked seen, and is counted in `counts.hiddenAtViewed`.
 - **A list that can't be read.** A synonym list the chain refuses is named in `missing`, a required field: empty
   when every list was read, and when it isn't, the client must say "N synonyms couldn't be read". The page stays
-  PRESENT with coverage PARTIAL and `complete: false`, and the list isn't retried in that listing. The topic's own
+  PRESENT with coverage PARTIAL and `complete: false`, and the list isn't retried in that listing. A missing list is
+  always UNKNOWN: a sound reader refuses a list only when its index can't vouch for it yet, and any other refusal
+  (LIMIT_EXCEEDED, UNSUPPORTED) is the endpoint's fault, so the whole read fails over. The topic's own
   list refused, or a stale basis anywhere, is the page's own status.
 - **The cursor** holds the list set and, per list, the continuation its oldest undecided call started from. On
   resume a list re-reads that call and leaves out rows at or above `shownTo`, which were decided already. That costs
