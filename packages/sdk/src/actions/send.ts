@@ -440,7 +440,8 @@ export async function sendPlan(
       if (!fee.ok)
         return { kind: "efs.send", status: "NOT_SENT", planId: plan.id, reason: fee.reason };
       const est = await estimate(efs, plan, o);
-      if ("revert" in est)
+      if ("revert" in est) {
+        guardBuiltWrong(plan, est.revert);
         return {
           kind: "efs.send",
           status: "STALE",
@@ -448,6 +449,7 @@ export async function sendPlan(
           reasons: [`simulation reverts with ${revertName(est.revert)}`],
           revert: est.revert,
         };
+      }
       // The limit per fee profile (gasLimitOf): on prague and osaka 25% over the estimate and never above the
       // per-transaction cap (EIP-7825: a node refuses a transaction by its gas LIMIT, not the gas it would use); on
       // amsterdam the cap bounds execution only and the state gas rides in the reservoir above it (EIP-8037).
@@ -655,4 +657,19 @@ async function bestEffort(write: Promise<void>): Promise<void> {
   } catch {
     // The record stays SUBMISSION_POSSIBLE: a re-send answers AMBIGUOUS and reconcile settles it from the ledger.
   }
+}
+
+/**
+ * A guard the ledger refuses for its shape (E_READSET_SHAPE) or because the Realm has no guard (E_UNSUPPORTED_GUARD)
+ * is the SDK's own error, or a deployment document that lied about its capabilities past the execution-set check:
+ * never a stale plan, so never planned again as one. INVARIANT, before any wallet request (nothing was sent).
+ * E_READSET_STALE stays STALE: a guarded head moved since the plan (reprepare, like E_CAS).
+ */
+export function guardBuiltWrong(plan: Plan, revert: RevertInfo): void {
+  if (revert.error !== "E_READSET_SHAPE" && revert.error !== "E_UNSUPPORTED_GUARD") return;
+  throw new EfsFault(
+    "INVARIANT",
+    `the ledger refuses this plan's read-set guard (${revert.error}): the SDK built a guard it should not have; nothing was sent`,
+    { details: { planId: plan.id, revert } },
+  );
 }

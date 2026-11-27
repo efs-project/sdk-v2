@@ -754,6 +754,7 @@ export function createWriter(efs: Efs, config: WriterConfig): Promise<EfsWriter>
 export interface WriterConfig {
   authorizer: Authorizer;
   journal: Journal;                       // durable before resolve; memoryJournal() is for tests only
+  guard?: "auto" | "always" | "never";    // the read-set guard (below); default "auto"
 }
 
 /** 0.1 supports the direct profile: one wallet prompt per publication (eth_sendTransaction). The signed and
@@ -886,6 +887,47 @@ plan's calldata is deterministic (transcript replay and the same-plan resend dep
 - Unknown fields are preserved.
 - JSON codecs are exported: `encodeJournalRecord` / `decodeJournalRecord`, with bigint written as decimal strings.
 
+### The read-set guard (0.1)
+
+A guarded publication (contracts 19891fe, design §5.1) carries `guard = abi.encode(ReadSet{principals, positions,
+expectedHeads})`: each head it names with the snapshot `headSnapshotHash(state, revision, admission, stored target)`
+the plan was decided on. The ledger compares every one before any action applies and refuses the whole publication
+on a difference (E_READSET_STALE). The CAS on an action binds only a head's revision; a guard binds its state and
+target too, so an endpoint's false head report reverts instead of turning a reviewed save into another one.
+
+- **When:** `WriterConfig.guard`, default **"auto"**: guard whenever the deployment's live execution set has the
+  guard (`DeploymentInfo.nativeGuard`, capability b0 of `activation.capabilities`; the execution set commits to its
+  capabilities and a write is planned only while the chain's is the document's, so the claim is bound to the
+  chain). **"always"** guards too, and on a Realm without it the planners answer UNKNOWN with reason
+  NOT_VERIFIED_DEPLOYMENT (`retry: "never"`). **"never"** sends no guard, for an app that trusts its own node. The
+  planners read `writer.guard`; a plain `{ principal }` writer is "auto".
+- **What is guarded:** every head a part's BIND, UNBIND and RELEASE actions write (the folder, tag and statement
+  planners; `planEditFile` in the next step, with the Lens heads that decided its base). Not the review-only Lens
+  fields, not hide's ENTRY_ABSENT, not the `via` path. A guarded plan with a written head it did not read for the guard
+  is INVARIANT, never sent bare.
+- **Expected values** are computed from the head the planner read: a BOUND head's target; 0 for one never bound; the
+  position's role for a removed TAG, SAME or BROADER head; for a removed FOLDER, HEAD or PROPERTY head its stored last
+  bound target, from `LedgerViews.headSnapshots` `targets`, read in the same batch at the same basis. The same call's
+  `snapshots` are a **consistency check**: each is compared with the computed hash and a difference fails over to the
+  next endpoint before any review is shown. A snapshot is never an expected value.
+- **A restore** binds the target it hashed: the head's stored last bound target (no depth limit), its kind the head's
+  own `targetKind`. Unguarded, the binding's history (`historyAt`, as `listRemoved` shows it) must name the same
+  target too, else the plan fails over; a history past the walk's bound refuses HISTORY_UNKNOWN as before.
+- **On the plan:** `Plan.guard` holds the bytes signed (in the calldata and, as keccak256, the digest); absent means
+  "0x". `SequencePart.guard` holds the part's heads (`PartGuardHead`: `GuardHead` plus the index of its action), and
+  each plan of the part signs them. A re-split piece carries exactly its own actions' heads, re-indexed; a resend of
+  the same plan carries the same bytes. `partsHash` covers the guard (a part without one hashes as before), and
+  `checkPlan` re-derives calldata with it, so an altered guard is RECORD_DAMAGED before any wallet request.
+- **An app's own actions** (`writer.planActions`): unguarded unless the input passes `guard: PartGuardHead[]`. The SDK
+  checks only that the heads form one grid (every principal at every position, each once, each on one of the
+  publication's actions) within the Realm's read-set limits, on a Realm with the guard: INVALID, LIMIT_EXCEEDED or
+  NOT_VERIFIED_DEPLOYMENT, each `retry: "never"`. **An app passing its own guard owns its expected values**
+  (`headSnapshotHash(state, revision, admission, target)` computes one, from the values the app decided on).
+- **Refusals:** E_READSET_STALE is STALE (`revert.error` names it), like E_CAS: plan again from fresh reads, every
+  guarded head re-read. E_READSET_SHAPE and E_UNSUPPORTED_GUARD are the SDK's own error (or a document that lied past
+  the execution-set check): `send` and `sendBatch` throw INVARIANT before any wallet request, nothing sent.
+- **Gas:** see "Splitting a save into publications" below (the guard's terms, the grid, batch sizes).
+
 ### The gas limit a send sets (0.1)
 
 `send` (and a local account's signature) sets the transaction's gas limit from `eth_estimateGas` on the exact call
@@ -977,8 +1019,8 @@ the same actions without the count, and plans the same batch).
   (heads read, not written, with and without a target). The shown estimate adds the guard's real bytes (224 + 32·(n
   + m + nm)) as calldata on top, as it does for actions. The largest guarded batches (unguarded in brackets): folder
   masks 53 (54) and restores 47 (48) on both schedules; tag number changes 61 / 63 (62 / 64) and moves 20 / 24 (20 /
-  25) on prague / amsterdam. In this release no planner sets `guard` yet: the send path and the planners' heads come
-  in the next steps.
+  25) on prague / amsterdam. The folder, tag and statement planners set `guard` on each bind-kind action when their
+  writer guards (see "The read-set guard").
 - **The rule:** a publication is planned when it is inside the limits and `max(E, V) ≤ ⌊txGasCap × (100 −
   headroomPercent) / 100⌋` (14,260,633 at 2^24 and 15%):
   - **E**, the model's execution estimate (release.json `gasModel`, generated as `GAS_SCHEDULES`): `fixed + Σ
@@ -1924,6 +1966,7 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `encodeSequenceRecord` | function | The storage form of a sequence record (the same tagged JSON as encodeJournalRecord). |
 | `gasLimitOf` | function | The gas limit to sign or ask the wallet for, or a refusal. |
 | `gasPlanFor` | function | The gas model and cap to split with on this deployment's chain: the schedule `chain.feeSchedule` names, else the one whose hardforks include `chain.hardfork`. |
+| `headSnapshotHash` | function | ILedgerCommitments.headSnapshotHash (head-snapshot profile 2): keccak256(abi.encode(uint8 state, uint64 revision, uint64 admission, bytes32 target)), `target` the head's STORED target word. |
 | `isResolved` | const | True for a stage that ends an attempt (COMMITTED, NOT_COMMITTED_PROVEN, NOT_SENT); see isSettled for finality. |
 | `isSettled` | const | Nothing left to check for this attempt: NOT_SENT, NOT_COMMITTED_PROVEN, or COMMITTED at a finalized block. |
 | `kernelQuote` | function | The kernel's quote (LedgerIngress._foldAndQuote, formula 3), exactly as gas-plan.mjs `quote()` computes it: fresh slots for each new record (with its references and digest specs) and each publish's rewrites; for each BIND, UNBIND or RELEASE the work model's row of its class (classesOf), with the surcharge's row when its purpose is the work model's `surchargePurpose` (the kernel's own test: the words are equal, zero included); every WITHDRAW after the first adds the later row; and the prefix floor and final reserve they price. |
@@ -1957,12 +2000,14 @@ Every name each entry point exports, with the first sentence of its JSDoc. Funct
 | `GasModel` | interface | The model the planner splits with: what the per-transaction cap counts, for one fee schedule. |
 | `GasPlan` | type |  |
 | `GuardHead` | interface | One guarded head: whose, where, and the snapshot hash the plan expects it to have before the publication. |
+| `GuardMode` | type | Whether a writer guards its publications (WriterConfig.guard): "never" does not; "auto" (the default) does whenever the deployment's live execution set has the guard (DeploymentInfo.nativeGuard, b0); "always" does, and a Realm without it refuses the plan (NOT_VERIFIED_DEPLOYMENT, permanent). |
 | `GuardTerm` | type | How a guarded head is priced, by what the planner read of it before the publication and whether the publication writes it (gas/model.json profiles.<schedule>.guard.note): - `written`: one of the publication's actions writes it (except the next case); - `writtenUnread`: an UNBIND or RELEASE of a head that is MASKED or RELEASED with a kept target (targetKind ≠ 0); - `twoWords`: not written, targetKind ≠ 0 (BOUND, or MASKED or RELEASED with a kept target); - `oneWord`: not written, targetKind 0 (UNSET, or a lone no). |
 | `GuardTerms` | interface | One schedule's guard terms (gas/model.json profiles.<schedule>.guard: constants, split.executionGas or kernel). |
 | `Journal` | interface |  |
 | `JournalView` | interface | Sequences without a wallet: settle and list them before anyone connects (resume still needs the writer). |
 | `KernelQuote` | interface | The kernel's own quote of a publication's floor (LedgerIngress.indexFloor's four numbers). |
 | `LocalAccountLike` | interface | A viem LocalAccount satisfies this structurally; the SDK holds no private-key code. |
+| `PartGuardHead` | interface | A guarded head in a sequence part: a GuardHead and the index, in the part's actions, of the action it belongs to (the action that writes it, or the one it decided). |
 | `PartUnit` | interface | A run of a part's actions that must stay in one publication (a folder entry's actions, a topic's registration, one tag statement), with the effect that describes it. |
 | `Plan` | interface | Plain, journal-safe data. |
 | `PlanInput` | interface |  |

@@ -9,6 +9,7 @@
 // Accounts 45 and 46 of anvil's public development mnemonic (used by no other test file), impersonated.
 import { readFileSync } from "node:fs";
 import {
+  decodeAbiParameters,
   decodeFunctionData,
   decodeFunctionResult,
   encodeFunctionData,
@@ -112,6 +113,8 @@ interface Asked {
   from: Hex;
   /** Each bind-kind action's head for both accounts, read from the node just before the call went out. */
   pre: Map<Hex, Head>;
+  /** The node's own snapshot of the writer's head at each bind-kind action's position, read at the same moment. */
+  snapshots: Map<Hex, Hex>;
   refused: boolean;
 }
 
@@ -184,6 +187,42 @@ async function headsBefore(data: Hex): Promise<Map<Hex, Head>> {
   return out;
 }
 
+/** The node's snapshot (LedgerViews.headSnapshots) of the writer's head at each bind-kind action's position, now. */
+async function snapshotsBefore(data: Hex): Promise<Map<Hex, Hex>> {
+  const { actions } = execute(data);
+  const positions = [
+    ...new Set(
+      actions
+        .filter((a) => BIND_KINDS.includes(a.kind))
+        .map((a) => lower(positionKey(a.purpose, a.subject, a.role))),
+    ),
+  ];
+  const out = new Map<Hex, Hex>();
+  for (let at = 0; at < positions.length; at += 256) {
+    const chunk = positions.slice(at, at + 256);
+    const result = (await rpc("eth_call", [
+      {
+        to: d.readers.ledgerViews,
+        data: encodeFunctionData({
+          abi: ledgerViewsAbi,
+          functionName: "headSnapshots",
+          args: [d.ledger, [ME], chunk],
+        }),
+      },
+      "latest",
+    ])) as Hex;
+    const [snaps] = decodeFunctionResult({
+      abi: ledgerViewsAbi,
+      functionName: "headSnapshots",
+      data: result,
+    }) as unknown as [readonly Hex[], readonly Hex[]];
+    chunk.forEach((pos, i) => {
+      out.set(pos, lower(snaps[i] as Hex));
+    });
+  }
+  return out;
+}
+
 /** The impersonated account as an EIP-1193 wallet that records every request it is asked to sign. */
 function recorder(account: Address, k: { refuseSend?: number; atomic?: boolean } = {}) {
   const asked: Asked[] = [];
@@ -203,6 +242,7 @@ function recorder(account: Address, k: { refuseSend?: number; atomic?: boolean }
           to: lower(tx.to),
           from: lower(tx.from),
           pre: await headsBefore(tx.data),
+          snapshots: await snapshotsBefore(tx.data),
           refused,
         });
         if (refused) throw Object.assign(new Error("User rejected"), { code: 4001 });
@@ -225,6 +265,7 @@ function recorder(account: Address, k: { refuseSend?: number; atomic?: boolean }
             to: lower(c.to),
             from: lower(req.from),
             pre: await headsBefore(c.data),
+            snapshots: await snapshotsBefore(c.data),
             refused: false,
           });
           await mined(
@@ -258,6 +299,11 @@ interface Known {
   words: readonly (readonly string[])[];
   langs: readonly string[];
   lens: readonly Hex[];
+  /**
+   * What the requests' read-set guards must be: "written" (default), every head a request's actions write and nothing
+   * else, each expected value the node's own snapshot just before; "none", no guard (a planner not guarded yet).
+   */
+  guard?: "written" | "none";
 }
 
 interface Tx {
@@ -610,6 +656,46 @@ function explain(txs: readonly Tx[], k: Known): Did[][] {
   return per.map((p) => p.did);
 }
 
+const READ_SET = [
+  {
+    type: "tuple",
+    components: [
+      { name: "principals", type: "bytes32[]" },
+      { name: "positions", type: "bytes32[]" },
+      { name: "expectedHeads", type: "bytes32[]" },
+    ],
+  },
+] as const;
+/**
+ * The read-set guard a request signs, from its decoded actions alone: it names the writer at exactly the positions its
+ * BIND, UNBIND and RELEASE actions write (each once, nothing else), and every expected snapshot is the node's own
+ * snapshot of that head just before the request, so the guard passes on an honest chain. A request that writes no
+ * head carries none.
+ */
+function guardIsTheWrittenHeads(
+  e: ReturnType<typeof execute>,
+  x: Asked,
+  mode: "written" | "none",
+): void {
+  const written = [
+    ...new Set(
+      e.actions
+        .filter((a) => BIND_KINDS.includes(a.kind))
+        .map((a) => lower(positionKey(a.purpose, a.subject, a.role))),
+    ),
+  ];
+  if (mode === "none" || written.length === 0) {
+    expect(e.guard).toBe("0x");
+    return;
+  }
+  const [rs] = decodeAbiParameters(READ_SET, e.guard);
+  expect(rs.principals.map((p) => lower(p))).toEqual([lower(ME)]);
+  expect([...rs.positions.map((p) => lower(p))].sort()).toEqual([...written].sort());
+  expect(rs.expectedHeads.map((h) => lower(h))).toEqual(
+    rs.positions.map((p) => x.snapshots.get(lower(p))),
+  );
+}
+
 /**
  * The invariant: what each wallet request asked to sign does exactly what its reviewed part's effects say. `parts` is
  * the save as reviewed (or, after a re-split, the journal's parts the person is shown progress for); every asked
@@ -624,7 +710,7 @@ function signedIsReviewed(
     expect(x.to).toBe(lower(d.ledger));
     expect(x.from).toBe(W);
     const e = execute(x.data);
-    expect(e.guard).toBe("0x");
+    guardIsTheWrittenHeads(e, x, k.guard ?? "written");
     return { ...e, pre: x.pre };
   });
   // Which part each request is: the same actions and bodies, in order (a refused part is asked again on resume).
@@ -891,7 +977,7 @@ describe("folders and files: every planner, signed as reviewed", () => {
       ),
     );
     let out = await run(small.parts);
-    signedIsReviewed(small.parts, out.asked, known());
+    signedIsReviewed(small.parts, out.asked, known({ guard: "none" }));
     expect(out.progress.state).toBe("COMPLETE");
     const big = planned(
       await planEditFile(
@@ -908,7 +994,7 @@ describe("folders and files: every planner, signed as reviewed", () => {
     );
     expect(big.parts.length).toBeGreaterThan(1);
     out = await run(big.parts);
-    signedIsReviewed(big.parts, out.asked, known());
+    signedIsReviewed(big.parts, out.asked, known({ guard: "none" }));
     expect(out.progress.state).toBe("COMPLETE");
   });
 });
@@ -1045,11 +1131,22 @@ describe("where a part is planned again just in time", () => {
       address: `0x${(0xc0de00 + i).toString(16).padStart(40, "0")}` as Address,
     }));
     const t = planned(await planTag(efs, { principal: ME }, { topic: words, targets }));
+    // The merged part keeps every part's guarded heads, re-indexed to its actions: each piece the cut makes must
+    // carry exactly its own actions' heads, never the merged part's (PM condition 2), which the oracle checks on each
+    // signed request (the guard names exactly the heads it writes, at the node's snapshots).
+    let offset = 0;
+    const guard = t.parts.flatMap((p) => {
+      const g = (p.guard ?? []).map((h) => ({ ...h, action: h.action + offset }));
+      offset += p.actions.length;
+      return g;
+    });
+    expect(guard.length).toBe(targets.length);
     const one: SequencePartInput = {
       actions: t.parts.flatMap((p) => p.actions),
       bodies: t.parts.flatMap((p) => p.bodies),
       effects: t.parts.flatMap((p) => p.effects),
       units: t.parts.flatMap((p) => p.units ?? []),
+      guard,
     };
     // The cut needs more approvals than the review said: the save stops before asking (RESPLIT), and resume sends
     // the pieces, each planned just in time.
@@ -1072,8 +1169,15 @@ describe("where a part is planned again just in time", () => {
       effects: p.effects,
     }));
     expect(pieces.length).toBeGreaterThan(1);
-    // Nothing gained or lost by the cut: the pieces' actions are the reviewed part's, in order.
+    // Nothing gained or lost by the cut: the pieces' actions are the reviewed part's, in order, and so are their
+    // guarded heads, each piece's its own (re-indexed to it), the journal's record of them covered by its parts hash.
     expect(pieces.flatMap((p) => p.actions)).toEqual(one.actions);
+    const journaled = seq?.parts ?? [];
+    expect(journaled.flatMap((p) => (p.guard ?? []).map((h) => h.position))).toEqual(
+      guard.map((h) => h.position),
+    );
+    for (const p of journaled)
+      for (const h of p.guard ?? []) expect(h.action).toBeLessThan(p.actions.length);
     signedIsReviewed(pieces, asked, known({ words: [words] }));
     // And the statements the pieces say are the reviewed part's statements.
     const say = (ps: readonly SequencePartInput[]) =>

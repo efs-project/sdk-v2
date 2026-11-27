@@ -4,6 +4,7 @@ import type { Efs } from "../client.js";
 import { type CallOpts, EfsFault } from "../core/errors.js";
 import { type Address, type Hex, lower, type PrincipalId } from "../core/hex.js";
 import { keyPrincipal } from "../protocol/keys.js";
+import { type GuardMode, headsOfGuardBytes } from "./guard.js";
 import { type AttemptRecord, type Journal, lockKey } from "./journal.js";
 import { type PlanInput, planPublication } from "./plan.js";
 import { waitForReceipt } from "./receipt.js";
@@ -28,6 +29,13 @@ import type {
 export interface WriterConfig {
   authorizer: Authorizer;
   journal: Journal;
+  /**
+   * Whether the planners guard this writer's publications with the read-set guard (default "auto": whenever the
+   * deployment's live execution set has it). "always" refuses to plan on a Realm without it (NOT_VERIFIED_DEPLOYMENT);
+   * "never" sends no guard, for an app that trusts its own node. A guard binds each written head's state, revision,
+   * admission and target, not only its revision, so an endpoint's false head report reverts instead of landing.
+   */
+  guard?: GuardMode;
 }
 
 export interface RunResult {
@@ -39,6 +47,8 @@ export interface RunResult {
 export interface EfsWriter {
   readonly account: Address;
   readonly principal: PrincipalId;
+  /** The writer's guard mode (WriterConfig.guard), which the planners read. */
+  readonly guard: GuardMode;
   /** Plan a publication from raw actions (the Files planner builds these for you). */
   planActions(input: Omit<PlanInput, "account">, o?: CallOpts): Promise<PlanResult>;
   /**
@@ -75,14 +85,17 @@ export interface EfsWriter {
 /** V for a plan's actions alone (no shapes or rows known): every bind a first statement, so an upper bound. */
 function floorOf(
   efs: Efs,
-  plan: { actions: readonly PlannedAction["action"][]; bodies: readonly Hex[] },
+  plan: { actions: readonly PlannedAction["action"][]; bodies: readonly Hex[]; guard?: Hex },
 ): bigint | null {
   const g = gasPlanFor(efs.deployment);
   if (!g.ok || !g.model.floor) return null;
+  // the guard's heads, if it carries one, all at the dearest term, on its first action
+  const heads = headsOfGuardBytes(plan.guard);
   const list: PlannedAction[] = plan.actions.map((action, i) => ({
     action,
     body: plan.bodies[i] ?? "0x",
     firstStatement: true,
+    ...(i === 0 && heads ? { guard: heads } : {}),
   }));
   return BigInt(ruleGas(list, g.model, false, g.typeNames).V);
 }
@@ -122,6 +135,7 @@ export async function createWriter(
   const writer: EfsWriter = {
     account,
     principal,
+    guard: config.guard ?? "auto",
     planActions: (input, opts) => planPublication(efs, { ...input, account }, opts),
     async planSequence(parts, opts) {
       if (parts.length === 0) throw new EfsFault("MISUSE", "planSequence needs at least one part");

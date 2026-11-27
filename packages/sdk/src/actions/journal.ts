@@ -5,6 +5,7 @@ import { misuse } from "../core/errors.js";
 import type { Address, Hex } from "../core/hex.js";
 import { fromJson, toJson } from "../core/json.js";
 import { clearTimer, clone, setTimer } from "../core/platform.js";
+import type { PartGuardHead } from "./guard.js";
 import type { ActionData, EffectView, Plan } from "./types.js";
 
 export type AttemptStage =
@@ -72,6 +73,12 @@ export interface SequencePart {
   splitDepth?: number;
   /** The part's own deadline window (PlanInput.deadlineSeconds), applied each time it is planned. */
   deadlineSeconds?: number;
+  /**
+   * The part's read-set guard (PlanInput.guard): each head its actions write or were decided from, with the expected
+   * snapshot computed when the save was planned and the index of its action. Each plan of this part signs these heads'
+   * guard; a re-split piece carries its own actions' heads only.
+   */
+  guard?: readonly PartGuardHead[];
   /** The planner's estimate of the part in an atomic batch (batchGasOf), and its whole gas on amsterdam. */
   gas?: number;
   total?: number;

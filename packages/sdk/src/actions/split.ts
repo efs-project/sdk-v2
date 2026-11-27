@@ -37,6 +37,7 @@ import {
   guardCost,
   guardGrid,
   guardOver,
+  type PartGuardHead,
 } from "./guard.js";
 import type { ActionData } from "./types.js";
 
@@ -955,6 +956,8 @@ export interface PartBody {
   gas?: number;
   /** With an amsterdam model: the planner's whole-gas estimate. */
   total?: number;
+  /** The part's read-set guard (SequencePart.guard), priced with it when the part carries no estimate. */
+  guard?: readonly PartGuardHead[];
 }
 
 /** The planning rule's budget: ⌊txGasCap × (100 − headroomPercent) / 100⌋ (headroom as a fraction). */
@@ -986,11 +989,16 @@ export function partGas(
   // Without one, a TAG statement's per-level terms (its topic's depth) can't be known: it is never batched.
   if (part.actions.some((a) => a.purpose.toLowerCase() === PURPOSES.tag && isBindLike(a.kind)))
     return Number.POSITIVE_INFINITY;
-  const list: PlannedAction[] = part.actions.map((action, i) => ({
-    action,
-    body: part.bodies[i] ?? "0x",
-    ...(action.kind === ACTION.UNBIND ? { firstStatement: true } : {}),
-  }));
+  const heads = part.guard ?? [];
+  const list: PlannedAction[] = part.actions.map((action, i) => {
+    const mine = heads.filter((h) => h.action === i);
+    return {
+      action,
+      body: part.bodies[i] ?? "0x",
+      ...(action.kind === ACTION.UNBIND ? { firstStatement: true } : {}),
+      ...(mine.length ? { guard: mine } : {}),
+    };
+  });
   const shown = publicationGas(list, m, true);
   const floor = (m as GasModel).floor;
   if (!floor) return shown;

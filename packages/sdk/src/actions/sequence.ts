@@ -31,6 +31,7 @@ import {
   sendPlansAsBatch,
   waitForBatch,
 } from "./batch.js";
+import { EMPTY_GUARD, encodeGuard } from "./guard.js";
 import {
   type AttemptStage,
   type Journal,
@@ -210,6 +211,8 @@ export function partsHashOf(parts: readonly SequencePart[]): Hex {
           deadlineSeconds: p.deadlineSeconds ?? null,
           gas: p.gas ?? null,
           total: p.total ?? null,
+          // only when present: a part without a guard hashes exactly as before the guard (older journals resume)
+          ...(p.guard ? { guard: p.guard } : {}),
         })),
       ),
     ),
@@ -825,7 +828,8 @@ export function sequenceOps(d: Deps) {
           actionsHash(attempt.plan.actions) !== actionsHash(part.actions) ||
           attempt.plan.bodies.map(lower).join(",") !== part.bodies.map(lower).join(",") ||
           (part.deadline !== undefined && attempt.plan.deadline !== part.deadline) ||
-          toJson(attempt.plan.effects) !== toJson(part.effects)
+          toJson(attempt.plan.effects) !== toJson(part.effects) ||
+          !sameGuard(attempt.plan.guard, part.guard)
         )
           throw new EfsFault(
             "RECORD_DAMAGED",
@@ -980,12 +984,21 @@ export function sequenceOps(d: Deps) {
       const share = (n: number, of: number | undefined) =>
         of === undefined ? undefined : Math.ceil((of * n) / part.actions.length);
       const scale = estimate !== undefined && part.gas ? estimate / part.gas : undefined;
+      // A guarded piece pays the guard's fixed term once more on its own (the part's estimate holds it once): added
+      // to each guarded piece's share, the safe side.
+      const plan = gasPlanFor(efs.deployment);
+      const fixedOf = (p: SequencePart, all: boolean) =>
+        p.guard?.length && plan.ok
+          ? ((all ? (plan.model.total ?? plan.model) : plan.model).guard?.guardFixed ?? 0)
+          : 0;
       const sized = pieces.map((p) => {
-        const gas = share(p.actions.length, estimate);
-        const total =
+        const g = share(p.actions.length, estimate);
+        const gas = g === undefined ? undefined : g + fixedOf(p, false);
+        const t =
           part.total !== undefined && scale !== undefined
             ? share(p.actions.length, part.total * scale)
             : undefined;
+        const total = t === undefined ? undefined : t + fixedOf(p, true);
         return {
           ...p,
           ...(gas !== undefined ? { gas } : {}),
@@ -1127,6 +1140,7 @@ export function sequenceOps(d: Deps) {
             ...(p.gas !== undefined ? { gas: p.gas } : {}),
             ...(p.total !== undefined ? { total: p.total } : {}),
             ...(validUnits(p) ? { units: p.units } : {}),
+            ...(p.guard?.length ? { guard: p.guard } : {}),
           })),
           state: "NOT_STARTED",
           history: [{ state: "NOT_STARTED", at: Date.now() }],
@@ -1255,12 +1269,18 @@ export function resplit(part: SequencePart, pieces: number): SequencePart[] | nu
     const n = mine.reduce((t, u) => t + u.actions, 0);
     const effects = mine.map((u) => u.effect);
     const kept = effects.filter((e) => e.args["stage"] !== "register");
+    // the piece's own guard: exactly the heads of its own actions, re-indexed to the piece (never the parent's)
+    const from = action;
+    const guard = (part.guard ?? [])
+      .filter((h) => h.action >= from && h.action < from + n)
+      .map((h) => ({ ...h, action: h.action - from }));
     out.push({
       actions: part.actions.slice(action, action + n),
       bodies: part.bodies.slice(action, action + n),
       effects: kept.length ? kept : effects.slice(0, 1),
       units: mine,
       ...(part.deadlineSeconds !== undefined ? { deadlineSeconds: part.deadlineSeconds } : {}),
+      ...(guard.length ? { guard } : {}),
       splitDepth: (part.splitDepth ?? 0) + 1,
     });
     unit += take;
@@ -1291,7 +1311,20 @@ const partInput = (p: SequencePart): SequencePartInput => ({
   ...(p.deadlineSeconds !== undefined ? { deadlineSeconds: p.deadlineSeconds } : {}),
   ...(p.gas !== undefined ? { gas: p.gas } : {}),
   ...(p.total !== undefined ? { total: p.total } : {}),
+  ...(p.guard?.length ? { guard: p.guard } : {}),
 });
+
+/**
+ * Whether a stored plan's guard bytes are the ones this part's heads encode (a funds resend signs the stored plan, so
+ * its guard must be this part's, byte for byte). A part whose heads form no grid has no such plan.
+ */
+function sameGuard(planned: Hex | undefined, heads: SequencePart["guard"]): boolean {
+  try {
+    return lower(planned ?? EMPTY_GUARD) === lower(encodeGuard(heads ?? []));
+  } catch {
+    return false;
+  }
+}
 
 /** Sequences without a wallet: settle and list them before anyone connects (resume still needs the writer). */
 export interface JournalView {

@@ -10,6 +10,7 @@ import { type CallOpts, EfsFault, reason } from "../core/errors.js";
 import { type Address, type Hex, lower } from "../core/hex.js";
 import { ingressAbi, ledgerAbi } from "../generated/abis.js";
 import { keyPrincipal, nativeIntentDigest } from "../protocol/keys.js";
+import { EMPTY_GUARD, encodeGuard, guardGrid, guardOver, type PartGuardHead } from "./guard.js";
 import { scheduleCheck } from "./schedule.js";
 import type { ActionData, EffectView, Plan, PlanResult } from "./types.js";
 
@@ -20,7 +21,6 @@ const executeAbi = ledgerAbi.find(
   inputs: readonly [{ type: string; components: readonly unknown[] }, ...unknown[]];
 };
 const ACTIONS_PARAM = [executeAbi.inputs[0]] as const;
-const EMPTY_GUARD: Hex = "0x";
 const ZERO = /^0x0{64}$/;
 
 /**
@@ -53,6 +53,13 @@ export interface PlanInput {
    */
   gas?: number;
   total?: number;
+  /**
+   * The read-set guard: the heads this publication writes and was decided from, each with the expected snapshot the
+   * planner computed from the head it read (never copied from a read of the hashes), and the index of its action. They
+   * must form one grid within the Realm's read-set limits, on a Realm whose live execution set has the guard (b0). An
+   * app passing its own owns the expected values: the SDK checks only the grid and the limits. Absent or empty: none.
+   */
+  guard?: readonly PartGuardHead[];
 }
 
 /**
@@ -78,10 +85,11 @@ export function checkPlan(efs: Efs, plan: Plan): void {
       expectedExecutionSet: plan.executionSet,
       expectedAcceptanceProfile: plan.acceptanceProfile,
     };
+    const guard = plan.guard ?? EMPTY_GUARD;
     const calldata = encodeFunctionData({
       abi: ledgerAbi,
       functionName: "execute",
-      args: [plan.actions as never, plan.bodies, ctx, EMPTY_GUARD],
+      args: [plan.actions as never, plan.bodies, ctx, guard],
     });
     if (calldata !== lower(plan.calldata)) wrong.push("calldata");
     const digest = nativeIntentDigest({
@@ -91,7 +99,7 @@ export function checkPlan(efs: Efs, plan: Plan): void {
       deadline: plan.deadline,
       expectedExecutionSet: plan.executionSet,
       expectedAcceptanceProfile: plan.acceptanceProfile,
-      guardHash: keccak256(EMPTY_GUARD),
+      guardHash: keccak256(plan.guard ?? EMPTY_GUARD),
       actionsHash: actionsHash(plan.actions),
     });
     if (lower(digest) !== lower(plan.digest) || lower(plan.id) !== lower(plan.digest))
@@ -151,6 +159,48 @@ export async function planPublication(
         `${bodyBytes} body bytes; the limit is ${d.limits.maxBodyBytesPerPublication}`,
       ),
     };
+  }
+  // The guard: one grid within the read-set limits, each head on one of this publication's actions, on a Realm that
+  // has the guard (b0 in its live execution set; the plan binds that set, so a document that lied about it is refused
+  // E_EXECUTION_SET before the guard is read).
+  const heads = input.guard ?? [];
+  let guard: Hex = EMPTY_GUARD;
+  if (heads.length) {
+    const refused = (
+      code: "INVALID" | "LIMIT_EXCEEDED" | "NOT_VERIFIED_DEPLOYMENT",
+      detail: string,
+    ) =>
+      ({
+        kind: "efs.planResult",
+        status: "REFUSED",
+        reason: reason(code, "never", detail),
+      }) as const;
+    if (!d.nativeGuard)
+      return refused(
+        "NOT_VERIFIED_DEPLOYMENT",
+        "this Realm's live execution set has no read-set guard (capability b0): a guarded publication can't be sent",
+      );
+    if (
+      heads.some(
+        (h) => !Number.isInteger(h.action) || h.action < 0 || h.action >= input.actions.length,
+      )
+    )
+      return refused("INVALID", "a guarded head names an action this publication doesn't have");
+    const grid = guardGrid(heads);
+    if (!grid.ok)
+      return refused(
+        "INVALID",
+        grid.why === "duplicate"
+          ? "a head is guarded twice"
+          : "the guarded heads form no read set: every principal needs a head at every position",
+      );
+    const over = guardOver(grid.grid.shape, d.limits);
+    if (over !== null)
+      return refused(
+        "LIMIT_EXCEEDED",
+        `a read set of ${grid.grid.shape.principals} principals × ${grid.grid.shape.positions} positions; ${over} is ${d.limits[over]}`,
+      );
+    guard = encodeGuard(heads);
   }
   // The document's fee schedule must be the chain's (one measurement per client, kept 10 minutes).
   const fee = await scheduleCheck(efs, o);
@@ -292,7 +342,7 @@ export async function planPublication(
     deadline,
     expectedExecutionSet: executionSet,
     expectedAcceptanceProfile: r.value.profile,
-    guardHash: keccak256(EMPTY_GUARD),
+    guardHash: keccak256(guard),
     actionsHash: hash,
   });
   const ctx = {
@@ -304,7 +354,7 @@ export async function planPublication(
   const calldata = encodeFunctionData({
     abi: ledgerAbi,
     functionName: "execute",
-    args: [input.actions as never, input.bodies, ctx, EMPTY_GUARD],
+    args: [input.actions as never, input.bodies, ctx, guard],
   });
   const plan: Plan = {
     kind: "efs.plan",
@@ -323,6 +373,7 @@ export async function planPublication(
     actions: input.actions,
     bodies: input.bodies,
     calldata,
+    ...(guard !== EMPTY_GUARD ? { guard } : {}),
     effects: input.effects,
     basis,
     ...(input.gas !== undefined && input.total !== undefined

@@ -126,6 +126,12 @@ export interface DeploymentInfo {
    */
   executionSet: Hex;
   revision: number;
+  /**
+   * Whether that execution set has the native read-set guard (capability b0 of `activation.capabilities`). It is bound
+   * to the chain by the same check: the execution set commits to its capabilities, and a write is planned only while the
+   * chain's execution set is this one, so a document that claimed b0 falsely is refused before any guard is read.
+   */
+  nativeGuard: boolean;
 }
 
 export type ManifestCheck =
@@ -371,6 +377,11 @@ export function validateDeploymentManifest(input: unknown): ManifestCheck {
     kernelFloor: kernelFloorOf(indexDoc, limits, problems),
     executionSet: word("activation.executionSet", activation["executionSet"]),
     revision: num("activation.revision", activation["revision"]),
+    // b0 (NATIVE_GUARD); a document from before capabilities were recorded has none
+    nativeGuard:
+      activation["capabilities"] === undefined
+        ? false
+        : (num("activation.capabilities", activation["capabilities"]) & 1) === 1,
   };
   // Every contract the SDK reads through is pinned by its code hash: an address the document names without one is
   // refused, never read through unchecked.
