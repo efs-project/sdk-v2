@@ -25,10 +25,6 @@ depend on anything in this repository yet.
   occurrences (what reads an author's own occurrence).
 - **Chunk reuse.** For the same reason, an edit re-publishes every chunk of its content, including chunks already on
   chain.
-- **Two failures that end a read without trying the next endpoint** (the read-validation audit, 2026-11-26; neither
-  gives a value): `reconcileAttempt` treats a reader's UNSUPPORTED from `publicationAt` as final for that call, and a
-  `web3://` location whose `resolveMode` or `request` reply doesn't decode, or isn't a 200, ends that location FAILED
-  (the bytes are still verified by the caller, and the next location is tried).
 - **Glamsterdam: measured on Sepolia, not yet run by the SDK there.**
   - Sepolia runs Glamsterdam. The contracts dev measured its rules on Geth and reth, and they match the SDK's gas limit
     (EIP-8037's reservoir: never clamped at 2^24, state gas held above it, at most the block gas limit). That includes

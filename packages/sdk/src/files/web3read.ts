@@ -7,6 +7,11 @@
 // every chunk) matches the file; the body never runs past the file or maxBytes; each chunk makes progress; a status
 // other than 200 or 307 is a failure of this location (a 307 hands back its Location, which the caller re-plans
 // through the gateway policy). A reverting call is a fault of the call (gas, RPC), never "not found".
+//
+// A reply an endpoint relays that is no usable web3 answer (no contract, a contract not in ERC-5219 mode, a request()
+// reply that doesn't decode, a status other than 200 or a 307 with a Location) may be that endpoint's fault, so the
+// whole read is tried on the next endpoint; when every endpoint answers so, the location's outcome is the last one's,
+// exactly as with one endpoint. A body that contradicts the file (MISMATCH, TOO_LARGE, the chunk bounds) ends it.
 import { decodeFunctionResult, encodeFunctionData, parseAbi } from "viem";
 import { callsAt, getBlock } from "../chain/basis.js";
 import { onEndpoint, type Step } from "../chain/pool.js";
@@ -43,9 +48,16 @@ export async function readWeb3(
 ): Promise<Web3Outcome> {
   // The whole read, across chunks and endpoints, gets ten per-call timeouts (100 s by default).
   const deadline = Date.now() + 10 * (efs.gateways.timeoutMs ?? 10_000);
+  // The last endpoint's unusable reply, kept to report as the location's outcome if no endpoint does better.
+  let relayed: Web3Outcome | undefined;
+  const nextEndpoint = (v: Web3Outcome & { kind: "FAILED" }): Step<Web3Outcome> => {
+    relayed = v;
+    return { ok: false, retryElsewhere: true, reason: reason("RPC_ERROR", "transient", v.detail) };
+  };
   const r = await onEndpoint<Web3Outcome>(
     efs._internal.pool,
     async (s): Promise<Step<Web3Outcome>> => {
+      relayed = undefined;
       const block = await getBlock(s, "latest");
       if (!block.ok) return block;
       const at = block.value.hash;
@@ -64,9 +76,13 @@ export async function readWeb3(
           reason: mode ? mode.reason : reason("RPC_UNAVAILABLE", "transient"),
         };
       if (mode.result === "0x")
-        return done({ kind: "FAILED", outcome: "FAILED", detail: `no contract at ${url.address}` });
+        return nextEndpoint({
+          kind: "FAILED",
+          outcome: "FAILED",
+          detail: `no contract at ${url.address}`,
+        });
       if (String(mode.result).toLowerCase() !== MODE_5219)
-        return done({
+        return nextEndpoint({
           kind: "FAILED",
           outcome: "FAILED",
           detail: "the contract is not in ERC-5219 resource-request mode",
@@ -93,7 +109,7 @@ export async function readWeb3(
           body = out[1];
           headers = out[2];
         } catch {
-          return done({
+          return nextEndpoint({
             kind: "FAILED",
             outcome: "FAILED",
             detail: "request() returned data that does not decode",
@@ -101,14 +117,16 @@ export async function readWeb3(
         }
         if (status === 307) {
           const location = header(headers, "location");
-          return done(
-            location
-              ? { kind: "REDIRECT", location }
-              : { kind: "FAILED", outcome: "FAILED", detail: "307 without a Location" },
-          );
+          return location
+            ? done({ kind: "REDIRECT", location })
+            : nextEndpoint({ kind: "FAILED", outcome: "FAILED", detail: "307 without a Location" });
         }
         if (status !== 200)
-          return done({ kind: "FAILED", outcome: "FAILED", detail: `web3 status ${status}` });
+          return nextEndpoint({
+            kind: "FAILED",
+            outcome: "FAILED",
+            detail: `web3 status ${status}`,
+          });
         const declared = header(headers, "content-length");
         if (
           declared !== undefined &&
@@ -169,9 +187,8 @@ export async function readWeb3(
     },
     o,
   );
-  return r.ok
-    ? r.value
-    : { kind: "FAILED", outcome: "FAILED", detail: r.reason.detail ?? r.reason.code };
+  if (r.ok) return r.value;
+  return relayed ?? { kind: "FAILED", outcome: "FAILED", detail: r.reason.detail ?? r.reason.code };
 }
 
 const done = (v: Web3Outcome): Step<Web3Outcome> => ({ ok: true, value: v });
