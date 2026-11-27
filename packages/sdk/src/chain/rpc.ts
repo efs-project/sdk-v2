@@ -45,8 +45,9 @@ export type RpcEndpoint =
       label?: string;
       /**
        * The most calls sent in one JSON-RPC batch to this endpoint (default 40): a larger read is split into batches
-       * sent one after another. Public providers refuse large batches (measured: Tenderly answers 429 from 50 calls).
-       * Every call of a logical read names its block hash, so a split read still reads one block.
+       * sent one after another, within the read's one timeout. Public providers refuse large batches (measured:
+       * Tenderly answers 429 from 50 calls). Every call of a logical read names its block hash, so a split read still
+       * reads one block; after a batch the endpoint didn't answer (transport, or a 429) the rest aren't sent.
        */
       maxBatch?: number;
     }
@@ -148,12 +149,18 @@ export function httpPort(
   const maxBatch = o.maxBatch ?? DEFAULT_MAX_BATCH;
   if (!Number.isInteger(maxBatch) || maxBatch < 1)
     throw new EfsFault("MISUSE", `maxBatch must be a positive integer (got ${maxBatch})`);
+  /**
+   * One JSON-RPC batch. `whole` is the outcome every call shares when the batch itself was not answered: a transport
+   * failure (no fetch, an HTTP failure, a timeout, a reply that is not JSON-RPC) or the endpoint's rate limit (429).
+   * `totalMs` names the read's own timeout in a timeout's detail.
+   */
   const sendOne = async (
     requests: readonly RpcRequest[],
     call: { signal?: AbortSignalLike; timeoutMs: number },
-  ): Promise<RpcOutcome[]> => {
+    totalMs: number,
+  ): Promise<{ each: RpcOutcome[] } | { whole: RpcOutcome }> => {
     const fetchImpl = o.fetch ?? (globalThis as { fetch?: FetchLike }).fetch;
-    if (!fetchImpl) return requests.map(() => transport("no fetch implementation available"));
+    if (!fetchImpl) return { whole: transport("no fetch implementation available") };
     o.onRequest?.({
       endpoint: label,
       methods: requests.map((r) => r.method),
@@ -176,19 +183,18 @@ export function httpPort(
             body: JSON.stringify(requests.length === 1 ? body[0] : body),
             signal,
           });
-          if (res.status === 429)
-            return requests.map(() => rpcError(429, "rate limited", undefined));
-          if (!res.ok) return requests.map(() => transport(`HTTP ${res.status}`));
+          if (res.status === 429) return { whole: rpcError(429, "rate limited", undefined) };
+          if (!res.ok) return { whole: transport(`HTTP ${res.status}`) };
           text = await res.text();
         } catch (e) {
           if (call.signal?.aborted) throw e;
-          return requests.map(() => transport(e instanceof Error ? e.message : "fetch failed"));
+          return { whole: transport(e instanceof Error ? e.message : "fetch failed") };
         }
         let parsed: unknown;
         try {
           parsed = JSON.parse(text);
         } catch {
-          return requests.map(() => transport("malformed JSON-RPC response"));
+          return { whole: transport("malformed JSON-RPC response") };
         }
         const list = Array.isArray(parsed) ? parsed : [parsed];
         const byId = new Map<
@@ -197,26 +203,46 @@ export function httpPort(
         >();
         for (const item of list)
           if (item && typeof item === "object" && "id" in item) byId.set(item.id as number, item);
-        return ids.map((id) => {
-          const item = byId.get(id);
-          if (!item) return transport("missing JSON-RPC response item");
-          if (item.error) return rpcError(item.error.code, item.error.message, item.error.data);
-          return { ok: true, result: item.result };
-        });
+        return {
+          each: ids.map((id): RpcOutcome => {
+            const item = byId.get(id);
+            if (!item) return transport("missing JSON-RPC response item");
+            if (item.error) return rpcError(item.error.code, item.error.message, item.error.data);
+            return { ok: true, result: item.result };
+          }),
+        };
       },
       call,
-      () => requests.map(() => transport(`timeout after ${call.timeoutMs} ms`)),
+      () => ({ whole: transport(`timeout after ${totalMs} ms`) }),
     );
   };
   return {
     label,
     // A read larger than the endpoint's batch is sent as consecutive batches, results in the order asked: every call
-    // names its own block hash (callsAt), so the pieces read one block.
+    // names its own block hash (callsAt), so the pieces read one block. The read has one deadline (each batch gets
+    // what the earlier ones left), and after a batch that was not answered (transport, or a 429) nothing more is
+    // sent: every call not yet answered shares that outcome, as the read fails over anyway.
     async send(requests, call) {
-      if (requests.length <= maxBatch) return sendOne(requests, call);
+      const deadline = Date.now() + call.timeoutMs;
       const out: RpcOutcome[] = [];
-      for (let i = 0; i < requests.length; i += maxBatch)
-        out.push(...(await sendOne(requests.slice(i, i + maxBatch), call)));
+      for (let i = 0; i < requests.length; i += maxBatch) {
+        throwIfAborted(call.signal);
+        const left = deadline - Date.now();
+        const reply =
+          left > 0
+            ? await sendOne(
+                requests.slice(i, i + maxBatch),
+                { ...call, timeoutMs: left },
+                call.timeoutMs,
+              )
+            : { whole: transport(`timeout after ${call.timeoutMs} ms`) };
+        if ("whole" in reply) {
+          const failed = reply.whole;
+          while (out.length < requests.length) out.push(failed);
+          return out;
+        }
+        out.push(...reply.each);
+      }
       return out;
     },
   };

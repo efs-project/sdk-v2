@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MIT
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createPool, onEndpoint } from "../src/chain/pool.ts";
-import { endpointOrigin, type FetchLike, httpPort, type RpcPort } from "../src/chain/rpc.ts";
+import {
+  endpointOrigin,
+  type FetchLike,
+  httpPort,
+  type RpcOutcome,
+  type RpcPort,
+} from "../src/chain/rpc.ts";
 
 /** A fake port: `chain` is its chain id; `fail` makes every non-chainId call a transport failure. */
 function fakePort(label: string, chain: number, fail = false): RpcPort & { calls: string[] } {
@@ -140,6 +146,124 @@ describe("http port", () => {
     });
     expect(sizes).toEqual([50, 45]);
     expect(() => httpPort("https://node.example", { fetch, maxBatch: 0 })).toThrow(/maxBatch/);
+  });
+  /** A JSON-RPC batch reply echoing each request's method as its result. */
+  const echo = (body: string | undefined) => {
+    const sent = JSON.parse(body ?? "[]");
+    const list: { id: number; method: string }[] = Array.isArray(sent) ? sent : [sent];
+    const out = list.map((r) => ({ jsonrpc: "2.0", id: r.id, result: r.method }));
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      text: async () => JSON.stringify(Array.isArray(sent) ? out : out[0]),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    };
+  };
+  const six = Array.from({ length: 6 }, (_, i) => ({ method: `m${i}`, params: [] }));
+  it("gives a split read one deadline: a batch gets only what the earlier ones left", async () => {
+    vi.useFakeTimers();
+    try {
+      const sizes: number[] = [];
+      const fetch: FetchLike = (_url, init) => {
+        sizes.push(JSON.parse(init.body ?? "[]").length);
+        if (sizes.length === 2) return new Promise(() => {}); // batch 2 never answers
+        return new Promise((resolve) => setTimeout(() => resolve(echo(init.body)), 150));
+      };
+      let done: RpcOutcome[] | undefined;
+      void httpPort("https://node.example", { fetch, maxBatch: 2 })
+        .send(six, { timeoutMs: 300 })
+        .then((r) => {
+          done = r;
+        });
+      await vi.advanceTimersByTimeAsync(299);
+      expect(done).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      // One timeout in all (300 ms), never 150 + 300 for batch 2 on its own clock.
+      expect(done).toBeDefined();
+      expect(sizes).toEqual([2, 2]); // batch 3 is never sent
+      const out = done as RpcOutcome[];
+      expect(out.slice(0, 2)).toEqual([
+        { ok: true, result: "m0" },
+        { ok: true, result: "m1" },
+      ]);
+      for (const r of out.slice(2)) {
+        expect(r.ok === false && r.kind).toBe("transport");
+        expect(r.ok === false && r.reason.detail).toBe("timeout after 300 ms");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("sends nothing after a batch that was not answered (transport, 429); an answered error carries on", async () => {
+    const sizes: number[] = [];
+    const down: FetchLike = async (_url, init) => {
+      sizes.push(JSON.parse(init.body ?? "[]").length);
+      if (sizes.length === 2)
+        return {
+          ok: false,
+          status: 502,
+          headers: { get: () => null },
+          text: async () => "",
+          arrayBuffer: async () => new ArrayBuffer(0),
+        };
+      return echo(init.body);
+    };
+    const out = await httpPort("https://node.example", { fetch: down, maxBatch: 2 }).send(six, {
+      timeoutMs: 1000,
+    });
+    expect(sizes).toEqual([2, 2]);
+    expect(out.map((r) => r.ok)).toEqual([true, true, false, false, false, false]);
+    for (const r of out.slice(2)) expect(r).toEqual(out[2]);
+    expect(out[2]?.ok === false && out[2].kind).toBe("transport");
+    expect(out[2]?.ok === false && out[2].reason.detail).toBe("HTTP 502");
+
+    // The endpoint's rate limit on a batch is the same: the next batch would only meet it again.
+    sizes.length = 0;
+    const limited: FetchLike = async (_url, init) => {
+      sizes.push(JSON.parse(init.body ?? "[]").length);
+      if (sizes.length === 2)
+        return {
+          ok: false,
+          status: 429,
+          headers: { get: () => null },
+          text: async () => "",
+          arrayBuffer: async () => new ArrayBuffer(0),
+        };
+      return echo(init.body);
+    };
+    const slow = await httpPort("https://node.example", { fetch: limited, maxBatch: 2 }).send(six, {
+      timeoutMs: 1000,
+    });
+    expect(sizes).toEqual([2, 2]);
+    for (const r of slow.slice(2)) expect(r.ok === false && r.kind === "rpc" && r.code).toBe(429);
+
+    // A node's answer to one call (an error item) is that call's outcome: the next batch is still sent.
+    sizes.length = 0;
+    const answered: FetchLike = async (_url, init) => {
+      const list: { id: number; method: string }[] = JSON.parse(init.body ?? "[]");
+      sizes.push(list.length);
+      const items = list.map((r) =>
+        r.method === "m2"
+          ? { jsonrpc: "2.0", id: r.id, error: { code: 3, message: "execution reverted" } }
+          : { jsonrpc: "2.0", id: r.id, result: r.method },
+      );
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        text: async () => JSON.stringify(items),
+        arrayBuffer: async () => new ArrayBuffer(0),
+      };
+    };
+    const mixed = await httpPort("https://node.example", { fetch: answered, maxBatch: 2 }).send(
+      six,
+      {
+        timeoutMs: 1000,
+      },
+    );
+    expect(sizes).toEqual([2, 2, 2]);
+    expect(mixed.map((r) => r.ok)).toEqual([true, true, false, true, true, true]);
   });
   it("turns a timeout into a transport failure", async () => {
     const fetch: FetchLike = () => new Promise(() => {});
