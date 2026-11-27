@@ -28,7 +28,9 @@ type Admitted = { present: true; publication: bigint; digest: Hex } | { present:
  *   UNKNOWN        no ledger code at this block (before the deployment, or a wrong address, chain or fork), and
  *                  empty return data (no reader code at this block) are both `present: false`: never evidence of
  *                  absence.
- * Anything else (UNSUPPORTED: not this layout, or not a ledger) is refused, never guessed at.
+ * Anything else (UNSUPPORTED: not this layout, or not a ledger) is refused, never guessed at. The reader is pinned by
+ * its code hash, so it is this layout: an endpoint that answers otherwise is that endpoint's fault, and the next one is
+ * tried. When every endpoint answers so, the result is as before (UNSUPPORTED_PROFILE, "never").
  */
 async function admittedAt(
   s: Session,
@@ -78,7 +80,7 @@ async function admittedAt(
   if (status === "UNKNOWN") return { ok: true, value: { present: false } };
   return {
     ok: false,
-    retryElsewhere: false,
+    retryElsewhere: true,
     reason: reason("UNSUPPORTED_PROFILE", "never", `publicationAt() answered ${status}`),
   };
 }
