@@ -3,22 +3,22 @@
   "note": "Copied byte for byte from efs-project/contracts-v2 at `commit` by tools/solidity.mjs. Do not edit.",
   "contracts": {
     "repo": "https://github.com/efs-project/contracts-v2",
-    "commit": "04526b1dd42992d8193c4d3c2db4129531dc7bfb"
+    "commit": "19891feb6284b754e46e738203d4730698381fa1"
   },
   "files": {
-    "interfaces/Actions.sol": "26e98f79e9a2a02f6622d67870c9619a861be81321e981aa25a0312eeb503990",
-    "interfaces/Errors.sol": "8f8a5ecdf7842a5b14f5171ced84bb1e6dd1977f8f54efd9113112220caca08c",
+    "interfaces/Actions.sol": "a056d2894b8142e607a4d9e47bf623a009ea3edb74a9821ce00900567f1b6c50",
+    "interfaces/Errors.sol": "ebdfadcc830f1e29b5d156bb58dc6a0984183d164d660d0b1aba6bd130b3a6a7",
     "interfaces/IAcceptor.sol": "7d6949f47c4a6213d8953aba8371f5bea1e07d98bde065550822ead75fd3d7e0",
     "interfaces/IBitmapStore.sol": "d80f64c9080cd88bc154f17b63e615b0e71cb1fef72b1a813c569dc234e1f107",
     "interfaces/IIndexHook.sol": "fcd1409fc84c60c4bc255bdf028965ad0bf54f27fa2b91d45f51f7a646d93632",
     "interfaces/IIndexReads.sol": "03808e971cff00832bef8eccb6d5c2cf3399c69be3aae9d35b24c1beb1c58077",
     "interfaces/IKeysView.sol": "6d5d5cca58611904ccc27df0657757edf15f24ac7a9a19188f969d239f30b29f",
     "interfaces/ILedger.sol": "ace730dca541bbc770887b9cfcc6672c5e735a2f8838abefec83bd08af860873",
-    "interfaces/ILedgerCommitments.sol": "57e828bf351bea28e0f5dc4cc5915f6b4b844d89aafba2f48d3d1c7246702c85",
+    "interfaces/ILedgerCommitments.sol": "89d8765c16e85f2c574565e583dda1aef555614ec4bafe8cfb1af37ae4612c89",
     "interfaces/ILedgerControl.sol": "30c58e8e4682bfedcda8ecd83ee4e2811cb185060fcc9a976051541a8c5f02e6",
     "interfaces/ILedgerHot.sol": "1b70d70b5656436f46ff9f388895376515aef3bb533d1bf8f3b79e29881b53b5",
     "interfaces/ILedgerReads.sol": "87689135a2344dd389b91612d44e8e19a3e0f03190f7d54514c2e30cccfeeb29",
-    "interfaces/ILedgerViews.sol": "172fb1cd7edcb8af930443f4e7ed8e471c410802416fa52b21fa85f1a22e6b5a",
+    "interfaces/ILedgerViews.sol": "687ca724473d7e3e17e3ae1897492e89ccea9c3a7906952c7831da40736e2ac5",
     "interfaces/IPostingStore.sol": "f8b8f37d917745c337412839034ed35fb72cf5942ae9516e40289d59695b3ca3",
     "interfaces/IRealmController.sol": "66f309053ea3b5bbe85da1b9643c5ccb6f7f5130a9d75ac4458a2bec0e0be8b0",
     "interfaces/IRealmIndex.sol": "78bade9e082cb5a86790a5e304d85a320a194f8c2edd87d2bd17ef45e84c97d1",

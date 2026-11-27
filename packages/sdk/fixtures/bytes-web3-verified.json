@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "04526b1dd42992d8193c4d3c2db4129531dc7bfb",
+  "contractsCommit": "19891feb6284b754e46e738203d4730698381fa1",
   "case": "bytes-web3-verified",
   "note": "readBytes on a web3:// location served by the fixture's EfsWeb3Gateway (3 chunks): VERIFIED",
   "result": {
@@ -17,11 +17,11 @@
     },
     "location": {
       "scheme": "web3",
-      "uri": "web3://0x386F52cCB19217AFf97337869Cf02a8bFd385f10:31337/~efs/o/0xf7547aa65ac7374a944085cc67bd05c48c17a2fef819390b06350f8d4a76c037/docs/big.bin"
+      "uri": "web3://0x3B1Bf7B99B23FA1e1D772C10ceE4FEDca16744cc:31337/~efs/o/0xf7547aa65ac7374a944085cc67bd05c48c17a2fef819390b06350f8d4a76c037/docs/big.bin"
     },
     "attempts": [
       {
-        "location": "web3://0x386f52ccb19217aff97337869cf02a8bfd385f10:31337",
+        "location": "web3://0x3b1bf7b99b23fa1e1d772c10cee4fedca16744cc:31337",
         "outcome": "VERIFIED"
       }
     ],

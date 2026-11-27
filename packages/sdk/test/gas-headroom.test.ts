@@ -102,7 +102,8 @@ describe("the planning headroom covers intrinsic gas, calldata and the model's e
         (r) => r.schedule === name,
       );
     // Tripwires on the spare, one per schedule, never raised: when one fires, report the figure and the headroom
-    // needed. Either fires once its under-prediction passes 10.74%. At contracts 04526b1 (the list release): prague
+    // needed. Either fires once its under-prediction passes 10.74%. At contracts 19891fe (the guard release), as at
+    // 04526b1 (the list release): prague
     // 0.9710 (9.68%, tag releases at entry 47 across topics; headroom needed 12.5%), amsterdam 0.9781 (10.52% of
     // execution gas, create file lists exist; needed 13.2%), 0.22 points from firing. At 6d11858 they were 0.9710
     // (9.69%) and 0.9792 (10.65%); at 3ca53ba amsterdam was 0.9789 (10.62%).
@@ -130,12 +131,13 @@ describe("the planning headroom covers intrinsic gas, calldata and the model's e
 
   it("the cap is tested against the under-prediction of the gas it counts, never an over-prediction or the all-gas figure", () => {
     const vendored = GAS_SCHEDULES as unknown as Schedules;
-    // contracts 04526b1 (gas/model.json; release.json carries the maxAbs figures, codegen adds the maxUnder ones).
+    // contracts 19891fe (gas/model.json; release.json carries the maxAbs figures, codegen adds the maxUnder ones). The
+    // guard release moved amsterdam's all-gas under-prediction 6.63 -> 6.62; nothing else here moved.
     // Since the list release maxAbs is the larger of under- and over-prediction: amsterdam's 18.42 is an
     // over-prediction of all gas (tag restores at revision 5), which plans below the cap, never above it.
     expect(vendored["amsterdam"]).toMatchObject({
       maxUnderExecutionErrorPercent: 10.52,
-      maxUnderErrorPercent: 6.63,
+      maxUnderErrorPercent: 6.62,
       maxAbsExecutionErrorPercent: 13.89, // an over-prediction: plans below the cap, never above it
       maxAbsErrorPercent: 18.42,
     });
@@ -159,7 +161,7 @@ describe("the planning headroom covers intrinsic gas, calldata and the model's e
     expect(vendored["prague"]?.maxUnderExecutionErrorPercent).toBeUndefined();
   });
 
-  it("the worst calldata is every action and body at its widest (39,236 bytes at contracts 04526b1)", () => {
+  it("the worst calldata is every action and body at its widest (39,236 bytes at contracts 19891fe, unguarded)", () => {
     expect(worstCalldataBytes()).toBe(39_236);
   });
 });

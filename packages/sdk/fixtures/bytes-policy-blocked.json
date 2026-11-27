@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "04526b1dd42992d8193c4d3c2db4129531dc7bfb",
+  "contractsCommit": "19891feb6284b754e46e738203d4730698381fa1",
   "case": "bytes-policy-blocked",
   "note": "readBytes on a plain http:// location (blocked even with https allowed)",
   "result": {

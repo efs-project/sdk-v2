@@ -171,8 +171,8 @@ const shortTier = (name: string, k: number) =>
 /**
  * The batches the SDK plans where the vector's is planned at the short tier (the reference planner on the same
  * actions without the entry count): the price of never passing it, never larger than the vector's. In the list
- * release (contracts 04526b1) every one equals the vector's: these shapes are bounded by the floor V, whose rows carry
- * no list term, not by E.
+ * release (contracts 04526b1) and the guard release (19891fe, which adds movesToFresh) every one equals the vector's:
+ * these shapes are bounded by the floor V, whose rows carry no list term, not by E.
  */
 const SDK_SIZES: Record<string, Record<string, number>> = {
   prague: {
@@ -181,14 +181,32 @@ const SDK_SIZES: Record<string, Record<string, number>> = {
     createFilesAtRemovedNamesNoName: 13,
     movesIntoRemovedNames: 18,
     movesIntoRemovedNamesNoName: 25,
+    movesToFresh: 20,
   },
   amsterdam: {
     createFilesAtRemovedNames: 12,
     createFilesAtRemovedNamesNoName: 16,
     movesIntoRemovedNames: 19,
     movesIntoRemovedNamesNoName: 25,
+    movesToFresh: 25,
   },
 };
+/**
+ * The guarded shapes (contracts 19891fe, the guard release: a read-set guard over the batch's heads). The SDK prices
+ * no guard yet; that is the guard step. Until then each is named here, so a new guarded vector fails, and its actions
+ * are held to the reference planner's figures without the guard.
+ */
+const GUARDED = [
+  "movesToFreshGuarded",
+  "folderMasksGuarded",
+  "folderRestoresGuarded",
+  "tagNumberChangesGuarded",
+  "editsLensGuarded",
+  "editsLensOneGuarded",
+  "createsGuarded1x128",
+  "createsGuarded2x128",
+];
+const guardedShape = (name: string) => (all[name] as { guard?: unknown }).guard !== undefined;
 
 describe("the planning rule reproduces the contracts' shared verdicts", () => {
   for (const [schedule, rows] of Object.entries(vectors.schedules)) {
@@ -198,9 +216,20 @@ describe("the planning rule reproduces the contracts' shared verdicts", () => {
       check: (a: RefAction[]) => Figures & { fits: boolean; refused: string | null };
       largest: (shape: (k: number) => RefAction[]) => number;
     };
+    it(`${schedule}: the guarded shapes are exactly the ones held for the guard step`, () => {
+      expect(Object.keys(rows).filter(guardedShape)).toEqual(GUARDED);
+    });
     for (const [name, v] of Object.entries(rows)) {
       it(`${schedule}: ${name}, ${v.k} per publication`, () => {
         expect(budget).toBe(v.budget);
+        if (guardedShape(name)) {
+          // held for the guard step: the actions alone, as the reference prices them without the guard
+          const acts = shortTier(name, v.k) ? withoutEntries(name)(v.k) : all[name]?.of(v.k);
+          const at = ruleGas(unitsOf(name, v.k), m);
+          const want = ref.check(acts as RefAction[]);
+          expect({ E: at.E, K: at.K, V: at.V }).toEqual({ E: want.E, K: want.K, V: want.V });
+          return;
+        }
         const units = (all[name] as { units: number }).units;
         // what the SDK must find: the vector, or (a short-tier shape) the reference without the entry count
         const short = shortTier(name, v.k);
