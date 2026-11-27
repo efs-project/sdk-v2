@@ -49,7 +49,7 @@
 > - topic statements: `planLabel` (a topic's or a home's name in one BCP 47 language, lowercased; the text/1 record
 >   published when new), `planSame` and `planBroader` (both ends registered earlier in the same save, as the
 >   validator's codes 10 and 11 need; a topic is never either of these to itself), each with `remove: true` for a
->   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (first measured at contracts 0fb4804; the vendored gas model is now 04526b1's, whose later rows take the long tier and are chosen by the head: a yes where you only ever said no is `bind<Purpose>AfterNo`, a label set again after its removal `restoreProperty`, each corrected for its position by the binding's history word: api-0.1 "The list tiers" and "Later rows by head"): a
+>   RELEASE of your own, refused UNCHANGED or NOT_STATED. Each is priced by its measured row (first measured at contracts 0fb4804; the vendored gas model is now 19891fe's (the guard release; its later rows are 04526b1's, re-measured), whose later rows take the long tier and are chosen by the head: a yes where you only ever said no is `bind<Purpose>AfterNo`, a label set again after its removal `restoreProperty`, each corrected for its position by the binding's history word: api-0.1 "The list tiers" and "Later rows by head"): a
 >   first label `bindPropertyFresh` (a new text adds the text/1 row), a later one `bindPropertyRebind`, a first
 >   `same` `bindSameFreshWord` (the dearer of the two first-same rows), a first `broader` `bindBroaderFresh`, a later
 >   bind `restoreSame` / `restoreBroader`, and a removal `release*`, as the reference planner prices them; the label

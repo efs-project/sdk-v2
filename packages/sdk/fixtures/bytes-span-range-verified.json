@@ -1,6 +1,6 @@
 {
   "schema": "efs-sdk-fixture/1",
-  "contractsCommit": "04526b1dd42992d8193c4d3c2db4129531dc7bfb",
+  "contractsCommit": "19891feb6284b754e46e738203d4730698381fa1",
   "case": "bytes-span-range-verified",
   "note": "readRange 8150..8170 across a chunk boundary",
   "result": {
@@ -29,12 +29,12 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 0
+          "ms": 1
         },
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 8
+          "ms": 14
         }
       ],
       "requests": 5
