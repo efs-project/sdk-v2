@@ -8,12 +8,14 @@ import { readFileSync } from "node:fs";
 import { mnemonicToAccount } from "viem/accounts";
 import { beforeAll, describe, expect, inject, it } from "vitest";
 import { createWriter, memoryJournal } from "../../src/actions/index.ts";
+import { CLOCK_SKEW_SECONDS, planPublication } from "../../src/actions/plan.ts";
+import type { FetchLike } from "../../src/chain/rpc.ts";
 import { createEfs } from "../../src/client.ts";
 import type { Address, RecordId, SubjectId } from "../../src/core/hex.ts";
 import { utf8Encode } from "../../src/core/platform.ts";
 import { planEditFile } from "../../src/files/edit.ts";
 import { planCreateFile } from "../../src/files/entries.ts";
-import { ledgerReadsAbi, ledgerViewsAbi } from "../../src/generated/abis.ts";
+import { ingressAbi, ledgerAbi, ledgerReadsAbi, ledgerViewsAbi } from "../../src/generated/abis.ts";
 import { planLabel, planTag } from "../../src/tags/index.ts";
 import { planHeadNo } from "../../src/testing/index.ts";
 import { lyingEfs } from "./lying.ts";
@@ -147,5 +149,78 @@ describe("a head whose state its revision contradicts is never planned on", () =
       expect(await planHeadNo(lie, w, { file: { kind: "file", subject: file } })).toMatchObject({
         status: "UNKNOWN",
       });
+  });
+});
+
+describe("every signed value an endpoint supplies is checked before it is signed (planPublication)", () => {
+  /** One publication to plan: a fresh tag statement (any planner's part would do). */
+  const part = async () => {
+    const t = await planTag(efs, w, {
+      topic: [`${topic[0]}-pub`],
+      targets: [{ kind: "address", address: target }],
+    });
+    if (t.status !== "PLANNED") throw new Error(t.status);
+    return { ...(t.parts[0] as (typeof t.parts)[number]), account: me.address };
+  };
+
+  it("the execution set signed is the deployment document's, and only while the chain's is the same", async () => {
+    const input = await part();
+    const honest = await planPublication(efs, input);
+    if (honest.status !== "PLANNED") throw new Error(honest.status);
+    expect(honest.plan.executionSet).toBe(efs.deployment.executionSet.toLowerCase());
+    for (const word of [`0x${"0".repeat(64)}`, `0x${"ab".repeat(32)}`]) {
+      const lie = lying(ledgerAbi, "executionSet", () => [word]);
+      expect(await planPublication(lie, input), word).toMatchObject({
+        status: "UNKNOWN",
+        reason: { code: "NOT_VERIFIED_DEPLOYMENT", retry: "transient" },
+      });
+    }
+  });
+
+  it("an acceptance profile of 0 (which would waive the ledger's check) is never signed", async () => {
+    const lie = lying(ingressAbi, "acceptanceProfileOf", () => [`0x${"0".repeat(64)}`]);
+    expect(await planPublication(lie, await part())).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR", retry: "transient" },
+    });
+  });
+
+  it("a basis block far ahead of this device's clock fails over; the deadline is the basis block's + the window", async () => {
+    const input = await part();
+    const honest = await planPublication(efs, { ...input, deadlineSeconds: 120 });
+    if (honest.status !== "PLANNED") throw new Error(honest.status);
+    const block = (await (
+      await fetch(fixture.rpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_getBlockByHash",
+          params: [honest.plan.basis.blockHash, false],
+        }),
+      })
+    ).json()) as { result: { timestamp: string } };
+    expect(honest.plan.deadline).toBe(BigInt(block.result.timestamp) + 120n);
+    // The endpoint says the block is from the future: the deadline would outlive the window.
+    const ahead = BigInt(Math.floor(Date.now() / 1000) + CLOCK_SKEW_SECONDS + 600);
+    const future: FetchLike = async (url, init) => {
+      const res = await fetch(url, init as RequestInit);
+      const body = JSON.parse(init.body ?? "null");
+      const reqs = (Array.isArray(body) ? body : [body]) as { id: number; method: string }[];
+      const json = await res.json();
+      for (const o of (Array.isArray(json) ? json : [json]) as {
+        id: number;
+        result?: { timestamp?: string };
+      }[])
+        if (reqs.find((r) => r.id === o.id)?.method === "eth_getBlockByHash" && o.result)
+          o.result.timestamp = `0x${ahead.toString(16)}`;
+      return new Response(JSON.stringify(json), { status: 200 }) as never;
+    };
+    const lie = createEfs({ rpcs: [fixture.rpcUrl], deployment, fetch: future });
+    expect(await planPublication(lie, input)).toMatchObject({
+      status: "UNKNOWN",
+      reason: { code: "RPC_ERROR", retry: "transient" },
+    });
   });
 });

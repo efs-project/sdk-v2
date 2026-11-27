@@ -116,7 +116,10 @@ export interface DeploymentInfo {
   limits: ProtocolLimits;
   /** The kernel's index floor; null for a document that records no work model (plans then omit the floor). */
   kernelFloor: KernelFloor | null;
-  /** The execution set the document was written at. The pin reports the live one. */
+  /**
+   * The execution set the document was written at (its activation). The pin reports the live one; a write is planned
+   * only while the chain's is this one, and this is the expectation it signs (planPublication).
+   */
   executionSet: Hex;
   revision: number;
 }
