@@ -330,6 +330,50 @@ describe("a folder's owner comes from its hash-checked record, never an unchecke
   });
 });
 
+describe("a write planner decides on verified folder records, never an unchecked header", () => {
+  const rootId = () => deployment.root.directoryRecordId.slice(2).toLowerCase();
+  const textType = () =>
+    (deployment as unknown as { typeIds: Record<string, Hex> }).typeIds["text/1"] as Hex;
+  /** records()' header for the root says it is a text record: a planner that trusted it would refuse the folder. */
+  const forgedHeader = () =>
+    lying(
+      ledgerViewsAbi,
+      "records",
+      ([sts, hs, ...rest]) => [
+        sts,
+        (hs as { typeId: Hex }[]).map((h) => ({ ...h, typeId: textType() })),
+        ...rest,
+      ],
+      (calldata) => calldata.toLowerCase().includes(rootId()),
+    );
+  const plan = (e: ReturnType<typeof forgedHeader>) =>
+    planCreateFile(e, w, {
+      folder: root,
+      name: "read-replies-plan.txt",
+      content: new TextEncoder().encode("y\n"),
+    });
+
+  it("planCreateFile: a forged header changes nothing (the parent is checked from its record)", async () => {
+    expect((await plan(efs)).status).toBe("PLANNED");
+    expect((await plan(forgedHeader())).status).toBe("PLANNED");
+  });
+
+  it("planCreateFile: a forged folder record body is the endpoint's fault (fail over), never a refusal", async () => {
+    const forgedBody = lying(
+      ledgerReadsAbi,
+      "record",
+      ([st, h, body, ...rest]) => [
+        st,
+        h,
+        `0x${"ab".repeat(32)}${(body as string).slice(66)}`,
+        ...rest,
+      ],
+      (calldata) => calldata.toLowerCase().includes(rootId()),
+    );
+    expect(await plan(forgedBody)).toMatchObject({ status: "UNKNOWN" });
+  });
+});
+
 describe("an unnamed listing row is tied to the folder by its cell", () => {
   it("listFolder: a row moved to another folder's entry (its name dropped) is not listed here", async () => {
     // Under a Lens of you then the seeder, your file's row in the root is forged to name no name and stand at the

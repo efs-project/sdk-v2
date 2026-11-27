@@ -7,6 +7,7 @@ import { decodeFunctionResult, encodeFunctionData, keccak256 } from "viem";
 import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs } from "../client.js";
+import { recordCall } from "../content/records.js";
 import { type CallOpts, misuse, type Reason, reason } from "../core/errors.js";
 import { type Hex, hexToBytes, lower, type PrincipalId } from "../core/hex.js";
 import { utf8Encode } from "../core/platform.js";
@@ -24,6 +25,7 @@ import { chainStatus, headState, strictlyIncreasing } from "../protocol/status.j
 import type { Ctx, Evidence } from "./bytes.js";
 import {
   checkParent,
+  decodeFolderRecord,
   type EntryTarget,
   type FolderCoverage,
   type ParentRef,
@@ -191,7 +193,6 @@ export async function listRemoved(
       basis,
       evidence: pin.evidence,
     };
-  const dirType = lower(d.typeIds["files-directory/1"] as Hex);
   const nameType = d.typeIds[NAME_PROFILE] as Hex;
   const scope = scopeKey(author, PURPOSES.folder, subject);
   type Out =
@@ -208,20 +209,15 @@ export async function listRemoved(
         call(d.ledger, ledgerAbi, "index"),
         call(indexAddress, indexAbi, "bitmapStore"),
         call(indexAddress, indexAbi, "coverage", [scopeFamily, scope]),
-        ...(home
-          ? []
-          : [call(d.readers.ledgerViews, ledgerViewsAbi, "records", [d.ledger, [subject]])]),
+        // the folder itself, its type and body hash-checked (never an unchecked header)
+        ...(home ? [] : [recordCall(d, subject)]),
       ]);
       const ix = decode<Hex>(ledgerAbi, "index", outs1[0]);
       const store = decode<Hex>(indexAbi, "bitmapStore", outs1[1]);
       const cov = decode<[number, bigint, bigint, number]>(indexAbi, "coverage", outs1[2]);
       const rec = home
-        ? ({ ok: true, value: [[], []] } as const)
-        : decode<[number[], { typeId: Hex; length: number }[]]>(
-            ledgerViewsAbi,
-            "records",
-            outs1[3],
-          );
+        ? ({ ok: true, value: { status: "PRESENT", directory: true, owner: subject } } as const)
+        : decodeFolderRecord(efs, subject, outs1[3]);
       for (const x of [ix, store, cov, rec]) if (!x.ok) return x;
       if (!ix.ok || !store.ok || !cov.ok || !rec.ok) return bad("unreachable");
       if (lower(ix.value) !== indexAddress || lower(store.value) !== bitmapStore)
@@ -237,9 +233,8 @@ export async function listRemoved(
             ),
           },
         };
-      const st = home ? "PRESENT" : chainStatus(rec.value[0][0] as number);
-      const h = home ? undefined : rec.value[1][0];
-      if (st === "ABSENT_PROVEN")
+      const folderRec = rec.value;
+      if (folderRec.status === "ABSENT_PROVEN")
         return {
           ok: true,
           value: {
@@ -248,8 +243,7 @@ export async function listRemoved(
             reason: reason("NOT_YET_DECIDABLE", "never", "no folder has this record id"),
           },
         };
-      if (!home && (st !== "PRESENT" || !h)) return bad(`records (${st})`);
-      if (h && (lower(h.typeId) !== dirType || Number(h.length) !== 64))
+      if (!folderRec.directory)
         return {
           ok: true,
           value: {

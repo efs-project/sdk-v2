@@ -393,7 +393,8 @@ const badReply = (what: string): Step<never> => ({
   reason: reason("RPC_ERROR", "transient", `${what} did not decode`),
 });
 
-type FolderRecord =
+/** @internal */
+export type FolderRecord =
   | { status: "PRESENT"; directory: boolean; owner: PrincipalId }
   | { status: "ABSENT_PROVEN" };
 
@@ -414,7 +415,8 @@ const ownersOf = (efs: Efs): Map<string, PrincipalId> => {
  * A folder id read with LedgerReads.record, its body hash-checked with its own Type (decodeRecord): whether it is a
  * files-directory/1 record and, when it is, its owner (the body's first word), never taken from an unchecked header.
  */
-function decodeFolderRecord(efs: Efs, id: Hex, out: Outcome): Step<FolderRecord> {
+/** @internal (also the folder planners' parent check, src/files/entries.ts) */
+export function decodeFolderRecord(efs: Efs, id: Hex, out: Outcome): Step<FolderRecord> {
   const r = decodeRecord(id, out);
   if (!r.ok) return r;
   const rec = r.value;

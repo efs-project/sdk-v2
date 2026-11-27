@@ -30,6 +30,7 @@ import { type CallRequest, callsAt } from "../chain/basis.js";
 import { type Basis, onEndpoint, type Session, type Step } from "../chain/pool.js";
 import type { Efs, Lens } from "../client.js";
 import { encode, FORM } from "../content/codec.js";
+import { recordCall } from "../content/records.js";
 import { type CallOpts, EfsFault, misuse, type Reason, reason } from "../core/errors.js";
 import {
   type Hex,
@@ -49,6 +50,7 @@ import type { Ctx, FileRef } from "./bytes.js";
 import {
   checkParent,
   decodeCreator,
+  decodeFolderRecord,
   type EntryRef,
   type EntryTarget,
   type FolderRef,
@@ -190,6 +192,8 @@ interface PlaceState {
 interface Seen {
   places: Map<Hex, PlaceState>;
   records: Map<Hex, RecordInfo>;
+  /** Each folder a place is under: whether it is a files-directory/1 record, from its hash-checked record. */
+  folders: Map<Hex, boolean>;
   /** For each subject asked about: whether it was already created. */
   created: Map<Hex, boolean>;
 }
@@ -227,6 +231,11 @@ async function readSeen(
   const ids = [...new Set(recordIds.map((x) => lower(x)))];
   const keyChunks = chunks(uniquePlaces, READ_CHUNK);
   const idChunks = chunks(ids, READ_CHUNK);
+  // The folders the places are under, each read with LedgerReads.record (type and body hash-checked): a plan decides
+  // whether its parent is a folder from verified data, never from an unchecked header.
+  const folderIds = [
+    ...new Set(uniquePlaces.filter((p) => p.parent.kind === "folder").map((p) => lower(p.folder))),
+  ];
   const calls: CallRequest[] = [
     ...keyChunks.map((c) => ({
       to: d.readers.ledgerViews,
@@ -253,9 +262,13 @@ async function readSeen(
       }),
     })),
     ...subjects.map((x) => subjectInfoCall(ctx.efs, x)),
+    ...folderIds.map((id) => recordCall(d, id)),
   ];
   if (calls.length === 0)
-    return { ok: true, value: { places: new Map(), records: new Map(), created: new Map() } };
+    return {
+      ok: true,
+      value: { places: new Map(), records: new Map(), created: new Map(), folders: new Map() },
+    };
   ctx.requests += calls.length;
   const outs = await callsAt(s, basis.blockHash, calls);
   let k = 0;
@@ -344,7 +357,13 @@ async function readSeen(
     if (!c.ok) return c;
     created.set(lower(x), c.value !== null);
   }
-  return { ok: true, value: { places: placesOut, records, created } };
+  const folders = new Map<Hex, boolean>();
+  for (const id of folderIds) {
+    const f = decodeFolderRecord(ctx.efs, id, outs[k++]);
+    if (!f.ok) return f;
+    folders.set(id, f.value.status === "PRESENT" && f.value.directory);
+  }
+  return { ok: true, value: { places: placesOut, records, created, folders } };
 }
 
 /** What this Lens shows at a place if your head there were `mine` (BOUND, MASKED or RELEASED), or as it is now. */
@@ -442,12 +461,10 @@ const entryOf = (p: Place): EntryRef => ({ folder: p.parent, name: p.name });
 /** The record ids that prove places' parents: a folder's record (a home always exists and has none). */
 const parentIds = (ps: readonly Place[]): Hex[] =>
   ps.filter((p) => p.parent.kind === "folder").map((p) => p.folder);
-/** A home always exists; a folder must be a files-directory/1 record at the basis. */
-const parentExists = (types: Types, p: Place, records: ReadonlyMap<Hex, RecordInfo>): boolean =>
-  p.parent.kind === "home" || isFolder(types, records.get(p.folder));
+/** A home always exists; a folder must be a files-directory/1 record at the basis (its hash-checked record). */
+const parentExists = (p: Place, folders: ReadonlyMap<Hex, boolean>): boolean =>
+  p.parent.kind === "home" || folders.get(lower(p.folder)) === true;
 const nameRecord = (types: Types, p: Place): Hex => lower(recordFromHash(types.name, p.role));
-const isFolder = (types: Types, r: RecordInfo | undefined): boolean =>
-  !!r && r.present && r.typeId === types.directory && r.length === 64;
 const TARGET_RECORD = FILES.targetKind.RECORD;
 const targetOf = (h: RawHead): EntryTarget =>
   h.targetKind === TARGET_RECORD
@@ -721,7 +738,7 @@ export async function planCreateFile(
       throw misuse("this salt was already used by this writer: pass a new one", { salt });
     const st = seen.places.get(place.position) as PlaceState;
     const refused: EntryRefusal[] = [];
-    if (!parentExists(types, place, seen.records))
+    if (!parentExists(place, seen.folders))
       refused.push({ index: 0, code: "FOLDER_ABSENT", entry: entryOf(place) });
     if (headState(st.mine.state) === "BOUND")
       refused.push({ index: 0, code: "NAME_TAKEN_MINE", entry: entryOf(place) });
@@ -867,7 +884,7 @@ export async function planCreateFolder(
       throw misuse("this salt was already used by this writer: pass a new one", { salt });
     const st = seen.places.get(place.position) as PlaceState;
     const refused: EntryRefusal[] = [];
-    if (!parentExists(types, place, seen.records))
+    if (!parentExists(place, seen.folders))
       refused.push({ index: 0, code: "FOLDER_ABSENT", entry: entryOf(place) });
     if (headState(st.mine.state) === "BOUND")
       refused.push({ index: 0, code: "NAME_TAKEN_MINE", entry: entryOf(place) });
@@ -1099,7 +1116,7 @@ export async function planMoveEntries(
       // Every refusal for this move is listed, the source's and the destination's.
       const mine = headState(from.mine.state) === "BOUND";
       if (!mine) refused.push(notMine(principals, from, me, i, m.from));
-      if (!parentExists(types, m.to, seen.records))
+      if (!parentExists(m.to, seen.folders))
         refused.push({ index: i, code: "FOLDER_ABSENT", entry: entryOf(m.to) });
       if (headState(to.mine.state) === "BOUND")
         refused.push({ index: i, code: "NAME_TAKEN_MINE", entry: entryOf(m.to) });
@@ -1648,7 +1665,7 @@ export async function planOtherEntry(
       throw misuse("this salt was already used by this writer: pass a new one", { salt });
     const st = seen.places.get(p.position) as PlaceState;
     const refused: EntryRefusal[] = [];
-    if (!parentExists(types, p, seen.records))
+    if (!parentExists(p, seen.folders))
       refused.push({ index: 0, code: "FOLDER_ABSENT", entry: entryOf(p) });
     if (headState(st.mine.state) === "BOUND")
       refused.push({ index: 0, code: "NAME_TAKEN_MINE", entry: entryOf(p) });
