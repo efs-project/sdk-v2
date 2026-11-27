@@ -16,6 +16,7 @@
 //      the finish (descriptor, revision, HEAD bind) kept in one publication.
 // The result is always a list of parts for writer.runSequence, one part in the common case.
 import { decodeFunctionResult, encodeFunctionData } from "viem";
+import type { GuardHead, GuardMode } from "../actions/guard.js";
 import type { SequencePartInput } from "../actions/sequence.js";
 import {
   batchGasOf,
@@ -26,7 +27,8 @@ import {
 } from "../actions/split.js";
 import type { EffectView } from "../actions/types.js";
 import { callsAt } from "../chain/basis.js";
-import { type Basis, onEndpoint } from "../chain/pool.js";
+import { type Basis, onEndpoint, type Step } from "../chain/pool.js";
+import type { RpcOutcome } from "../chain/rpc.js";
 import type { Efs, Lens } from "../client.js";
 import { encode, FORM } from "../content/codec.js";
 import { type CallOpts, EfsFault, type Reason, reason } from "../core/errors.js";
@@ -36,12 +38,13 @@ import {
   type PrincipalId,
   type RecordId,
   type SubjectId,
+  uniquePrincipals,
   ZERO_WORD,
 } from "../core/hex.js";
-import { ledgerReadsAbi } from "../generated/abis.js";
+import { ledgerReadsAbi, ledgerViewsAbi } from "../generated/abis.js";
 import { ACTION, PURPOSES } from "../generated/constants.js";
 import { bindingKey, positionKey, recordId } from "../protocol/keys.js";
-import { chainStatus, headConsistent, neverBoundHead } from "../protocol/status.js";
+import { chainStatus, headConsistent, headState, neverBoundHead } from "../protocol/status.js";
 import {
   type Ctx,
   type FileRef,
@@ -49,6 +52,16 @@ import {
   type RevisionRef,
   resolveRevision,
 } from "./bytes.js";
+import {
+  consistentSnapshot,
+  decodeHeadSnapshots,
+  guardHead,
+  guardingOf,
+  headSnapshotsCall,
+  partGuardOf,
+  readTerm,
+  writtenTerm,
+} from "./guardheads.js";
 import {
   askedMediaType,
   blank,
@@ -129,9 +142,15 @@ export interface EditReview {
   expectedRevision: bigint;
   /**
    * own-head: `base` is the editor's own HEAD, so the ledger itself refuses the save if it moved (E_CAS).
-   * lens: `base` is another author's revision; only the planning-time base check covers it.
+   * lens: `base` is another author's revision; without the read-set guard only the planning-time base check covers it.
    */
   guard: "own-head" | "lens";
+  /**
+   * True when the save carries the read-set guard (the writer guards, on a Realm with the guard): the chain itself
+   * refuses it (E_READSET_STALE) if your HEAD here, or the HEAD of any Lens author up to the one whose version is the
+   * base, is no longer what the plan read. Either `guard` is then checked by the chain.
+   */
+  chainChecked: boolean;
   /**
    * Whether the edited Lens will show this edit once it lands. False when the Lens leaves the author out, or puts an
    * author who already bound this file's HEAD before them: the save still succeeds, but that view keeps showing the
@@ -177,7 +196,7 @@ const FINISH = 1;
  */
 export async function planEditFile(
   efs: Efs,
-  writer: { readonly principal: PrincipalId },
+  writer: { readonly principal: PrincipalId; readonly guard?: GuardMode },
   input: EditFileInput,
   o: EditFileOpts = {},
 ): Promise<EditPlanResult> {
@@ -211,6 +230,9 @@ export async function planEditFile(
   const gas = g.gas;
   const model = gas.model;
 
+  const guard = guardingOf(efs, writer);
+  if (!guard.ok) return { kind: "efs.editPlan", status: "UNKNOWN", reason: guard.reason };
+
   // ---- one basis: the Lens's HEAD (the base check) and the editor's own HEAD binding (the CAS revision)
   const pin = await efs.at("latest", o);
   if (pin.status !== "VERIFIED")
@@ -221,7 +243,8 @@ export async function planEditFile(
     };
   const basis = pin.basis;
   const ctx: Ctx = { efs, requests: 0 };
-  const myBinding = bindingKey(me, positionKey(PURPOSES.head, file, ZERO_WORD));
+  const position = lower(positionKey(PURPOSES.head, file, ZERO_WORD));
+  const myBinding = bindingKey(me, position);
   type Seen =
     | { kind: "changed"; head: RevisionRef | null; author?: PrincipalId; admission?: bigint }
     | { kind: "refused"; reason: Reason }
@@ -233,6 +256,10 @@ export async function planEditFile(
         /** Your HEAD here is MASKED or RELEASED and never bound (only a "not this"): the BIND is a yes after a no. */
         myNeverBound: boolean;
         mediaType: string;
+        /** With the guard: your head and each Lens author's up to the decider, at this file's HEAD position. */
+        guardHeads: GuardHead[];
+        /** Every head the base rests on is guarded (all but the 65-principal edge). */
+        guardFull: boolean;
       };
   const r = await onEndpoint<Seen>(
     efs._internal.pool,
@@ -277,8 +304,29 @@ export async function planEditFile(
           },
         };
       const mediaType = asked ?? b.value.file.mediaType ?? "";
-      ctx.requests += 1;
-      const [out] = await callsAt(s, basis.blockHash, [
+      // The guard's heads (G6): every Lens author up to and including the one whose version decided the base, and you.
+      // An author after the decider can't change the base while those before it don't move, so they are not read.
+      const lensList = uniquePrincipals(lens.principals).map((p) => lower(p) as PrincipalId);
+      const decider = lensList.indexOf(lower(h.author) as PrincipalId);
+      const prefix = lensList.slice(0, decider + 1);
+      const read: PrincipalId[] = guard.on ? [...prefix, ...(prefix.includes(me) ? [] : [me])] : [];
+      // The guard names what fits the Realm's read-set limit: you, the base's author, then the Lens before it in order.
+      // Only a full Lens deciding at its last author, with you outside it, needs one more (65); then the save is guarded
+      // by all but one of those heads, every head is still checked at planning, and the review says the base is not
+      // fully chain-checked (chainChecked false). A save is never refused for it.
+      const limit = d.limits.maxReadSetPrincipals;
+      const guardSet: PrincipalId[] =
+        read.length <= limit
+          ? read
+          : [
+              me,
+              lensList[decider] as PrincipalId,
+              ...prefix.filter((p) => p !== me && p !== lensList[decider]),
+            ].slice(0, limit);
+      const keyChunks: PrincipalId[][] = [];
+      for (let k = 0; k < read.length; k += 64) keyChunks.push(read.slice(k, k + 64));
+      ctx.requests += 1 + (read.length ? keyChunks.length + 1 : 0);
+      const [out, ...guardOuts] = await callsAt(s, basis.blockHash, [
         {
           to: d.readers.ledgerReads,
           data: encodeFunctionData({
@@ -287,6 +335,20 @@ export async function planEditFile(
             args: [d.ledger, myBinding],
           }),
         },
+        ...(read.length
+          ? [
+              // LedgerViews.heads takes at most limits.maxReadIds (64) keys a call
+              ...keyChunks.map((c) => ({
+                to: d.readers.ledgerViews,
+                data: encodeFunctionData({
+                  abi: ledgerViewsAbi,
+                  functionName: "heads",
+                  args: [d.ledger, c.map((p) => bindingKey(p, position))],
+                }),
+              })),
+              headSnapshotsCall(d, guardSet, [position]),
+            ]
+          : []),
       ]);
       if (!out?.ok)
         return {
@@ -334,6 +396,22 @@ export async function planEditFile(
             reason: reason("RPC_ERROR", "transient", `the editor's HEAD binding reads ${cs}`),
           },
         };
+      const guardHeads: GuardHead[] = [];
+      if (read.length) {
+        const g = lensGuard(
+          guardOuts.slice(0, keyChunks.length),
+          guardOuts[keyChunks.length],
+          read,
+          guardSet,
+          decider,
+          me,
+          position,
+          h,
+          { state: mine.state, revision: revisionNow },
+        );
+        if (!g.ok) return g;
+        guardHeads.push(...g.value);
+      }
       return {
         ok: true,
         value: {
@@ -343,6 +421,8 @@ export async function planEditFile(
           myState: cs,
           myNeverBound: (cs === "MASKED" || cs === "RELEASED") && neverBoundHead(mine),
           mediaType,
+          guardHeads,
+          guardFull: guardHeads.length > 0 && guardSet.length === read.length,
         },
       };
     },
@@ -414,6 +494,8 @@ export async function planEditFile(
           : seen.myNeverBound
             ? ("bindHeadAfterNo" as const)
             : ("restoreHead" as const),
+    // the guard (G6): your HEAD, and the Lens's up to the base's author, all at this file's HEAD position
+    ...(seen.guardHeads.length ? { guard: seen.guardHeads } : {}),
   });
   const split = splitPublications([...records, ...finish], {
     model,
@@ -467,6 +549,7 @@ export async function planEditFile(
     records: records.length + finish.length - 1,
     expectedRevision: seen.myRevision,
     guard: ownHead ? "own-head" : "lens",
+    chainChecked: seen.guardFull,
     visibleInLens: ownHead || (authorIndex >= 0 && authorIndex < lensAuthorIndex),
   };
   const n = split.parts.length;
@@ -483,6 +566,7 @@ export async function planEditFile(
         ),
       ],
       ...(o.deadlineSeconds !== undefined ? { deadlineSeconds: o.deadlineSeconds } : {}),
+      ...(partGuardOf(p.actions).length ? { guard: partGuardOf(p.actions) } : {}),
       ...batchGasOf(p),
     }),
   );
@@ -510,4 +594,94 @@ function editEffect(r: EditReview, i: number, n: number, finish: boolean): Effec
       ? `Save the edit to ${r.file} (${r.size} bytes)`
       : `Store part ${i + 1} of ${n} of the edit's content`,
   };
+}
+
+type LensHead = {
+  state: number;
+  revision: bigint;
+  admission: bigint;
+  targetKind: number;
+  target: Hex;
+};
+
+/**
+ * The edit's guard (G6) from one heads() read of `guarded` (the Lens up to the decider, then you if you are not among
+ * them) and their headSnapshots, both at the plan's basis, checked against the LensReader's selection: every author
+ * before the decider is UNSET or RELEASED (a MASKED one would have decided), the decider's head is the selection, and
+ * your head is the one the CAS read. Anything else is the endpoint contradicting itself, and fails over. Each expected
+ * snapshot is computed from the head read here and passes the consistency check against the endpoint's own.
+ */
+function lensGuard(
+  headsOuts: readonly (RpcOutcome | undefined)[],
+  snapOut: RpcOutcome | undefined,
+  guarded: readonly PrincipalId[],
+  guardSet: readonly PrincipalId[],
+  decider: number,
+  me: PrincipalId,
+  position: Hex,
+  selected: { target: Hex; author: PrincipalId; admission: bigint },
+  mine: { state: number; revision: bigint },
+): Step<GuardHead[]> {
+  const fault = (what: string): Step<never> => ({
+    ok: false,
+    retryElsewhere: true,
+    reason: reason("RPC_ERROR", "transient", what),
+  });
+  const heads: LensHead[] = [];
+  for (const headsOut of headsOuts) {
+    if (!headsOut?.ok)
+      return {
+        ok: false,
+        retryElsewhere: true,
+        reason: headsOut ? headsOut.reason : reason("RPC_UNAVAILABLE", "transient"),
+      };
+    try {
+      const [chunk] = decodeFunctionResult({
+        abi: ledgerViewsAbi,
+        functionName: "heads",
+        data: headsOut.result as Hex,
+      }) as unknown as [LensHead[]];
+      heads.push(...chunk);
+    } catch {
+      return fault("heads did not decode");
+    }
+  }
+  if (heads.length !== guarded.length) return fault("heads (one per guarded author)");
+  // the Lens reader's decider is in the Lens (decodeHead checks it); never index past that on a broken reply
+  if (decider < 0 || decider >= guarded.length)
+    return fault("the base's author is not in the Lens");
+  if (heads.some((x) => !headConsistent(x.state, x.revision)))
+    return fault("heads (a state its revision contradicts)");
+  for (let i = 0; i < decider; i++) {
+    const st = headState((heads[i] as LensHead).state);
+    if (st !== "UNSET" && st !== "RELEASED")
+      return fault("a Lens head before the base's author contradicts the Lens selection");
+  }
+  const dec = heads[decider] as LensHead;
+  if (
+    headState(dec.state) !== "BOUND" ||
+    lower(dec.target) !== lower(selected.target) ||
+    BigInt(dec.admission) !== selected.admission
+  )
+    return fault("the base author's head is not the Lens selection");
+  const mi = guarded.indexOf(me);
+  const myHead = heads[mi] as LensHead;
+  if (Number(myHead.state) !== mine.state || BigInt(myHead.revision) !== mine.revision)
+    return fault("your HEAD reads differently in two reads at one basis");
+  const sn = decodeHeadSnapshots(snapOut, guardSet.length);
+  if (!sn.ok) return sn;
+  const out: GuardHead[] = [];
+  for (const [i, p] of guardSet.entries()) {
+    const h = heads[guarded.indexOf(p)] as LensHead;
+    const v = consistentSnapshot(
+      h,
+      PURPOSES.head,
+      ZERO_WORD,
+      sn.value.snapshots[i] as Hex,
+      sn.value.targets[i] as Hex,
+    );
+    if (!v.ok) return v;
+    out.push(guardHead(p, position, v.value, p === me ? writtenTerm(ACTION.BIND, h) : readTerm(h)));
+  }
+  return { ok: true, value: out };
 }

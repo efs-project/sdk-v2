@@ -117,44 +117,58 @@ describe("planEditFile (fixture)", () => {
     );
   });
 
-  it("two edits planned from one base: the first lands, the ledger refuses the second (E_CAS)", async () => {
-    const w = await writerFor(carol);
-    const lens = efs.lens.mineFirst(carol.address);
-    const put = putInline(
-      efs,
-      w.principal,
-      docs,
-      "race.txt",
-      text("base\n"),
-      keccak256(toHex("edit-race")),
-    );
-    const created = await w.planActions(put);
-    if (created.status !== "PLANNED") throw new Error(created.status);
-    await w.run(created.plan);
-    const base = (await revisionOf(put.file, lens)).revision;
-    const edit = (s: string) =>
-      planEditFile(efs, w, {
-        file: { kind: "file", subject: put.file },
-        base: { kind: "revision", recordId: base },
-        content: text(s),
-        lens,
-      });
-    const [a, b] = await Promise.all([edit("tab A\n"), edit("tab B\n")]);
-    if (a.status !== "PLANNED" || b.status !== "PLANNED") throw new Error("not planned");
-    expect(a.review.expectedRevision).toBe(b.review.expectedRevision);
-    expect((await w.runSequence(a.parts)).state).toBe("COMPLETE");
-    const lost = await w.runSequence(b.parts);
-    expect(lost).toMatchObject({ state: "NOT_STARTED", committed: 0, reason: { code: "STALE" } });
-    // Structured, never parsed from text: the vendored name and the decoded E_CAS(bytes32,uint64,uint64) arguments.
-    expect(lost.reason).toMatchObject({ retry: "after-replan", revert: { error: "E_CAS" } });
-    expect(lost.reason?.revert?.selector).toMatch(/^0x[0-9a-f]{8}$/);
-    expect(lost.reason?.revert?.args).toHaveLength(3);
-    expect(lost.reason?.detail).toContain("E_CAS");
-    const head = await revisionOf(put.file, lens);
-    expect(head.revision).toBe(a.review.revision);
-    expect(new TextDecoder().decode((await readBytes(efs, head)).bytes)).toBe("tab A\n");
-    await w.abandon(lost.sequenceId); // the client re-plans with the new base instead
-  });
+  // Unguarded, the ledger's CAS refuses the second (E_CAS); guarded, the guard is checked first and refuses it
+  // (E_READSET_STALE): the same STALE outcome, planned again from the new base either way.
+  it.each([
+    { mode: "never" as const, error: "E_CAS", args: 3 },
+    { mode: "auto" as const, error: "E_READSET_STALE", args: 2 },
+  ])(
+    "two edits planned from one base: the first lands, the ledger refuses the second ($error, guard $mode)",
+    async ({ mode, error, args }) => {
+      const w = await writerFor(carol);
+      const lens = efs.lens.mineFirst(carol.address);
+      const put = putInline(
+        efs,
+        w.principal,
+        docs,
+        `race-${mode}.txt`,
+        text("base\n"),
+        keccak256(toHex(`edit-race-${mode}`)),
+      );
+      const created = await w.planActions(put);
+      if (created.status !== "PLANNED") throw new Error(created.status);
+      await w.run(created.plan);
+      const base = (await revisionOf(put.file, lens)).revision;
+      const edit = (s: string) =>
+        planEditFile(
+          efs,
+          { principal: w.principal, guard: mode },
+          {
+            file: { kind: "file", subject: put.file },
+            base: { kind: "revision", recordId: base },
+            content: text(s),
+            lens,
+          },
+        );
+      const [a, b] = await Promise.all([edit("tab A\n"), edit("tab B\n")]);
+      if (a.status !== "PLANNED" || b.status !== "PLANNED") throw new Error("not planned");
+      expect(a.review.expectedRevision).toBe(b.review.expectedRevision);
+      expect(a.review.chainChecked).toBe(mode === "auto");
+      expect((await w.runSequence(a.parts)).state).toBe("COMPLETE");
+      const lost = await w.runSequence(b.parts);
+      expect(lost).toMatchObject({ state: "NOT_STARTED", committed: 0, reason: { code: "STALE" } });
+      // Structured, never parsed from text: the vendored name and the decoded arguments (E_CAS(bytes32,uint64,uint64),
+      // E_READSET_STALE(bytes32 position, bytes32 principalId)).
+      expect(lost.reason).toMatchObject({ retry: "after-replan", revert: { error } });
+      expect(lost.reason?.revert?.selector).toMatch(/^0x[0-9a-f]{8}$/);
+      expect(lost.reason?.revert?.args).toHaveLength(args);
+      expect(lost.reason?.detail).toContain(error);
+      const head = await revisionOf(put.file, lens);
+      expect(head.revision).toBe(a.review.revision);
+      expect(new TextDecoder().decode((await readBytes(efs, head)).bytes)).toBe("tab A\n");
+      await w.abandon(lost.sequenceId); // the client re-plans with the new base instead
+    },
+  );
 
   it("a span edit of another author's file splits under the gas cap and shows only where the author is in the Lens", async () => {
     const w = await writerFor(grace);

@@ -11,9 +11,9 @@
       "blockNumber": {
         "$efs:bigint": "80"
       },
-      "blockHash": "0xf3c7acbbfe166caec38940f7ed1916a96a7ad8e7a44bb25765eff2e25ea9cef2",
+      "blockHash": "0xc260e3e0c725137b1fea4a103f5e23ca4169fe4b23b5977e5b96e57853400de0",
       "timestamp": {
-        "$efs:bigint": "1795754551"
+        "$efs:bigint": "1795758704"
       },
       "executionSet": "0xbc587f0e8bdade1b5516745f0f8239dd4d03d5de6c91834adbf0239c3c5c3b75",
       "admissions": {
@@ -36,7 +36,7 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 40
+          "ms": 18
         }
       ],
       "requests": 2

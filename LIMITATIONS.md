@@ -142,13 +142,18 @@ the folder and tag planners a false state or target reverts instead of landing:
 - `planMoveEntries` (and renames): the destination's target as the endpoint reports it;
 - `planHideEntries`, `planUnhideEntries`: your own head reported not bound (or MASKED) while it is bound;
 - `planRestoreEntries`: the restored target, which is the head's stored last bound target (the one the guard binds);
-- `planTag`, `planDeny`, `planUntag`, `planLabel`, `planSame`, `planBroader`, and the testing planners.
+- `planTag`, `planDeny`, `planUntag`, `planLabel`, `planSame`, `planBroader`, and the testing planners;
+- `planEditFile`: your HEAD, and the HEAD of every Lens author up to the one whose version is the base (a false
+  report that the base still shows, or that no one before its author stated, reverts).
 
 Still the endpoint's word **where a writer is unguarded** (`guard: "never"`, or a Realm without the guard): each of
 those lies lands as the reviewed save's opposite, as before the guard. An unguarded restore at least requires the
-binding's history (`historyAt`, checked for shape) and the stored target to name the same one. Not guarded yet:
-`planEditFile` (its HEAD and the Lens heads that decided its base come in the next step); until then an edit's base
-rests on the planning-time base check, as before.
+binding's history (`historyAt`, checked for shape) and the stored target to name the same one. An unguarded
+`planEditFile` whose base is another author's version rests on the planning-time base check alone; guarded, the
+chain checks it (your HEAD and every Lens author's up to the base's author: `review.chainChecked`). One edge: a full
+64-author Lens deciding at its last author, with you outside it, needs 65 guarded heads and a guard names at most 64.
+The save goes ahead guarded by all but one of them (the one left out is the Lens author just before the base's),
+every head still checked at planning, and `chainChecked` is false: that one head is the endpoint's word.
 
 Also the endpoint's word, by design: the review's description of other people's entries (`visibleInLens`,
 `shownInstead`, `hiddenBy`, `shownAfter`, a hide's `shownNow` author), and the `via` path a folder move or restore

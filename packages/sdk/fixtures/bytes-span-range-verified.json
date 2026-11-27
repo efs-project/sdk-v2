@@ -34,7 +34,7 @@
         {
           "endpoint": "local fixture",
           "outcome": "OK",
-          "ms": 14
+          "ms": 5
         }
       ],
       "requests": 5
