@@ -977,7 +977,7 @@ describe("folders and files: every planner, signed as reviewed", () => {
       ),
     );
     let out = await run(small.parts);
-    signedIsReviewed(small.parts, out.asked, known({ guard: "none" }));
+    signedIsReviewed(small.parts, out.asked, known());
     expect(out.progress.state).toBe("COMPLETE");
     const big = planned(
       await planEditFile(
@@ -994,7 +994,7 @@ describe("folders and files: every planner, signed as reviewed", () => {
     );
     expect(big.parts.length).toBeGreaterThan(1);
     out = await run(big.parts);
-    signedIsReviewed(big.parts, out.asked, known({ guard: "none" }));
+    signedIsReviewed(big.parts, out.asked, known());
     expect(out.progress.state).toBe("COMPLETE");
   });
 });

@@ -901,10 +901,11 @@ target too, so an endpoint's false head report reverts instead of turning a revi
   chain). **"always"** guards too, and on a Realm without it the planners answer UNKNOWN with reason
   NOT_VERIFIED_DEPLOYMENT (`retry: "never"`). **"never"** sends no guard, for an app that trusts its own node. The
   planners read `writer.guard`; a plain `{ principal }` writer is "auto".
-- **What is guarded:** every head a part's BIND, UNBIND and RELEASE actions write (the folder, tag and statement
-  planners; `planEditFile` in the next step, with the Lens heads that decided its base). Not the review-only Lens
-  fields, not hide's ENTRY_ABSENT, not the `via` path. A guarded plan with a written head it did not read for the guard
-  is INVARIANT, never sent bare.
+- **What is guarded:** every head a part's BIND, UNBIND and RELEASE actions write (the folder, tag, statement and
+  edit planners), and the heads that decided an edit's base: the HEAD of every Lens author up to and including the one
+  whose version is the base (an author after it can't change the base while those before it don't move). Not the
+  review-only Lens fields, not hide's ENTRY_ABSENT, not the `via` path. A guarded plan with a written head it did not
+  read for the guard is INVARIANT, never sent bare.
 - **Expected values** are computed from the head the planner read: a BOUND head's target; 0 for one never bound; the
   position's role for a removed TAG, SAME or BROADER head; for a removed FOLDER, HEAD or PROPERTY head its stored last
   bound target, from `LedgerViews.headSnapshots` `targets`, read in the same batch at the same basis. The same call's
@@ -1369,7 +1370,14 @@ type EditPlanResult =
   `retry: "after-replan"`, `revert.error === "E_CAS"`. In a split edit whose content parts already committed, this
   is PARTIAL, and Continue cannot succeed (the same bind would be refused again). The client abandons that sequence
   ("This file changed since you opened it") and plans again from the new base. When `base` is another author's revision
-  (`review.guard: "lens"`), only the planning-time base check covers it.
+  (`review.guard: "lens"`), the read-set guard covers it on chain (`review.chainChecked`): the save guards your HEAD
+  and the HEAD of every Lens author up to and including the base's, read in one `LedgerViews.heads` call and checked against
+  the Lens reader's selection (each before the base's author UNSET or RELEASED, the base's author's head the
+  selection, your head the one the CAS read; anything else fails over). If any of them moves first, the ledger refuses
+  the edit: STALE, `revert.error === "E_READSET_STALE"`, handled as E_CAS is. A statement by an author after the base's
+  doesn't stop it. `chainChecked` is false for an unguarded writer: then only the planning-time base check covers a
+  "lens" base. A Lens whose prefix and you come to more than 64 principals can't be guarded (LIMIT_EXCEEDED,
+  `retry: "never"`).
 - **Splitting:** chunks and spans go through `splitPublications` under the per-transaction gas cap. The finish
   (descriptor, revision and HEAD bind) stays in one publication, so the edit appears atomically when the last part
   commits. The model is `gasPlanFor(efs.deployment)` (`opts.gasModel` overrides; without either, planning is
