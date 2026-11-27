@@ -1051,8 +1051,20 @@ describe("where a part is planned again just in time", () => {
       effects: t.parts.flatMap((p) => p.effects),
       units: t.parts.flatMap((p) => p.units ?? []),
     };
-    const { progress, asked, journal } = await run([one]);
+    // The cut needs more approvals than the review said: the save stops before asking (RESPLIT), and resume sends
+    // the pieces, each planned just in time.
+    const first = await run([one]);
+    expect(first.progress).toMatchObject({ state: "NOT_STARTED", reason: { code: "RESPLIT" } });
+    expect(first.asked).toEqual([]);
+    const again = recorder(W);
+    const writer = await createWriter(efs, {
+      authorizer: { kind: "eip1193", profile: "direct", provider: again.provider, account: W },
+      journal: first.journal,
+    });
+    const progress = await writer.resume(first.progress.sequenceId, { batch: "never" });
     expect(progress.state).toBe("COMPLETE");
+    const asked = again.asked;
+    const journal = first.journal;
     const seq = await journal.getSequence(progress.sequenceId);
     const pieces = (seq?.parts ?? []).map((p) => ({
       actions: p.actions,
